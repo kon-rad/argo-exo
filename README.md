@@ -8,7 +8,7 @@ TODO(konrad): Exo is a wearable Raspberry Pi. Push-to-talk speaks to your own He
 
 | Path | What |
 |---|---|
-| `deck/` | Pi side: buttons, bin, collector, dashboard, voice, ring |
+| `deck/` | Pi side: buttons, bin, collector, kiosk, voice, ring |
 | `firmware/xiao-clip/` | Clip firmware |
 | `agents/bridge/` | exo-bridge service on the droplet |
 | `chain/` | ExoModule.sol, agent Safe, CRE Transaction Guardian |

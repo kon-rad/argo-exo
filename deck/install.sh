@@ -22,7 +22,6 @@ S install -m 755 $A/bin/deck-approve /usr/local/bin/deck-approve
 S install -m 755 $A/bin/deck-capture /usr/local/bin/deck-capture
 install -m 644 $A/buttons/deck-buttons.py /srv/deck/deck-buttons.py
 install -m 644 $A/collector/lifelog-collector.py /srv/deck/lifelog-collector.py
-install -m 644 $A/dashboard/dashboard.py /srv/deck/dashboard.py
 mkdir -p /srv/deck/hooks /srv/deck/state/tx-queue /srv/deck/state/tx-approved
 for h in talk-start talk-stop talk-cancel repeat; do install -m 755 $A/hooks/$h /srv/deck/hooks/$h; done
 for u in $A/systemd/*.service $A/systemd/*.timer; do S install -m 644 "$u" /etc/systemd/system/; done

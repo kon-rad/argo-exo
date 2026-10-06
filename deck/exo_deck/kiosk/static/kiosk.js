@@ -20,6 +20,31 @@ export const RENDER = {
       + (j.pending_more ? `<p class="warn">+${esc(j.pending_more)} more — say "more"</p>` : '')
       + (sent.length ? `<ul class="rows tight">${sent.map((t) => `<li><span>${esc(t.summary)}</span><span class="ok">sent</span></li>`).join('')}</ul>` : '');
   },
+  body: (j) => {
+    if (!j.last) return `<h1>Body</h1><p class="bad">${esc(j.sync_error || 'No ring data')}</p>`;
+    const l = j.last, v = (x, u = '') => x == null ? '–' : `${esc(x)}${u}`;
+    const h = (m) => m == null ? '–' : `${(m / 60) | 0}h ${m % 60}m`;
+    const bar = (x) => '▮'.repeat(Math.max(0, Math.min(10, Math.round((x || 0) / 10)))).padEnd(10, '▯');
+    return `<h1>Body · night of ${esc(l.day)}</h1>
+      <ul class="rows tight"><li><span>Sleep score</span><span class="big">${v(l.sleep_score)}</span></li>
+      <li><span>Sleep · deep · REM</span><span class="big">${h(l.total_sleep_min)} · ${h(l.deep_min)} · ${h(l.rem_min)}</span></li>
+      <li><span>HRV · resting HR</span><span class="big">${v(l.hrv_avg, ' ms')} · ${v(l.sleep_rhr, ' bpm')}</span></li>
+      <li><span>Recovery · temp dev.</span><span class="big">${v(l.recovery_index)} · ${v(l.temp_deviation_c, '°C')}</span></li></ul>
+      <p class="muted tight">Sleep score, last 7 nights</p>
+      <p class="trend">${j.trend.map((t) => `${esc(String(t.day).slice(5))} <span class="accent">${bar(t.sleep_score)}</span> ${v(t.sleep_score)}`).join('<br>')}</p>
+      <p class="muted tight">synced ${j.synced_at ? ago(j.synced_at) + ' ago' : 'never'}${j.sync_error ? ' · ' + esc(j.sync_error) : ''}</p>`;
+  },
+  sensors: (j, s) => {
+    const d = j.deck, c = j.clip, x = (n, u = '') => n == null ? '–' : `${esc(n)}${u}`;
+    const clip = c.online ? (c.recording ? 'RECORDING' : 'online') : 'offline';
+    return `<h1>Sensors</h1><ul class="rows tight">
+      <li><span>Deck</span><span class="big">${x(d.cpu_c, '°C')} · load ${x(d.load1)}</span></li>
+      <li><span>Disk free · uptime</span><span class="big">${x(d.disk_free_gb, ' GB')} · ${x(d.uptime_h, ' h')}</span></li>
+      <li><span>Camera clip</span><span class="${c.online ? (c.recording ? 'warn' : 'ok') : 'bad'} big">${clip}${c.online ? ` · SD ${c.sd ? 'yes' : 'no'} · ${x(c.rssi, ' dBm')}` : ''}</span></li>
+      <li><span>Hermes</span><span class="${s && s.hermes ? 'ok' : 'bad'} big">${s && s.hermes ? 'reachable' : 'offline'}</span></li></ul>
+      ${j.sensors.length ? `<ul class="rows tight tiles">${j.sensors.slice(0, 6).map((t) => `<li><span>${esc(t.name)}</span><span class="big">${esc(t.value)}${t.unit ? ' ' + esc(t.unit) : ''}</span></li>`).join('')}</ul>`
+        : `<p class="muted">No wearable sensors reporting.</p>`}`;
+  },
 };
 
 let current = null;
@@ -46,7 +71,7 @@ async function tick() {
     $('heard').textContent = s.heard; $('said').textContent = s.reply;
     const j = await (await fetch(`/api/panel/${s.panel}`)).json();
     $('panel').innerHTML = j.error ? `<h1>${NAMES[s.panel]}</h1><p class="bad">${esc(j.error)}</p>`
-      : (RENDER[s.panel] || (() => `<h1>${NAMES[s.panel]}</h1>`))(j);
+      : (RENDER[s.panel] || (() => `<h1>${NAMES[s.panel]}</h1>`))(j, s);
     current = s.panel;
   } catch (e) { setHtml('chips', `<span class="chip bad">KIOSK OFFLINE</span>`); }
   finally { busy = false; }
