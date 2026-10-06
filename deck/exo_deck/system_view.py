@@ -26,7 +26,7 @@ def _db_latest(db_path: Path, table: str, now: float, max_age_s: int = 30):
             con.close()
         if row and row["ts"] >= now - max_age_s:
             return dict(row)
-    except sqlite3.Error:
+    except Exception:   # sqlite3.Error, or IndexError/TypeError from an unexpected schema
         pass
     return None
 

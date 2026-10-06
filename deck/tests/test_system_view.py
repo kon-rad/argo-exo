@@ -46,3 +46,13 @@ def test_sensor_tiles_and_nfc(tmp_path):
     names = {s["name"]: s for s in sv.panel(tmp_path, NOW, read=lambda p: "")["sensors"]}
     assert names["Air temp"]["value"] == 24.5 and names["Air temp"]["age_s"] == 5
     assert "Pulse" not in names and names["NFC tag"]["value"] == "04AB"
+
+
+def test_db_latest_survives_odd_schema(tmp_path):
+    con = sqlite3.connect(tmp_path / "body.db")
+    con.execute("CREATE TABLE pulse(bpm REAL)")        # no ts column
+    con.execute("INSERT INTO pulse VALUES (70)")
+    con.commit()
+    con.close()
+    assert sv._db_latest(tmp_path / "body.db", "pulse", NOW) is None
+    assert "sensors" in sv.panel(tmp_path, NOW, read=lambda p: "")
