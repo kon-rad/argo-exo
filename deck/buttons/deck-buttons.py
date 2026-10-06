@@ -9,7 +9,7 @@ Lights follow state files, so other services (voice loop, CRE, wallet) only need
                     a press under 0.3 s = hooks/talk-cancel; two quick taps = hooks/repeat
   Camera   GPIO 6   tap = one photo (deck-capture snap), double = camera on/off
   Mic      GPIO 13  tap = memo start/stop (deck-capture mic toggle)
-  Kiosk    GPIO 16  tap = dashboard <-> desktop (deck-kiosk toggle)   [optional button]
+  Kiosk    GPIO 16  tap = next panel, double-tap = kiosk <-> desktop   [optional button]
 
   LED Key    GPIO 17  in the key: blinks while transactions wait for approval; 3 fast flashes when one is sent
   LED Rec    GPIO 22  on while the clip reports it is recording
@@ -41,7 +41,8 @@ HOOKS, STATE = DECK / "hooks", DECK / "state"
 QUEUE, APPROVED = STATE / "tx-queue", STATE / "tx-approved"
 HOLD_S, DOUBLE_S, TALK_MIN_S = 0.6, 0.4, 0.3   # hold threshold, double-tap window, shortest real Talk
 APPROVE_GAP_S = 1.0                              # at most one approval per second (bounce, auto mode)
-BIN = {"capture": os.environ.get("DECK_CAPTURE", "/usr/local/bin/deck-capture"),
+BIN = {"python": os.environ.get("DECK_PY", "/srv/deck/venv/bin/python"),
+       "capture": os.environ.get("DECK_CAPTURE", "/usr/local/bin/deck-capture"),
        "kiosk": os.environ.get("DECK_KIOSK", "/usr/local/bin/deck-kiosk")}
 
 log = logging.getLogger("deck-buttons")
@@ -123,7 +124,8 @@ class Deck:
         Gestures(self.camera, on_tap=lambda: run(BIN["capture"], "snap"),
                  on_double=lambda: run(BIN["capture"], "camera", "toggle"))
         Gestures(self.mic, on_tap=lambda: run(BIN["capture"], "mic", "toggle"))
-        Gestures(self.kiosk, on_tap=lambda: run(BIN["kiosk"], "toggle"))
+        Gestures(self.kiosk, on_tap=lambda: run(BIN["python"], "-m", "exo_deck.navcli", "next"),
+                 on_double=lambda: run(BIN["kiosk"], "toggle"))
         self.last_verdict = mtime(STATE / "verdict")
         self.last_sent = mtime(STATE / "tx-sent")
 

@@ -5,11 +5,12 @@ from __future__ import annotations
 
 import logging
 import sys
+import time
 from dataclasses import dataclass
 from datetime import date
 from typing import Callable
 
-from . import recorder, router, state as st, stt, tts
+from . import approvals, recorder, router, state as st, stt, tts
 from .bridge_client import Bridge, BridgeError
 from .config import Settings
 
@@ -64,6 +65,24 @@ def _handle_stop(s: Settings, d: Deps) -> str:
     r = d.route(heard)
     if r.kind == "empty":
         return _say(s, d, DIDNT_CATCH)
+    if r.kind == "nav":
+        if r.text in ("more", "back"):
+            st.page(s.state, +1 if r.text == "more" else -1)
+            return ""                              # silent: the screen is the answer
+        return "" if st.set_panel(s.state, r.text) else _say(s, d, DIDNT_CATCH)
+    if r.kind == "media-open":
+        (s.state / "media-open").write_text(r.text)
+        st.set_panel(s.state, "media")
+        return ""
+    if r.kind == "control":
+        if r.text == "close":
+            (s.state / "media-open").unlink(missing_ok=True)
+            return ""
+        if r.text == "auto-off":
+            approvals.set_mode(s.state, "manual")
+            return _say(s, d, "Auto-approve is off. Every transaction waits for the key.")
+        approvals.request_auto(s.state, time.time())     # a voice can only ask; the key turns it on
+        return _say(s, d, "Press the approve key within five seconds to turn on auto-approve.")
     try:
         if r.kind == "talk":
             return _say(s, d, d.bridge.talk(r.text, f"exo-deck-{d.today().isoformat()}"))

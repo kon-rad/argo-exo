@@ -152,3 +152,12 @@ def test_state_files_are_world_readable(tmp_path):
     assert stat.S_IMODE(os.stat(tmp_path / "panel").st_mode) == 0o644
     ap.set_mode(tmp_path, "auto")
     assert stat.S_IMODE(os.stat(tmp_path / "approve-mode").st_mode) == 0o644
+
+
+def test_panel_clamps_page_when_list_shrinks(tmp_path):
+    import json, time
+    from exo_deck import approvals
+    q = tmp_path / "tx-queue"; q.mkdir()
+    (q / "a.json").write_text(json.dumps({"summary": "x", "risk": "low"}))
+    out = approvals.panel(tmp_path, time.time(), 3)
+    assert out["pending_total"] == 1 and len(out["pending"]) == 1 and out["pending_more"] == 0

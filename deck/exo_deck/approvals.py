@@ -160,6 +160,7 @@ def recent_approved(state: Path, n: int = PAGE) -> list[dict]:
 
 def panel(state: Path, now: float, page: int) -> dict:
     items = pending(state, now)
+    page = min(page, max(0, (len(items) - 1) // PENDING_PAGE))   # list shrank: clamp to the last page
     asked = _asked_at(state)
     return {"mode": mode(state), "pending_total": len(items),
             "pending_more": max(0, len(items) - (page + 1) * PENDING_PAGE),

@@ -144,3 +144,53 @@ def test_empty_transcript_logs_no_you_turn(tmp_path):
     d, _ = deps(said="")
     stop(s, d)
     assert [t["role"] for t in st.recent_turns(s.state)] == ["hermes"]
+
+
+def test_nav_switches_panel_silently(tmp_path):
+    from exo_deck import state as st
+    s = settings(tmp_path)
+    d, spoken = deps("show approvals")
+    assert stop(s, d) == "" and spoken == [] and st.get_panel(s.state) == "approvals"
+    assert d.bridge.calls == []
+    assert "show approvals" in (s.state / "conversation.jsonl").read_text()
+
+
+def test_more_and_back_page(tmp_path):
+    from exo_deck import state as st
+    s = settings(tmp_path)
+    stop(s, deps("more")[0])
+    assert st.snapshot(s.state)["page"] == 1
+    (s.state / "rec.wav").write_bytes(b"x" * 20000)
+    stop(s, deps("back")[0])
+    assert st.snapshot(s.state)["page"] == 0
+
+
+def test_media_open_and_close(tmp_path):
+    from exo_deck import state as st
+    s = settings(tmp_path)
+    d, _ = deps("open 4")
+    stop(s, d)
+    assert (s.state / "media-open").read_text() == "4" and st.get_panel(s.state) == "media"
+    assert d.bridge.calls == []
+    (s.state / "rec.wav").write_bytes(b"x" * 20000)
+    stop(s, deps("close")[0])
+    assert not (s.state / "media-open").exists()
+
+
+def test_auto_on_needs_the_key(tmp_path):
+    from exo_deck import approvals
+    s = settings(tmp_path)
+    d, spoken = deps("auto approve on")
+    stop(s, d)
+    assert approvals.mode(s.state) == "manual"
+    assert (s.state / "auto-request").exists() and "approve key" in spoken[0]
+    assert d.bridge.calls == []
+
+
+def test_auto_off_is_immediate(tmp_path):
+    from exo_deck import approvals
+    s = settings(tmp_path)
+    approvals.set_mode(s.state, "auto")
+    d, spoken = deps("auto approve off")
+    stop(s, d)
+    assert approvals.mode(s.state) == "manual" and spoken
