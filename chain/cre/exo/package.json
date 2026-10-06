@@ -1,4 +1,17 @@
-{ "name": "exo-guardian", "private": true, "type": "module",
-  "scripts": { "test": "bun test", "typecheck": "tsc --noEmit" },
-  "dependencies": { "viem": "^2.21.0" },
-  "devDependencies": { "typescript": "^5.5.0", "@types/bun": "latest" } }
+{
+  "name": "exo-guardian",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "viem": "^2.21.0",
+    "zod": "3.25.76"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.0",
+    "@types/bun": "latest"
+  }
+}
