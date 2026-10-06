@@ -44,3 +44,42 @@ def test_falls_back_to_espeak(tmp_path):
 def test_no_key_uses_espeak(tmp_path):
     cmds = []
     assert tts.speak("hi", {}, None, lambda cmd, **k: cmds.append(cmd), tmp_path) == "espeak"
+
+
+def test_nothing_available_returns_none_without_raising(tmp_path):
+    def run(cmd, **kw):
+        raise FileNotFoundError(cmd[0])
+
+    assert tts.speak("hi", {"DEEPGRAM_API_KEY": "k"}, lambda u, **k: Resp(200), run, tmp_path) == "none"
+    assert tts.speak("hi", {}, None, run, tmp_path) == "none"
+
+
+def test_player_failure_falls_back_to_espeak(tmp_path):
+    cmds = []
+
+    def run(cmd, **kw):
+        cmds.append(cmd[0])
+        if cmd[0] == "aplay":
+            raise FileNotFoundError("aplay")
+
+    assert tts.speak("hi", {"DEEPGRAM_API_KEY": "k"}, lambda u, **k: Resp(200), run, tmp_path) == "espeak"
+    assert cmds == ["aplay", "espeak-ng"]
+
+
+def test_timeout_is_set_and_expiry_is_a_failure(tmp_path):
+    import subprocess
+    seen = []
+
+    def run(cmd, **kw):
+        seen.append(kw.get("timeout"))
+        raise subprocess.TimeoutExpired(cmd, kw["timeout"])
+
+    assert tts.speak("hi", {"DEEPGRAM_API_KEY": "k"}, lambda u, **k: Resp(200), run, tmp_path) == "none"
+    assert seen == [60, 60]
+
+
+def test_unexpected_post_error_falls_back(tmp_path):
+    def post(u, **k):
+        raise ValueError("bad")
+
+    assert tts.speak("hi", {"DEEPGRAM_API_KEY": "k"}, post, lambda *a, **k: None, tmp_path) == "espeak"

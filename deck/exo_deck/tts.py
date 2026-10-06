@@ -13,8 +13,12 @@ SPEAK_URL = "https://api.deepgram.com/v1/speak"
 MAX_CHARS = 1900  # Deepgram's per-request text limit is 2000
 
 
+PLAY_TIMEOUT = 60  # replies are at most MAX_CHARS long
+
+
 def speak(text: str, env: Mapping[str, str] = os.environ, post: Callable | None = requests.post,
           run: Callable = subprocess.run, tmpdir: Path | None = None) -> str:
+    """Speak `text`. Returns "deepgram" | "espeak" | "none". Never raises."""
     key = env.get("DEEPGRAM_API_KEY", "")
     if key and post is not None:
         try:
@@ -26,9 +30,13 @@ def speak(text: str, env: Mapping[str, str] = os.environ, post: Callable | None 
             if r.status_code == 200 and r.content:
                 out = Path(tmpdir or tempfile.gettempdir()) / "exo-reply.wav"
                 out.write_bytes(r.content)
-                run([env.get("EXO_PLAYER", "aplay"), "-q", str(out)], check=False)
+                run([env.get("EXO_PLAYER", "aplay"), "-q", str(out)], check=False,
+                    timeout=PLAY_TIMEOUT)
                 return "deepgram"
-        except requests.RequestException:
+        except (requests.RequestException, OSError, subprocess.SubprocessError, ValueError):
             pass
-    run(["espeak-ng", text[:MAX_CHARS]], check=False)
-    return "espeak"
+    try:
+        run(["espeak-ng", text[:MAX_CHARS]], check=False, timeout=PLAY_TIMEOUT)
+        return "espeak"
+    except (OSError, subprocess.SubprocessError):
+        return "none"

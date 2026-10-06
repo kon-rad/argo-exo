@@ -79,3 +79,10 @@ def test_order_and_models_are_configurable():
 def test_empty_transcript_is_a_result_not_a_failure():
     empty = {"results": {"channels": [{"alternatives": [{"transcript": ""}]}]}}
     assert stt.transcribe(b"RIFF", ENV, lambda u, **k: Resp(200, empty)) == ("", "deepgram")
+
+
+def test_gemini_silence_without_parts_is_an_empty_transcript():
+    silent = {"candidates": [{"finishReason": "STOP", "content": {"role": "model"}}]}
+    assert stt.transcribe(b"RIFF", {"GEMINI_API_KEY": "gm"}, lambda u, **k: Resp(200, silent)) == ("", "gemini")
+    assert stt.transcribe(b"RIFF", {"GEMINI_API_KEY": "gm"},
+                          lambda u, **k: Resp(200, {"candidates": [{"finishReason": "STOP"}]})) == ("", "gemini")

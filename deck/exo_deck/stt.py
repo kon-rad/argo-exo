@@ -42,8 +42,11 @@ def gemini(wav: bytes, key: str, post: Callable, model: str) -> str:
     if r.status_code != 200:
         raise STTError(f"HTTP {r.status_code}")
     try:
-        return r.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
-    except (KeyError, IndexError, TypeError, ValueError) as exc:
+        candidate = r.json()["candidates"][0]
+        # Silence comes back as a candidate with no parts (finishReason STOP): empty transcript.
+        parts = (candidate.get("content") or {}).get("parts") or []
+        return "".join(p.get("text", "") for p in parts).strip()
+    except (KeyError, IndexError, TypeError, ValueError, AttributeError) as exc:
         raise STTError(f"unexpected response: {exc!r}") from exc
 
 
