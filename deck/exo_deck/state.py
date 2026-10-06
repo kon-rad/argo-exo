@@ -2,8 +2,12 @@
 Files, not a server, so the voice hooks, deck-buttons and the kiosk can all touch it."""
 from __future__ import annotations
 
+import fcntl
 import json
+import os
+import tempfile
 import time
+from contextlib import contextmanager
 from pathlib import Path
 
 PANELS: tuple[str, ...] = ("talk", "agents", "approvals", "transactions", "wallets", "cre", "body", "sensors", "media")
@@ -17,10 +21,30 @@ def _read(path: Path, default: str = "") -> str:
 
 
 def _write(path: Path, text: str) -> None:
+    """Atomic write via a unique temp file in the same dir (several processes write state)."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(text)
-    tmp.replace(path)
+    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=path.name + ".", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w") as f:
+            f.write(text)
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
+@contextmanager
+def _locked(path: Path):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(lock, fcntl.LOCK_UN)
 
 
 def get_panel(state: Path) -> str:
@@ -58,9 +82,10 @@ def page(state: Path, delta: int | None) -> int:
 
 def append_turn(state: Path, role: str, text: str, now: float | None = None, cap: int = 500) -> None:
     log = state / "conversation.jsonl"
-    lines = log.read_text().splitlines() if log.exists() else []
-    lines.append(json.dumps({"ts": time.time() if now is None else now, "role": role, "text": text}))
-    _write(log, "\n".join(lines[-cap:]) + "\n")
+    with _locked(state / ".conversation.lock"):
+        lines = log.read_text().splitlines() if log.exists() else []
+        lines.append(json.dumps({"ts": time.time() if now is None else now, "role": role, "text": text}))
+        _write(log, "\n".join(lines[-cap:]) + "\n")
 
 
 def recent_turns(state: Path, n: int = 7) -> list[dict]:

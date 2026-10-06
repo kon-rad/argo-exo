@@ -38,3 +38,9 @@ def test_snapshot(tmp_path):
     s = st.snapshot(tmp_path)
     assert s["listening"] and s["mode"] == "auto" and s["pending"] == 1 and s["heard"] == "hi"
     assert s["frozen"] is False and s["panel"] == "talk" and s["page"] == 0
+
+
+def test_writes_leave_no_temp_files(tmp_path):
+    st.set_panel(tmp_path, "agents")
+    st.append_turn(tmp_path, "you", "x")
+    assert not list(tmp_path.glob("*.tmp"))

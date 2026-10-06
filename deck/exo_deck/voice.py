@@ -32,9 +32,17 @@ class Deps:
     today: Callable = date.today
 
 
+def _log_turn(s: Settings, role: str, text: str) -> None:
+    """Conversation log is a display nicety: a failure here must never silence the deck."""
+    try:
+        st.append_turn(s.state, role, text)
+    except Exception:
+        log.exception("could not log %s turn", role)
+
+
 def _say(s: Settings, d: Deps, text: str) -> str:
     (s.state / "last-reply.txt").write_text(text)
-    st.append_turn(s.state, "hermes", text)
+    _log_turn(s, "hermes", text)
     d.speak(text)
     return text
 
@@ -51,7 +59,8 @@ def _handle_stop(s: Settings, d: Deps) -> str:
         log.warning("stt failed: %s", exc)
         return _say(s, d, STT_DOWN)
     (s.state / "last-heard.txt").write_text(heard)
-    st.append_turn(s.state, "you", heard)
+    if heard.strip():
+        _log_turn(s, "you", heard)
     r = d.route(heard)
     if r.kind == "empty":
         return _say(s, d, DIDNT_CATCH)

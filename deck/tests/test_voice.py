@@ -125,3 +125,22 @@ def test_turns_are_logged(tmp_path):
     d, _ = deps()
     stop(s, d)
     assert [t["role"] for t in st.recent_turns(s.state)] == ["you", "hermes"]
+
+
+def test_turn_log_failure_does_not_silence_speech(tmp_path, monkeypatch):
+    from exo_deck import state as st
+
+    def boom(*a, **k):
+        raise OSError("disk full")
+    monkeypatch.setattr(st, "append_turn", boom)
+    s = settings(tmp_path)
+    d, spoken = deps()
+    assert stop(s, d) == "You hold 0.4 ETH." and spoken == ["You hold 0.4 ETH."]
+
+
+def test_empty_transcript_logs_no_you_turn(tmp_path):
+    from exo_deck import state as st
+    s = settings(tmp_path)
+    d, _ = deps(said="")
+    stop(s, d)
+    assert [t["role"] for t in st.recent_turns(s.state)] == ["hermes"]

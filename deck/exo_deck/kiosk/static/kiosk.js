@@ -12,27 +12,33 @@ export const RENDER = {
 };
 
 let current = null;
+let busy = false;
+const last = { tabs: '', chips: '' };
+const setHtml = (id, html) => { if (last[id] !== html) { last[id] = html; $(id).innerHTML = html; } };
 function chips(s) {
   return [
-    s.listening ? `<span class="chip warn blink">LISTENING</span>` : '',
+    s.listening ? `<span class="chip warn">LISTENING</span>` : '',
     `<span class="chip ${s.mode === 'auto' ? 'warn' : 'ok'}">${s.mode === 'auto' ? 'AUTO' : 'MANUAL'}</span>`,
     s.pending ? `<span class="chip warn blink">${s.pending} PENDING</span>` : '',
     s.frozen ? `<span class="chip bad">FROZEN</span>` : '',
-    `<span class="chip ${s.hermes ? 'ok' : 'bad'}">HERMES ${s.hermes ? 'ON' : 'OFF'}</span>`,
+    `<span class="chip ${s.hermes ? 'ok' : 'bad'}">${s.hermes ? 'HERMES' : 'HERMES OFF'}</span>`,
   ].join('');
 }
 
 async function tick() {
+  if (busy) return;
+  busy = true;
   try {
     const s = await (await fetch('/api/state')).json();
-    $('tabs').innerHTML = PANELS.map((p, i) => `<span class="${p === s.panel ? 'on' : ''}">${i + 1}<span class="name"> ${NAMES[p]}</span></span>`).join('');
-    $('chips').innerHTML = chips(s);
+    setHtml('tabs', PANELS.map((p, i) => `<span class="${p === s.panel ? 'on' : ''}">${i + 1}${p === s.panel ? `<span class="name"> ${NAMES[p]}</span>` : ''}</span>`).join(''));
+    setHtml('chips', chips(s));
     $('heard').textContent = s.heard; $('said').textContent = s.reply;
     const j = await (await fetch(`/api/panel/${s.panel}`)).json();
     $('panel').innerHTML = j.error ? `<h1>${NAMES[s.panel]}</h1><p class="bad">${esc(j.error)}</p>`
       : (RENDER[s.panel] || (() => `<h1>${NAMES[s.panel]}</h1>`))(j);
     current = s.panel;
-  } catch (e) { $('chips').innerHTML = `<span class="chip bad">KIOSK OFFLINE</span>`; }
+  } catch (e) { setHtml('chips', `<span class="chip bad">KIOSK OFFLINE</span>`); }
+  finally { busy = false; }
 }
 
 document.addEventListener('keydown', (e) => {   // keyboard fallback: 1-9 switch panels
