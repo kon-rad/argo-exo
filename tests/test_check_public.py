@@ -50,3 +50,27 @@ def test_real_ip_beside_allowed_address_is_flagged(tmp_path):
 def test_lookalike_of_allowed_address_is_flagged(tmp_path):
     assert run(tmp_path, "gw 10.0.0.0\n").returncode == 1  # public-ok
     assert run(tmp_path, "gw 210.0.0.0\n").returncode == 1  # public-ok
+
+
+def _vendored(tmp_path, content):
+    d = tmp_path / "chain" / "contracts" / "lib" / "openzeppelin-contracts"
+    d.mkdir(parents=True)
+    (d / "SECURITY.md").write_text(content)
+
+
+def test_vendored_contracts_lib_email_is_skipped(tmp_path):
+    _vendored(tmp_path, "write to security" + "@openzeppelin.com\n")
+    assert run(tmp_path, "hello world\n").returncode == 0
+
+
+def test_same_email_outside_vendored_lib_is_flagged(tmp_path):
+    (tmp_path / "lib").mkdir()
+    (tmp_path / "lib" / "x.md").write_text("write to security" + "@openzeppelin.com\n")
+    r = run(tmp_path, "hello world\n")
+    assert r.returncode == 1 and "lib/x.md:1" in r.stdout
+
+
+def test_denylist_still_scans_vendored_lib(tmp_path):
+    _vendored(tmp_path, "ssh secret-host\n")
+    r = run(tmp_path, "hello world\n", denylist="secret-host\n")
+    assert r.returncode == 1 and "SECURITY.md:1" in r.stdout
