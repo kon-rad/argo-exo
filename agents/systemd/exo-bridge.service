@@ -1,0 +1,18 @@
+[Unit]
+Description=Exo bridge: deck -> Hermes talk + kanban (tailnet only)
+After=network-online.target tailscaled.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=hermes
+WorkingDirectory=/home/hermes/argo-exo/agents/bridge
+EnvironmentFile=/home/hermes/.config/exo/bridge.env
+Environment=PATH=/home/hermes/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/home/hermes/.venvs/exo-bridge/bin/python -m exo_bridge
+Restart=on-failure
+RestartSec=5
+MemoryMax=150M
+
+[Install]
+WantedBy=multi-user.target
