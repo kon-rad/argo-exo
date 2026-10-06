@@ -10,6 +10,16 @@ const ZERO = "0x0000000000000000000000000000000000000000";
 const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
 const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;
 
+/** Control characters, line/paragraph separators, zero-width and bidi overrides: none belong in a label, and
+ *  any of them could forge structure in the judge prompt or hide text from the wearer. */
+const UNSAFE = /[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2060-\u2069\ufeff]/g;
+export const SYMBOL_MAX = 16;
+export const LABEL_MAX = 32;
+/** A token symbol or address-book label made safe to show and to quote to an LLM: unsafe characters removed,
+ *  whitespace collapsed, capped. Returns "" when nothing is left (callers fall back to the address). */
+export const cleanLabel = (s: unknown, max = LABEL_MAX): string =>
+  typeof s === "string" ? s.replace(UNSAFE, " ").replace(/\s+/g, " ").trim().slice(0, max) : "";
+
 /** The trace status from changesFromCallTrace / changesFromSimulateV1. Required: without it explain cannot know
  *  whether the changes list is the whole story. */
 export type TraceStatus = Pick<TraceResult, "otherEvents" | "reverted">;
@@ -24,8 +34,12 @@ export function explain(changes: Change[], self: Hex, meta: TokenMeta, book: Rec
   const me = self.toLowerCase();
   const lowerKeys = <V>(o: Record<string, V>) => Object.fromEntries(Object.entries(o ?? {}).map(([k, v]) => [k.toLowerCase(), v]));
   const metaL = lowerKeys(meta), bookL = lowerKeys(book); // checksummed keys must resolve too
-  const who = (a: string) => bookL[a.toLowerCase()] ?? short(a);
-  const info = (t: string) => (t === "ETH" ? { symbol: "ETH", decimals: 18 } : metaL[t.toLowerCase()]);
+  const who = (a: string) => cleanLabel(Object.hasOwn(bookL, a.toLowerCase()) ? bookL[a.toLowerCase()] : "") || short(a);
+  const info = (t: string) => {
+    if (t === "ETH") return { symbol: "ETH", decimals: 18 };
+    const m = Object.hasOwn(metaL, t.toLowerCase()) ? metaL[t.toLowerCase()] : undefined;
+    return m ? { decimals: m.decimals, symbol: cleanLabel(m.symbol, SYMBOL_MAX) || `token ${short(t)}` } : undefined;
+  };
   const sym = (t: string) => info(t)?.symbol ?? `token ${short(t)}`;
   // Unknown decimals: show raw units rather than guess 18 and understate a 6-decimal amount by 10^12.
   const value = (c: Change) => {

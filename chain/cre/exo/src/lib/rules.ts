@@ -24,12 +24,34 @@ export const parsePolicy = (json: string): Policy => PolicySchema.parse(JSON.par
 /** §4.3 of the architecture. `token` is a 0x address or "ETH" (absent = ETH); `amount` is a decimal string in
  *  whole token units ("20", "0.5"). */
 export type Intent = { kind: string; summary: string; token?: string; amount?: string; to?: string };
+export const INTENT_KINDS = ["send", "swap", "nft_buy", "approve", "vote", "raw"] as const;
+const normKind = (k: unknown) => (typeof k === "string" ? k.trim().toLowerCase() : "");
 
 const lc = (s: string) => String(s).toLowerCase();
 const lowerKeys = <V>(o: Record<string, V>) => Object.fromEntries(Object.entries(o ?? {}).map(([k, v]) => [lc(k), v]));
 const fungible = (c: Change) => c.kind === "native" || c.kind === "erc20";
 /** Something leaving `self` (a payment or an NFT; approvals are permissions, not outflows). */
 const isOutflow = (c: Change, me: string) => lc(c.from) === me && lc(c.to) !== me && c.kind !== "approval" && c.kind !== "approval_for_all";
+const ZERO = "0x0000000000000000000000000000000000000000";
+const isApproval = (c: Change) => c.kind === "approval" || c.kind === "approval_for_all";
+/** A permission self grants (not a revoke): a non-zero allowance, a single-NFT approval to a non-zero address,
+ *  or approval-for-all set to true. */
+const isGrant = (c: Change, me: string) => lc(c.from) === me && (
+  (c.kind === "approval" && c.tokenId === undefined && (c.amount ?? 0n) > 0n)
+  || (c.kind === "approval" && c.tokenId !== undefined && lc(c.to) !== ZERO)
+  || (c.kind === "approval_for_all" && c.approved === true));
+const inBook = (book: Record<string, string>, a: string) => Object.hasOwn(book, lc(a));
+
+/** What auto-approval depends on, derived from the changes themselves (never from the caller):
+ *  every outflow from self goes to an address-book entry, and whether any approval of any kind appears. */
+export function exposure(changes: Change[], self: Hex, addressBook: Record<string, string>): { recipientsKnown: boolean; hasApprovals: boolean } {
+  if (!Array.isArray(changes) || typeof self !== "string") throw new TypeError("exposure: changes and self are required");
+  const me = lc(self), book = lowerKeys(addressBook);
+  return {
+    recipientsKnown: changes.filter((c) => isOutflow(c, me)).every((c) => inBook(book, c.to)),
+    hasApprovals: changes.some(isApproval),
+  };
+}
 
 /** Integer micro-dollars per ETH, rounded up. */
 const microUsd = (ethUsd: number) => BigInt(Math.ceil(ethUsd * 1e6));
@@ -90,8 +112,8 @@ export function checkRules(i: RulesInput, p: Policy): { violations: string[]; no
   const v: string[] = [], notes: string[] = [];
   const me = lc(i.self), book = lowerKeys(p.address_book);
 
-  const src = lc(String(i.source ?? ""));
-  const refused = new Set(p.refuse_sources.map(lc));
+  const src = lc(String(i.source ?? "")).trim();
+  const refused = new Set(p.refuse_sources.map((x) => lc(x).trim()));
   if (refused.has(src) || refused.has(src.split(":")[0])) v.push(`came from the ${i.source}, which is never trusted to move funds`);
 
   if (lc(i.to) === me || lc(i.to) === lc(i.module)) v.push("calls the wallet or its guard module directly");
@@ -102,9 +124,13 @@ export function checkRules(i: RulesInput, p: Policy): { violations: string[]; no
     if (c.kind === "approval" && c.tokenId === undefined && isUnlimited(c.amount ?? 0n) && !p.allow_unlimited_approvals)
       v.push("grants an unlimited token approval");
   }
+  // A bounded allowance just under the "unlimited" line (2^96 - 2) is no safer in practice: any grant to a
+  // spender outside the address book refuses unless the policy explicitly allows unlimited approvals.
+  if (!p.allow_unlimited_approvals && i.changes.some((c) => isGrant(c, me) && !inBook(book, c.to)))
+    v.push("grants a token approval to an address not in your address book");
 
   const outs = i.changes.filter((c) => isOutflow(c, me));
-  const unknownRecipient = outs.some((c) => !book[lc(c.to)]);
+  const unknownRecipient = outs.some((c) => !inBook(book, c.to));
   if (i.usdOut !== null) {
     if (typeof i.usdOut !== "number" || !Number.isFinite(i.usdOut) || i.usdOut < 0) v.push("the outflow value could not be computed");
     else {
@@ -120,6 +146,8 @@ export function checkRules(i: RulesInput, p: Policy): { violations: string[]; no
     if (unknownRecipient) v.push("sends a token without a reliable price to an address not in your address book");
   }
 
-  if (i.intent?.kind === "send" && !matchesSend(i, me)) v.push("does not match what you asked for");
+  const kind = normKind(i.intent?.kind);
+  if (!(INTENT_KINDS as readonly string[]).includes(kind)) v.push("has a request type this check does not know");
+  else if (kind === "send" && !matchesSend(i, me)) v.push("does not match what you asked for");
   return { violations: v, notes };
 }
