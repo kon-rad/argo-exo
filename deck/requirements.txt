@@ -3,3 +3,4 @@ waitress>=3
 requests>=2.31
 gpiozero>=2
 lgpio
+pillow>=10

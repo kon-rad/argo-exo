@@ -45,6 +45,24 @@ export const RENDER = {
       ${j.sensors.length ? `<ul class="rows tight tiles">${j.sensors.slice(0, 6).map((t) => `<li><span>${esc(t.name)}</span><span class="big">${esc(t.value)}${t.unit ? ' ' + esc(t.unit) : ''}</span></li>`).join('')}</ul>`
         : `<p class="muted">No wearable sensors reporting.</p>`}`;
   },
+  media: (j) => {
+    const tag = { both: '<span class="ok">synced</span>', sd: '<span class="warn">SD only</span>', cloud: '<span class="muted">cloud only</span>' };
+    const glyph = { photo: '▣', audio: '♪', video: '▶' };
+    if (j.open) {
+      const f = `/api/media/file/${encodeURI(j.open.rel)}`;
+      const body = j.open.where === 'cloud' ? '<p class="muted big">Stored in the cloud only</p>'
+        : j.open.kind === 'photo' ? `<img src="${f}" alt="">` : j.open.kind === 'video' ? `<video src="${f}" poster="/api/media/thumb/${encodeURI(j.open.rel)}" autoplay playsinline></video>` : `<div class="glyph big">♪ Playing</div><audio src="${f}" autoplay></audio>`;
+      return `<h1 class="clamp">${j.open.n} · ${esc(j.open.rel.split('/').pop())}</h1><p class="muted tight">${tag[j.open.where]} · say "close"</p><div class="full">${body}</div>`;
+    }
+    const tile = (i) => {
+      const img = i.kind !== 'audio' && i.where !== 'cloud' ? `<img src="/api/media/thumb/${encodeURI(i.rel)}" alt="" onerror="this.remove()">` : '';
+      return `<figure><div class="thumb"><span class="glyph">${i.where === 'cloud' ? '☁' : glyph[i.kind] || ''}</span>${img}<b class="num">${esc(i.n)}</b></div>
+        <figcaption>${i.mtime ? ago(i.mtime) : '–'} · ${tag[i.where]}</figcaption></figure>`;
+    };
+    const more = (j.total > (j.page + 1) * 9) ? ' · "more"' : '';
+    return `<h1>Media · ${esc(j.total)} files</h1><p class="muted tight clamp">${esc(j.sd_only)} SD only · ${esc(j.cloud_only)} cloud only · synced ${j.synced_at ? ago(j.synced_at) + ' ago' : 'never'} · "open 3"${more}</p>
+      ${j.items.length ? `<div class="grid9">${j.items.map(tile).join('')}</div>` : '<p class="muted">No photos, memos or videos yet.</p>'}`;
+  },
 };
 
 let current = null;

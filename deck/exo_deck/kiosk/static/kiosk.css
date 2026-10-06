@@ -35,11 +35,18 @@ h1 { font: 500 48px var(--head); margin: 0 0 16px; color: var(--accent); }
 .rows.tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
 .ok { color: var(--ok); } .bad { color: var(--danger); } .warn { color: var(--accent); }
 .cols { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
-.grid9 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+.grid9 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px 16px; margin-top: 8px; }
 .grid9 figure { margin: 0; background: var(--bg); border: 3px solid var(--edge); border-radius: 12px; padding: 8px; }
-.grid9 img { width: 100%; height: 170px; object-fit: cover; border-radius: 8px; }
-.grid9 figcaption { font-size: 30px; }
-.full img, .full video { max-width: 100%; max-height: 640px; display: block; margin: 0 auto; }
+.grid9 figure { padding: 6px; }
+.thumb { position: relative; height: 130px; background: var(--card); border-radius: 8px; overflow: hidden; display: grid; place-items: center; }
+.thumb .glyph { font-size: 64px; color: var(--muted); }
+.thumb img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.thumb .num { position: absolute; left: 0; top: 0; background: var(--bg); color: var(--accent); font-size: 40px; line-height: 1; padding: 4px 12px; border-right: 3px solid var(--edge); border-bottom: 3px solid var(--edge); }
+.grid9 figcaption { font-size: 30px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-top: 4px; }
+.full .glyph { text-align: center; padding: 120px 0; color: var(--accent); }
+.full audio { display: none; }
+.full video { width: 100%; height: 600px; object-fit: contain; background: var(--bg); }
+.full img, .full video { max-width: 100%; max-height: 600px; display: block; margin: 0 auto; }
 .ticker { font-size: 30px; padding: 14px 8px 0; border-top: 3px solid var(--edge); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ticker .lbl { color: var(--accent); font-weight: bold; margin-left: 12px; }
 .turn { margin-bottom: 14px; } .turn .who { color: var(--accent); font-weight: bold; margin-right: 12px; }

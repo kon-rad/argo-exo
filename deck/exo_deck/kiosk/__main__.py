@@ -6,7 +6,7 @@ import time
 import requests
 from waitress import serve
 
-from .. import approvals, ring_view, state as st, system_view
+from .. import approvals, media, ring_view, state as st, system_view
 from ..config import Settings
 from .app import create_app
 
@@ -16,6 +16,7 @@ def build_providers(s: Settings) -> dict:
     providers["approvals"] = lambda page: approvals.panel(s.state, time.time(), page)
     providers["body"] = lambda page: ring_view.panel(s.deck_root / "ring.db")
     providers["sensors"] = lambda page: system_view.panel(s.deck_root)
+    providers["media"] = lambda page: media.panel(s.deck_root, s.state, page)
     # 10.3-10.8 add: agents, transactions, wallets, cre, body, sensors, media (add each one's imports here too)
     return providers
 

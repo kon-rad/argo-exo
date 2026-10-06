@@ -69,3 +69,24 @@ def test_check_listen():
         with pytest.raises(SystemExit):
             check_listen(bad)
     assert check_listen("127.0.0.1:8080") == "127.0.0.1:8080"
+
+
+def _media_client(tmp_path):
+    c, s = client(tmp_path)
+    (tmp_path / ".env").write_text("SECRET=1")
+    (tmp_path / "outbox/photos").mkdir(parents=True)
+    (tmp_path / "outbox/photos/a.jpg").write_bytes(b"jpegbytes")
+    (tmp_path / "outbox/photos/link.jpg").symlink_to(tmp_path / ".env")
+    (tmp_path / "outbox/photos_evil").mkdir()
+    (tmp_path / "outbox/photos_evil/x.jpg").write_bytes(b"evil")
+    return c
+
+
+def test_media_file_serves_and_refuses_traversal(tmp_path):
+    c = _media_client(tmp_path)
+    assert c.get("/api/media/file/photos/a.jpg").data == b"jpegbytes"
+    for bad in ("photos/../../.env", "..%2f.env", "photos/%2e%2e/%2e%2e/.env", "photos/link.jpg",
+                "photos/../photos_evil/x.jpg", "photos_evil/x.jpg", "%2e%2e/.env", "state/panel", "photos/nope.jpg"):
+        assert c.get(f"/api/media/file/{bad}").status_code == 404, bad
+        assert c.get(f"/api/media/thumb/{bad}").status_code == 404, bad
+    assert c.get("/api/media/file//etc/passwd", follow_redirects=True).status_code == 404

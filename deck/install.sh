@@ -17,12 +17,12 @@ S(){ printf '%s\n' "$PW" | sudo -S -p "" "$@"; }
 A=/srv/deck/app/deck
 [ -x /srv/deck/venv/bin/python ] || python3 -m venv /srv/deck/venv
 /srv/deck/venv/bin/pip install -q -r $A/requirements.txt </dev/null
-S apt-get install -y -qq espeak-ng alsa-utils >/dev/null
+S apt-get install -y -qq espeak-ng alsa-utils rclone ffmpeg >/dev/null
 S install -m 755 $A/bin/deck-approve /usr/local/bin/deck-approve
 S install -m 755 $A/bin/deck-capture /usr/local/bin/deck-capture
 install -m 644 $A/buttons/deck-buttons.py /srv/deck/deck-buttons.py
 install -m 644 $A/collector/lifelog-collector.py /srv/deck/lifelog-collector.py
-mkdir -p /srv/deck/hooks /srv/deck/state/tx-queue /srv/deck/state/tx-approved
+mkdir -p /srv/deck/hooks /srv/deck/state/tx-queue /srv/deck/state/tx-approved /srv/deck/outbox/photos /srv/deck/outbox/audio /srv/deck/media/video
 for h in talk-start talk-stop talk-cancel repeat; do install -m 755 $A/hooks/$h /srv/deck/hooks/$h; done
 for u in $A/systemd/*.service $A/systemd/*.timer; do S install -m 644 "$u" /etc/systemd/system/; done
 S systemctl disable --now cyberdeck-voice 2>/dev/null || true

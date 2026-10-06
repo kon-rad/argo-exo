@@ -1,0 +1,12 @@
+[Unit]
+Description=Cyberdeck media sync (encrypted rclone push + cloud manifest)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=deck
+UMask=0077
+EnvironmentFile=/srv/deck/.env
+ExecStart=/srv/deck/app/deck/bin/deck-media-sync
+TimeoutStartSec=900

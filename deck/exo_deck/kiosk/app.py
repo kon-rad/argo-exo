@@ -5,9 +5,9 @@ import time
 from pathlib import Path
 from typing import Callable
 
-from flask import Flask, jsonify, send_from_directory
+from flask import Flask, abort, jsonify, send_file, send_from_directory
 
-from .. import state as st
+from .. import media, state as st
 
 STATIC = Path(__file__).parent / "static"
 log = logging.getLogger("exo-kiosk")
@@ -53,5 +53,19 @@ def create_app(settings, providers: dict[str, Callable[[int], dict]], hermes_ok:
     def nav(target):
         new = st.set_panel(settings.state, target)
         return (jsonify(panel=new), 200) if new else (jsonify(error="unknown panel"), 400)
+
+    @app.get("/api/media/file/<path:rel>")
+    def media_file(rel):
+        p = media.safe_path(settings.deck_root, rel)
+        if p is None or not p.is_file():
+            abort(404)
+        return send_file(p, conditional=True)
+
+    @app.get("/api/media/thumb/<path:rel>")
+    def media_thumb(rel):
+        p = media.thumb(settings.deck_root, rel, settings.deck_root / "thumbs")
+        if p is None:
+            abort(404)
+        return send_file(p, mimetype="image/jpeg")
 
     return app
