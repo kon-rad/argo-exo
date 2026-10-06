@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Callable
 
-from . import recorder, router, stt, tts
+from . import recorder, router, state as st, stt, tts
 from .bridge_client import Bridge, BridgeError
 from .config import Settings
 
@@ -34,6 +34,7 @@ class Deps:
 
 def _say(s: Settings, d: Deps, text: str) -> str:
     (s.state / "last-reply.txt").write_text(text)
+    st.append_turn(s.state, "hermes", text)
     d.speak(text)
     return text
 
@@ -50,6 +51,7 @@ def _handle_stop(s: Settings, d: Deps) -> str:
         log.warning("stt failed: %s", exc)
         return _say(s, d, STT_DOWN)
     (s.state / "last-heard.txt").write_text(heard)
+    st.append_turn(s.state, "you", heard)
     r = d.route(heard)
     if r.kind == "empty":
         return _say(s, d, DIDNT_CATCH)

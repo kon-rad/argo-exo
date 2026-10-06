@@ -117,3 +117,11 @@ def test_wav_deleted_after_read(tmp_path):
     d, _ = deps()
     stop(s, d)
     assert not (s.state / "rec.wav").exists()
+
+
+def test_turns_are_logged(tmp_path):
+    from exo_deck import state as st
+    s = settings(tmp_path)
+    d, _ = deps()
+    stop(s, d)
+    assert [t["role"] for t in st.recent_turns(s.state)] == ["you", "hermes"]

@@ -1,12 +1,14 @@
 [Unit]
-Description=Cyberdeck VITURE dashboard
+Description=Exo kiosk (VITURE dashboard)
 After=network.target srv-deck.mount
 
 [Service]
 Type=simple
 User=deck
 EnvironmentFile=/srv/deck/.env
-ExecStart=/srv/deck/venv/bin/python3 /srv/deck/dashboard.py
+Environment=PYTHONPATH=/srv/deck/app/deck
+WorkingDirectory=/srv/deck/app/deck
+ExecStart=/srv/deck/venv/bin/python3 -m exo_deck.kiosk
 Restart=on-failure
 RestartSec=5
 
