@@ -10,7 +10,7 @@ Copied verbatim from [[exo-hardware-priorities]] §2.1–2.2.
 | **Talk** (master agent STT) | Tactile | GPIO 26 (37) | 39 | **Press = start listening at once, release = send to the master agent.** A press under 0.3 s cancels; two quick taps repeat the last reply |
 | **Camera** | Tactile | GPIO 6 (31) | 34 | Tap = **one photo**; double-tap = camera on/off (photo every 30 s) |
 | **Mic** | Tactile | GPIO 13 (33) | 34 | Tap = **memo start / stop** |
-| Kiosk (optional) | Tactile | GPIO 16 (36) | 39 | Tap = dashboard ↔ desktop. Ctrl+Alt+K does the same from the keyboard |
+| Kiosk (optional) | Tactile | GPIO 16 (36) | 39 | Tap = next panel; double-tap = kiosk ↔ desktop |
 
 Each button goes **between its GPIO and GND**, with the Pi's internal pull-ups. No resistors needed. Reserved: I2C GPIO 2/3, UART GPIO 14/15 (PN532), I2S GPIO 18/19/20 (mic), GPIO 12 (AI City door servo).
 

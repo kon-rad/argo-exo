@@ -27,6 +27,12 @@ See [docs/architecture.md](docs/architecture.md) for the data flow.
 pip install -r requirements-dev.txt && pytest
 ```
 
+## Deck notes
+
+- `cyberdeck-dashboard.service` now runs the `exo_deck` kiosk. The unit name is kept so the existing Chromium kiosk needs no change.
+- Pi-side prerequisite: `/usr/local/bin/deck-kiosk` is not in this repo (hand-installed on the Pi). The Kiosk double-tap calls it; `deck/install.sh` warns if it is missing.
+- Testing hooks over SSH: load the env first, or the hooks see no keys and URLs: `set -a; . /srv/deck/.env; set +a`, then run e.g. `/srv/deck/hooks/talk-start`.
+
 ## Built before vs during the hackathon
 
 | Component | Status |
@@ -34,7 +40,6 @@ pip install -r requirements-dev.txt && pytest
 | `deck/buttons` | Existed before 2026-10-06 |
 | `deck/bin` | Existed before 2026-10-06 |
 | `deck/collector` | Existed before 2026-10-06 |
-| `deck/dashboard` (base) | Existed before 2026-10-06 |
 | `deck/ring` | Existed before 2026-10-06 |
 | `firmware/xiao-clip` | Existed before 2026-10-06 |
 | Everything else | Built during the hackathon |
