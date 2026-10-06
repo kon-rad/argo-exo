@@ -1,5 +1,5 @@
 import { formatUnits } from "viem";
-import type { Change, Hex, TokenMeta } from "./types";
+import type { Change, Hex, TokenMeta, TraceResult } from "./types";
 
 /** Allowances at or above uint96 max are "unlimited": it covers max uint256, Permit2's uint160 max and the
  *  uint96 max that COMP/UNI-style tokens treat as infinite. Erring low only makes the warning louder. */
@@ -10,15 +10,22 @@ const ZERO = "0x0000000000000000000000000000000000000000";
 const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
 const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;
 
-export type ExplainOpts = { otherEvents?: number; reverted?: boolean };
+/** The trace status from changesFromCallTrace / changesFromSimulateV1. Required: without it explain cannot know
+ *  whether the changes list is the whole story. */
+export type TraceStatus = Pick<TraceResult, "otherEvents" | "reverted">;
 
 /** Plain-English account of what the changes do to `self`. Changes that do not touch `self` are not narrated.
  *  "Nothing else changes." is only claimed when nothing risky is granted and every event was understood. */
-export function explain(changes: Change[], self: Hex, meta: TokenMeta, book: Record<string, string>, opts: ExplainOpts = {}): string {
-  if (opts.reverted) return "This transaction reverts: it would fail and change nothing.";
+export function explain(changes: Change[], self: Hex, meta: TokenMeta, book: Record<string, string>, status: TraceStatus): string {
+  // Runtime check too: a JS caller (or an `as any`) that drops the status must not get a reassuring sentence.
+  if (!status || typeof status.reverted !== "boolean" || typeof status.otherEvents !== "number" || !(status.otherEvents >= 0))
+    throw new TypeError("explain: trace status { otherEvents, reverted } is required");
+  if (status.reverted) return "This transaction reverts: it would fail and change nothing.";
   const me = self.toLowerCase();
-  const who = (a: string) => book[a.toLowerCase()] ?? short(a);
-  const info = (t: string) => (t === "ETH" ? { symbol: "ETH", decimals: 18 } : meta[t.toLowerCase()]);
+  const lowerKeys = <V>(o: Record<string, V>) => Object.fromEntries(Object.entries(o ?? {}).map(([k, v]) => [k.toLowerCase(), v]));
+  const metaL = lowerKeys(meta), bookL = lowerKeys(book); // checksummed keys must resolve too
+  const who = (a: string) => bookL[a.toLowerCase()] ?? short(a);
+  const info = (t: string) => (t === "ETH" ? { symbol: "ETH", decimals: 18 } : metaL[t.toLowerCase()]);
   const sym = (t: string) => info(t)?.symbol ?? `token ${short(t)}`;
   // Unknown decimals: show raw units rather than guess 18 and understate a 6-decimal amount by 10^12.
   const value = (c: Change) => {
@@ -51,8 +58,9 @@ export function explain(changes: Change[], self: Hex, meta: TokenMeta, book: Rec
       else lines.push(`You remove ${who(c.to)}'s control of all your NFTs in collection ${who(c.token)}.`);
     }
   }
-  const other = opts.otherEvents ?? 0;
-  const unread = other > 0 ? ` It also emits ${plural(other, "event")} this check can't read.` : "";
+  const other = status.otherEvents;
+  const unread = other > 0
+    ? ` Warning: ${plural(other, "effect")} of this transaction couldn't be read, so more may change than this says.` : "";
   if (!lines.length) return other > 0 ? `Nothing changes in your wallet that this check can read.${unread}` : "Nothing changes in your wallet.";
   if (risky || other > 0) return `${lines.join(" ")}${unread}`;
   return `${lines.join(" ")} Nothing else changes.`;

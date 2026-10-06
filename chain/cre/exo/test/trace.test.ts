@@ -113,12 +113,13 @@ test("approvalForAll with a non-boolean payload is unrecognised", () => {
 const NATIVE = "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
 const simBlock = (calls: any[]) => [{ number: "0x1", hash: "0x" + "11".repeat(32), calls }];
 const simCall = (logs: any[], status = "0x1") => ({ returnData: "0x", gasUsed: "0x5208", status, logs });
+const tx = (value = 0n) => ({ from: SELF as any, value });
 
 test("simulateV1: native synthetic logs and erc20 logs, in order", () => {
   const r = changesFromSimulateV1(simBlock([simCall([
     { address: NATIVE, topics: [TRANSFER, t(SELF), t("0xbbbb")], data: u(10n ** 17n) },
     { address: USDC, topics: [TRANSFER, t(SELF), t("0xbbbb")], data: u(20_000_000n) },
-    { address: USDC, topics: [SYNC], data: "0x" }])]));
+    { address: USDC, topics: [SYNC], data: "0x" }])]), tx(10n ** 17n));
   expect(r.reverted).toBe(false);
   expect(r.otherEvents).toBe(1);
   expect(r.changes).toEqual([
@@ -127,18 +128,43 @@ test("simulateV1: native synthetic logs and erc20 logs, in order", () => {
 });
 
 test("simulateV1: failed call, missing status or empty result is reverted", () => {
-  expect(changesFromSimulateV1(simBlock([{ ...simCall([], "0x0"), error: { code: 3, message: "execution reverted" } }])).reverted).toBe(true);
-  expect(changesFromSimulateV1(simBlock([{ returnData: "0x", logs: [] }])).reverted).toBe(true);
-  expect(changesFromSimulateV1([]).reverted).toBe(true);
-  expect(changesFromSimulateV1(null).reverted).toBe(true);
-  expect(changesFromSimulateV1({ error: "x" }).reverted).toBe(true);
+  expect(changesFromSimulateV1(simBlock([{ ...simCall([], "0x0"), error: { code: 3, message: "execution reverted" } }]), tx()).reverted).toBe(true);
+  expect(changesFromSimulateV1(simBlock([{ returnData: "0x", logs: [] }]), tx()).reverted).toBe(true);
+  expect(changesFromSimulateV1([], tx()).reverted).toBe(true);
+  expect(changesFromSimulateV1(null, tx()).reverted).toBe(true);
+  expect(changesFromSimulateV1({ error: "x" }, tx()).reverted).toBe(true);
 });
 
 test("simulateV1: every call in every block is read; one revert marks the whole result reverted", () => {
   const ok = simCall([{ address: NATIVE, topics: [TRANSFER, t(SELF), t("0xbbbb")], data: u(1n) }]);
-  const r = changesFromSimulateV1([...simBlock([ok]), ...simBlock([ok, simCall([], "0x0")])]);
+  const r = changesFromSimulateV1([...simBlock([ok]), ...simBlock([ok, simCall([], "0x0")])], tx(1n));
   expect(r.changes).toHaveLength(2);
   expect(r.reverted).toBe(true);
+});
+
+test("simulateV1: a native send the node did not report (traceTransfers ignored) is not understood", () => {
+  const r = changesFromSimulateV1(simBlock([simCall([])]), tx(10n ** 17n));
+  expect(r.changes).toEqual([]);
+  expect(r.reverted).toBe(false);
+  expect(r.otherEvents).toBe(1);
+  // a native log of the wrong amount, or from someone else, does not account for the submitted value either
+  const wrong = changesFromSimulateV1(simBlock([simCall([
+    { address: NATIVE, topics: [TRANSFER, t("0xbbbb"), t(SELF)], data: u(10n ** 17n) },
+    { address: NATIVE, topics: [TRANSFER, t(SELF), t("0xbbbb")], data: u(1n) }])]), tx(10n ** 17n));
+  expect(wrong.otherEvents).toBe(1);
+});
+
+test("simulateV1: a reported native send of the submitted value is understood; zero value needs none", () => {
+  const sent = changesFromSimulateV1(simBlock([simCall([
+    { address: NATIVE, topics: [TRANSFER, t(SELF), t("0xbbbb")], data: u(10n ** 17n) }])]), { from: SELF.toUpperCase().replace("0X", "0x") as any, value: 10n ** 17n });
+  expect(sent.otherEvents).toBe(0);
+  expect(sent.changes).toHaveLength(1);
+  expect(changesFromSimulateV1(simBlock([simCall([])]), tx(0n)).otherEvents).toBe(0);
+});
+
+test("simulateV1: the submitted tx is required", () => {
+  expect(() => (changesFromSimulateV1 as any)(simBlock([simCall([])]))).toThrow(TypeError);
+  expect(() => (changesFromSimulateV1 as any)(simBlock([simCall([])]), { from: SELF, value: 1 })).toThrow(TypeError);
 });
 
 test("decode known and unknown", () => {

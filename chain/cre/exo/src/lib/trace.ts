@@ -14,8 +14,9 @@ const addr = (word: string) => ("0x" + word.slice(-40)) as Hex;
 const big = (hex?: string) => (hex && hex !== "0x" ? BigInt(hex) : 0n); // invalid hex throws: callers fail closed
 const lower = (s: string) => s.toLowerCase() as Hex;
 
-/** Frames whose `value` does not leave the caller: DELEGATECALL and CALLCODE run foreign code in the caller's
- *  own context, so the value stays where it was. */
+/** Frame types whose `value` field is not a transfer: DELEGATECALL and CALLCODE run foreign code in the caller's
+ *  own context (the value stays with the caller), and STATICCALL cannot carry value. CREATE/CREATE2/SELFDESTRUCT
+ *  and CALL value does move and is counted. */
 const NO_VALUE_MOVE = new Set(["DELEGATECALL", "CALLCODE", "STATICCALL"]);
 
 /** Parse one log into a Change, or null when it is not a well-formed event this library models. */
@@ -69,8 +70,14 @@ export function changesFromCallTrace(root: CallFrame): TraceResult {
 
 /** Asset changes from an eth_simulateV1 result (array of blocks, each with `calls`), run with
  *  `traceTransfers: true`. Reads every call of every block. Any call without status 0x1, or an empty /
- *  malformed result, makes the whole result reverted=true. Logs of a failed call are not counted. */
-export function changesFromSimulateV1(result: any): TraceResult {
+ *  malformed result, makes the whole result reverted=true. Logs of a failed call are not counted.
+ *
+ *  `tx` is the submitted top-level transaction (required). Native ETH only shows up through the synthetic
+ *  traceTransfers logs, and a node that ignores the flag returns none: if `tx.value > 0` and no native change
+ *  of exactly that amount leaves `tx.from`, the send was not seen, so otherEvents is incremented. */
+export function changesFromSimulateV1(result: any, tx: { from: Hex; value: bigint }): TraceResult {
+  if (!tx || typeof tx.value !== "bigint" || typeof tx.from !== "string")
+    throw new TypeError("changesFromSimulateV1: submitted tx { from, value: bigint } is required");
   const blocks = Array.isArray(result) ? result : [];
   const calls = blocks.flatMap((b: any) => (Array.isArray(b?.calls) ? b.calls : []));
   if (!calls.length) return { changes: [], reverted: true, otherEvents: 0 };
@@ -85,5 +92,7 @@ export function changesFromSimulateV1(result: any): TraceResult {
       else otherEvents++;
     }
   }
+  const sender = tx.from.toLowerCase();
+  if (tx.value > 0n && !changes.some((c) => c.kind === "native" && c.from === sender && c.amount === tx.value)) otherEvents++;
   return { changes, reverted, otherEvents };
 }
