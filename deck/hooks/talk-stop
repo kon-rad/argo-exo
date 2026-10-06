@@ -1,0 +1,4 @@
+#!/bin/sh
+DECK_ROOT="${DECK_ROOT:-/srv/deck}"
+export DECK_ROOT
+cd "$DECK_ROOT/app/deck" && exec "$DECK_ROOT/venv/bin/python" -m exo_deck.voice stop
