@@ -38,3 +38,13 @@ class Usage:
             return json.loads(self.path.read_text()).get(self._month(), 0)
         except (OSError, json.JSONDecodeError):
             return 0
+
+
+def safe_add(counter, n: int = 1) -> None:
+    """Count a request without ever losing a good result to a counter I/O failure."""
+    if counter is None:
+        return
+    try:
+        counter.add(n)
+    except OSError as exc:
+        log.warning("NOWNodes usage counter not updated: %s", exc)

@@ -83,3 +83,60 @@ def test_usage_warns_at_80_percent(tmp_path, caplog):
     for _ in range(9):
         u.add()
     assert u.month_total() == 9 and "80%" in caplog.text
+
+
+def _rpc(reply, **kw):
+    return Rpc("ethereum", "SECRETKEY", post=lambda u, **k: reply, sleep=lambda s: None, **kw)
+
+
+class BadJson(Resp):
+    def json(self):
+        raise ValueError("Expecting value")
+
+
+def test_non_json_200_is_rpc_error():
+    with pytest.raises(RpcError, match="invalid JSON from ethereum"):
+        _rpc(BadJson(200)).call("eth_chainId", [])
+
+
+@pytest.mark.parametrize("body", [["x"], "oops", None, 5])
+def test_call_non_dict_reply(body):
+    with pytest.raises(RpcError, match="malformed"):
+        _rpc(Resp(200, body)).call("eth_chainId", [])
+
+
+def test_string_error_field_redacted():
+    with pytest.raises(RpcError, match="boom") as e:
+        _rpc(Resp(200, {"error": "boom SECRETKEY"})).call("m", [])
+    assert "SECRETKEY" not in str(e.value)
+
+
+def test_batch_whole_reply_error_and_malformed():
+    with pytest.raises(RpcError, match="rate limited") as e:
+        _rpc(Resp(200, {"error": {"message": "rate limited SECRETKEY"}})).batch([("a", [])])
+    assert "SECRETKEY" not in str(e.value)
+    with pytest.raises(RpcError, match="malformed"):
+        _rpc(Resp(200, "nope")).batch([("a", [])])
+    with pytest.raises(RpcError, match="bad"):
+        Rpc("ethereum", "K", post=lambda u, **k: Resp(200, [{"id": k["json"][0]["id"], "error": "bad"}])).batch([("a", [])])
+
+
+class BrokenCounter:
+    def add(self, n=1):
+        raise OSError("read-only")
+
+
+def test_counter_oserror_keeps_result(caplog):
+    r = _rpc(Resp(200, {"id": 1, "result": "0x2"}), counter=BrokenCounter())
+    assert r.call("eth_chainId", []) == "0x2"
+    assert "not updated" in caplog.text
+
+
+def test_missing_key_raises_before_request(monkeypatch):
+    monkeypatch.delenv("NOWNODES_API_KEY", raising=False)
+    def post(*a, **k):
+        raise AssertionError("must not send")
+    with pytest.raises(RpcError, match="NOWNODES_API_KEY is not set"):
+        Rpc("ethereum", post=post).call("eth_chainId", [])
+    with pytest.raises(RpcError, match="NOWNODES_API_KEY is not set"):
+        Rpc("ethereum", "", post=post).batch([("a", [])])

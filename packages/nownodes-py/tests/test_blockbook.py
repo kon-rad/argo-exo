@@ -33,3 +33,40 @@ def test_fetcher_shape_and_errors():
 def test_tx():
     bb = Blockbook("base", "K", get=lambda url, **kw: Resp(200, {"txid": url.rsplit("/", 1)[1], "confirmations": 3}))
     assert bb.tx("0xdead")["confirmations"] == 3
+
+
+def test_non_json_200_is_rpc_error():
+    class Bad(Resp):
+        def json(self):
+            raise ValueError("x")
+    with pytest.raises(RpcError, match="invalid JSON from base"):
+        Blockbook("base", "K", get=lambda u, **k: Bad(200, None)).tx("0x1")
+
+
+def test_counter_oserror_keeps_result(caplog):
+    class C:
+        def add(self, n=1):
+            raise OSError("full")
+    assert Blockbook("base", "K", get=lambda u, **k: Resp(200, {"a": 1}), counter=C()).tx("0x1") == {"a": 1}
+    assert "not updated" in caplog.text
+
+
+def test_network_error_context_has_no_key():
+    import requests
+
+    def get(url, **kw):
+        raise requests.ConnectionError("fail SECRETKEY")
+    with pytest.raises(RpcError) as e:
+        Blockbook("base", "SECRETKEY", get=get).tx("0x1")
+    assert "SECRETKEY" not in str(e.value)
+    assert e.value.__context__ is None or "SECRETKEY" not in str(e.value.__context__)
+
+
+def test_missing_key_and_unknown_chain(monkeypatch):
+    monkeypatch.delenv("NOWNODES_API_KEY", raising=False)
+    def get(*a, **k):
+        raise AssertionError("must not send")
+    with pytest.raises(RpcError, match="NOWNODES_API_KEY is not set"):
+        Blockbook("base", get=get).tx("0x1")
+    with pytest.raises(ValueError):
+        Blockbook("solana", "K")
