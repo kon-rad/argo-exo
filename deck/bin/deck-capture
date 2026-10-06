@@ -1,0 +1,57 @@
+#!/usr/bin/env python3
+"""Switch the XIAO clip's camera and mic. The clip polls this state every ~2 s.
+
+  deck-capture camera on|off|toggle
+  deck-capture mic on|off|toggle
+  deck-capture snap          one photo now (camera does not need to be on)
+  deck-capture off           everything off
+  deck-capture status        state + the clip's last heartbeat
+"""
+import json, os, sys, time
+from pathlib import Path
+
+DECK = Path(os.environ.get("DECK_ROOT", "/srv/deck"))
+STATE = DECK / "capture.json"
+CLIP = DECK / "clip-status.json"
+OFF = {"camera": False, "mic": False, "interval": 30, "snap": 0}
+
+
+def read(path, default):
+    try:
+        return {**default, **json.loads(path.read_text())}
+    except Exception:
+        return dict(default)
+
+
+def write(st):
+    st["updated"] = time.time()
+    tmp = STATE.with_name(STATE.name + ".tmp")
+    tmp.write_text(json.dumps(st))
+    tmp.replace(STATE)
+
+
+def main(args):
+    st = read(STATE, OFF)
+    if len(args) == 2 and args[0] in ("camera", "mic") and args[1] in ("on", "off", "toggle"):
+        st[args[0]] = (not st[args[0]]) if args[1] == "toggle" else args[1] == "on"
+    elif args == ["snap"]:
+        st["snap"] = int(st["snap"]) + 1
+    elif args == ["off"]:
+        st = {**OFF, "snap": st["snap"]}
+    elif args in ([], ["status"]):
+        clip = read(CLIP, {})
+        age = time.time() - clip["seen"] if "seen" in clip else None
+        online = age is not None and age < 10
+        print(f"camera={'on' if st['camera'] else 'off'} mic={'on' if st['mic'] else 'off'} snap={st['snap']}")
+        print(f"clip={'online' if online else 'offline'}" + (f" (seen {age:.0f}s ago, recording={clip.get('rec')}, rssi={clip.get('rssi')})" if age is not None else ""))
+        return 0
+    else:
+        print(__doc__.strip())
+        return 1
+    write(st)
+    print(f"camera={'on' if st['camera'] else 'off'} mic={'on' if st['mic'] else 'off'} snap={st['snap']}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

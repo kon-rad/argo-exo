@@ -1,0 +1,15 @@
+[Unit]
+Description=Cyberdeck push-to-talk voice controller
+After=graphical.target
+
+[Service]
+Type=simple
+User=deck
+Environment=DISPLAY=:0
+EnvironmentFile=/srv/deck/.env
+ExecStart=/srv/deck/venv/bin/python3 /srv/deck/voice-control.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=graphical.target

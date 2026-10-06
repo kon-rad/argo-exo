@@ -1,0 +1,12 @@
+[Unit]
+Description=Cyberdeck Ultrahuman ring sync (ring.db)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=deck
+UMask=0077
+EnvironmentFile=/srv/deck/.env
+ExecStart=/srv/deck/venv/bin/python3 /srv/deck/ring_sync.py
+TimeoutStartSec=300
