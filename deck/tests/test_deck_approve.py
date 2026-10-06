@@ -32,3 +32,13 @@ def test_add_queues_oldest_first_and_rejects_non_json(tmp_path):
 
 def test_mode_defaults_to_manual(tmp_path):
     assert load(tmp_path).mode() == "manual"
+
+
+def test_auto_only_requests_it_and_manual_cancels(tmp_path, capsys):
+    mod = load(tmp_path)
+    state = tmp_path / "state"
+    assert mod.main(["auto"]) == 0
+    assert "Press the approve key within 5 seconds" in capsys.readouterr().out
+    assert (state / "auto-request").exists() and mod.mode() == "manual"
+    assert mod.main(["manual"]) == 0
+    assert not (state / "auto-request").exists() and mod.mode() == "manual"

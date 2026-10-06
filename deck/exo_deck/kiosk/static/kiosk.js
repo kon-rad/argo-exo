@@ -10,14 +10,14 @@ export const RENDER = {
     `<div class="turn ${esc(t.role)}"><span class="who">${t.role === 'you' ? 'You' : t.role === 'hermes' ? 'Hermes' : '·'}</span>${esc(t.text)}</div>`).join('')
     : `<p class="muted">Hold Talk and speak.</p>`),
   approvals: (j) => {
-    const row = (t) => `<li><span>${esc(t.summary)}<br><span class="muted">${esc(t.explanation || '')}</span></span>
+    const row = (t) => `<li><span class="clamp">${esc(t.summary)}<br><span class="muted">${esc(t.explanation || '')}</span></span>
       <span class="${t.risk === 'low' ? 'ok' : t.risk === 'high' ? 'bad' : 'warn'}">${esc(t.risk || '?')}${t.auto_eligible === true ? ' · auto' : ''}</span></li>`;
     const sent = j.approved.slice(0, Math.max(0, Math.min(3, 7 - j.pending.length)));   // keep to 7 rows in all
     return `<h1>Approvals · <span class="${j.mode === 'auto' ? 'warn' : 'ok'}">${j.mode === 'auto' ? 'AUTO (low-risk only)' : 'MANUAL'}</span></h1>`
       + (j.auto_request ? `<p class="warn big">Press the approve key to turn on auto-approve</p>` : '')
       + `<p class="muted">${esc(j.pending_total)} pending · the key approves the top one · say "auto approve on/off"</p>`
-      + `<ul class="rows">${j.pending.map(row).join('') || '<li class="muted">Nothing waiting</li>'}</ul>`
-      + (sent.length ? `<ul class="rows">${sent.map((t) => `<li><span>${esc(t.summary)}</span><span class="ok">sent</span></li>`).join('')}</ul>` : '');
+      + `<ul class="rows tight">${j.pending.map(row).join('') || '<li class="muted">Nothing waiting</li>'}</ul>`
+      + (sent.length ? `<ul class="rows tight">${sent.map((t) => `<li><span>${esc(t.summary)}</span><span class="ok">sent</span></li>`).join('')}</ul>` : '');
   },
 };
 

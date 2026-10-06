@@ -74,13 +74,51 @@ def test_expired_items_leave_the_queue(tmp_path):
     assert not (tmp_path / "tx-queue" / "001_old.json").exists()
 
 
-def test_unreadable_item_is_never_auto(tmp_path):
+def test_unreadable_item_is_rejected_not_queued(tmp_path):
     (tmp_path / "tx-queue").mkdir()
     (tmp_path / "tx-queue" / "001_bad.json").write_text("{nope")
     (tmp_path / "tx-queue" / "002_list.json").write_text("[1]")
+    q(tmp_path, "003_ok")
     items = ap.pending(tmp_path, NOW)
-    assert items[0]["summary"] == "(unreadable)" and ap.next_auto(items, NOW) is None
-    assert len(items) == 2 and ap.next_manual(items)["file"] == "001_bad.json"
+    assert [i["id"] for i in items] == ["003_ok"] and ap.next_auto(items, NOW) is None
+    assert (tmp_path / "tx-rejected" / "001_bad.json").exists() and (tmp_path / "tx-rejected" / "002_list.json").exists()
+    assert ap.next_manual(items)["file"] == "003_ok.json"
+
+
+def test_double_press_after_confirm_does_not_approve(tmp_path):
+    q(tmp_path, "001_big", risk="high")
+    ap.request_auto(tmp_path, NOW)
+    assert ap.on_key(tmp_path, NOW + 1, 0.0)[0] == "confirmed-auto"
+    assert ap.on_key(tmp_path, NOW + 1.3, NOW + 1)[0] == "ignored"      # inside the gap
+    assert (tmp_path / "tx-queue" / "001_big.json").exists()
+    action, dest = ap.on_key(tmp_path, NOW + 3, NOW + 1)                # a deliberate later press
+    assert action == "approved" and dest.exists() and not (tmp_path / "tx-queue" / "001_big.json").exists()
+
+
+def test_key_with_empty_queue_is_ignored(tmp_path):
+    assert ap.on_key(tmp_path, NOW, 0.0) == ("ignored", None)
+
+
+def test_release_rechecks_expiry(tmp_path):
+    q(tmp_path, "001", expires_at=NOW + 1)
+    item = ap.pending(tmp_path, NOW)[0]
+    assert ap.release(tmp_path, item, NOW + 2) is None                  # expired since the snapshot
+    assert (tmp_path / "tx-expired" / "001.json").exists() and not (tmp_path / "tx-approved").exists()
+
+
+def test_auto_tick_only_releases_eligible(tmp_path):
+    q(tmp_path, "001_hi", risk="high", auto_eligible=True)
+    q(tmp_path, "002_ok", auto_eligible=True)
+    assert ap.on_tick_auto(tmp_path, NOW, 0.0) is None                   # manual mode
+    ap.set_mode(tmp_path, "auto")
+    dest = ap.on_tick_auto(tmp_path, NOW, 0.0)
+    assert dest.name == "002_ok.json" and (tmp_path / "tx-queue" / "001_hi.json").exists()
+    assert ap.on_tick_auto(tmp_path, NOW, 0.0) is None                   # nothing else eligible
+
+
+def test_explanation_is_truncated_in_panel(tmp_path):
+    q(tmp_path, "001", explanation="x" * 1000)
+    assert len(ap.panel(tmp_path, NOW, 0)["pending"][0]["explanation"]) == 120
 
 
 def test_panel_shape(tmp_path):

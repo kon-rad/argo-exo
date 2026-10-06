@@ -128,32 +128,18 @@ class Deck:
         self.last_sent = mtime(STATE / "tx-sent")
 
     # --- approval key -------------------------------------------------
-    def approve(self, item, source):
-        now = time.time()
-        if now - self.last_approve < APPROVE_GAP_S:
-            return False
-        self.last_approve = now
-        APPROVED.mkdir(parents=True, exist_ok=True)
-        dest = APPROVED / item["file"]
-        try:
-            (QUEUE / item["file"]).replace(dest)       # atomic: approved at most once
-        except OSError:
-            return False
-        log.info("approved %s (%s)", dest.name, source)
-        hook("approve", str(dest))
-        return True
-
     def key_pressed(self):
         now = time.time()
-        if approvals.confirm_auto(STATE, now):          # a press right after "auto approve on"
+        action, dest = approvals.on_key(STATE, now, self.last_approve)
+        if action == "ignored":
+            return
+        self.last_approve = now          # covers the press right after a confirmation too
+        if action == "confirmed-auto":
             log.info("auto-approve turned on by key")
             self.flash("key", 2)
-            return
-        item = approvals.next_manual(approvals.pending(STATE, now))
-        if item:
-            self.approve(item, "key")
         else:
-            log.info("approve (key): queue empty")
+            log.info("approved %s (key)", dest.name)
+            hook("approve", str(dest))
 
     # --- talk -------------------------------------------------------------
     def talk_start(self):
@@ -193,11 +179,12 @@ class Deck:
         threading.Thread(target=go, daemon=True).start()
 
     def tick(self, now):
+        dest = approvals.on_tick_auto(STATE, now, self.last_approve)
+        if dest:
+            self.last_approve = now
+            log.info("approved %s (auto)", dest.name)
+            hook("approve", str(dest))
         items = approvals.pending(STATE, now)
-        if approvals.mode(STATE) == "auto":
-            item = approvals.next_auto(items, now)
-            if item and self.approve(item, "auto"):
-                items = [i for i in items if i["file"] != item["file"]]
         waiting = bool(items)          # anything left needs the key, in either mode
 
         blink = int(now * 2) % 2 == 0

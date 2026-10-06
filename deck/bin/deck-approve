@@ -3,11 +3,16 @@
 
   deck-approve status        mode + queued transactions
   deck-approve manual        each transaction waits for a press of the key (default)
-  deck-approve auto          approve each queued transaction automatically (CRE caps still apply)
+  deck-approve auto          ask to turn on auto-approve; it only takes effect if the approve key is
+                             pressed within 5 s (then only low-risk, auto-eligible items are auto-approved)
   deck-approve add FILE.json queue a transaction (used by the wallet after CRE approves it; also for testing)
 """
 import json, os, shutil, sys, time
 from pathlib import Path
+
+sys.path.insert(0, os.environ.get("EXO_DECK_PKG", "/srv/deck/app/deck"))
+sys.path.insert(1, str(Path(__file__).resolve().parents[1]))   # repo checkout: deck/bin/ -> deck/
+from exo_deck import approvals  # noqa: E402
 
 STATE = Path(os.environ.get("DECK_ROOT", "/srv/deck")) / "state"
 QUEUE, MODE = STATE / "tx-queue", STATE / "approve-mode"
@@ -22,8 +27,11 @@ def mode():
 
 def main(args):
     QUEUE.mkdir(parents=True, exist_ok=True)
-    if args in (["manual"], ["auto"]):
-        MODE.write_text(args[0] + "\n")
+    if args == ["manual"]:
+        approvals.set_mode(STATE, "manual")
+    elif args == ["auto"]:
+        approvals.request_auto(STATE, time.time())      # never switches on without the key press
+        print("Press the approve key within 5 seconds to turn on auto-approve.")
     elif len(args) == 2 and args[0] == "add":
         src = Path(args[1])
         json.loads(src.read_text())                       # refuse anything that isn't JSON
