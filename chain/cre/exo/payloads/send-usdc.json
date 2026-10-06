@@ -1,0 +1,16 @@
+{
+  "_todo": "TODO(konrad): set from to the agent Safe (and config.safe to the same), intent.to and the transfer recipient to mira's address; regenerate data with: cast calldata \"transfer(address,uint256)\" <mira> 1000000; new salt with: cast keccak $(date +%s%N)",
+  "proposal_id": "00000000-0000-0000-0000-000000000001",
+  "source": "voice",
+  "requested_at": 1800000000,
+  "intent": { "kind": "send", "summary": "Send 1 USDC to mira", "token": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48", "amount": "1", "to": "0x000000000000000000000000000000000000bbbb" },
+  "tx": {
+    "chain_id": 1,
+    "to": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+    "value": "0",
+    "data": "0xa9059cbb000000000000000000000000000000000000000000000000000000000000bbbb00000000000000000000000000000000000000000000000000000000000f4240",
+    "salt": "0x5be801c187e9bae8e56a78cf2c0ef2fb0d12a2d5341dda2d27ae122a71e7f4f8"
+  },
+  "from": "0x00000000000000000000000000000000000000aa",
+  "context": { "spent_today_usd": 0 }
+}

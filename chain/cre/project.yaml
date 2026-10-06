@@ -1,0 +1,8 @@
+# CRE project settings. Hand-written to the structure in the CRE docs ("Project Configuration" §3.1, and
+# "Part 1: Project Setup & Simulation"); `cre init` was not run, so diff against a real `cre init` output.
+# Target `mainnet`. The RPC is the loopback NOWNodes header proxy (02-nownodes Task 4): the key stays in the proxy,
+# never in this file.
+mainnet:
+  rpcs:
+    - chain-name: ethereum-mainnet
+      url: http://127.0.0.1:8545/eth

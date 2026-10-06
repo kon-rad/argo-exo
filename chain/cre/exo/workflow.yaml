@@ -1,0 +1,10 @@
+# Workflow settings for `exo`. Hand-written to the layout `cre init` generates ("Part 1: Project Setup &
+# Simulation", Step 4: user-workflow and workflow-artifacts side by side under each target; fields per
+# "Project Configuration" §3.2). Target names must match project.yaml.
+mainnet:
+  user-workflow:
+    workflow-name: "exo-mainnet"
+  workflow-artifacts:
+    workflow-path: "./main.ts"
+    config-path: "./config.mainnet.json"
+    secrets-path: "../secrets.yaml"
