@@ -1,0 +1,14 @@
+[Unit]
+Description=NOWNodes header proxy (loopback only)
+After=network-online.target
+
+[Service]
+User=hermes
+EnvironmentFile=/home/hermes/.config/exo/nownodes.env
+Environment=PYTHONPATH=/home/hermes/argo-exo/packages/nownodes-py
+ExecStart=/usr/bin/python3 /home/hermes/argo-exo/infra/nownodes-proxy/nownodes_proxy.py 8545
+Restart=on-failure
+MemoryMax=40M
+
+[Install]
+WantedBy=multi-user.target
