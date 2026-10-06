@@ -52,7 +52,7 @@ def test_venv_and_paths():
 def test_enabled_units_have_files():
     text = SCRIPT.read_text()
     names = set()
-    for m in re.finditer(r"systemctl (?:enable|restart)(?: --now)? ([\w\- ]+)", text):
+    for m in re.finditer(r"systemctl (?:enable|restart) (?!--now)([\w\- ]+)", text):
         names.update(m.group(1).split())
     assert {"deck-buttons", "lifelog-collector", "cyberdeck-dashboard"} <= names
     for n in names:
