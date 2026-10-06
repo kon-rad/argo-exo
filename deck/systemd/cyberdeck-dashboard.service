@@ -1,6 +1,6 @@
 [Unit]
 Description=Exo kiosk (VITURE dashboard)
-After=network.target srv-deck.mount
+After=network.target srv-deck.mount tailscaled.service
 
 [Service]
 Type=simple

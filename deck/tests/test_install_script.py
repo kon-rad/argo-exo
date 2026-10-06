@@ -58,3 +58,17 @@ def test_enabled_units_have_files():
     for n in names:
         assert (DECK / "systemd" / f"{n}.service").is_file(), n
     assert not (DECK / "systemd" / "cyberdeck-voice.service").exists()
+
+
+def test_ring_sync_installed():
+    assert "install -m 644 $A/ring/ring_sync.py /srv/deck/ring_sync.py" in SCRIPT.read_text()
+    assert (DECK / "ring" / "ring_sync.py").is_file()
+
+
+def test_env_check_precedes_restart():
+    text = SCRIPT.read_text()
+    restart = text.index("systemctl restart deck-buttons")
+    env_check = text.index("[ ! -f /srv/deck/.env ]")
+    assert env_check < restart
+    assert text.index("DECK_UPLOAD_TOKEN") < restart and text.index("ULTRAHUMAN_API_TOKEN") < restart
+    assert "deck-kiosk" in text[:restart] and text.index("deck-kiosk") < restart

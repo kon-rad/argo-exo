@@ -22,6 +22,7 @@ S install -m 755 $A/bin/deck-approve /usr/local/bin/deck-approve
 S install -m 755 $A/bin/deck-capture /usr/local/bin/deck-capture
 install -m 644 $A/buttons/deck-buttons.py /srv/deck/deck-buttons.py
 install -m 644 $A/collector/lifelog-collector.py /srv/deck/lifelog-collector.py
+install -m 644 $A/ring/ring_sync.py /srv/deck/ring_sync.py
 mkdir -p /srv/deck/hooks /srv/deck/state/tx-queue /srv/deck/state/tx-approved /srv/deck/outbox/photos /srv/deck/outbox/audio /srv/deck/media/video
 for h in talk-start talk-stop talk-cancel repeat; do install -m 755 $A/hooks/$h /srv/deck/hooks/$h; done
 for u in $A/systemd/*.service $A/systemd/*.timer; do S install -m 644 "$u" /etc/systemd/system/; done
@@ -31,10 +32,15 @@ S usermod -aG gpio,audio deck || true
 S systemctl daemon-reload
 S systemctl enable deck-buttons lifelog-collector cyberdeck-dashboard
 for t in $A/systemd/*.timer; do S systemctl enable --now "$(basename "$t")"; done
-S systemctl restart deck-buttons lifelog-collector cyberdeck-dashboard
-for k in EXO_BRIDGE_URL EXO_BRIDGE_TOKEN GEMINI_API_KEY EXO_MIC_DEVICE; do
+if [ ! -f /srv/deck/.env ]; then
+  echo "ERROR: /srv/deck/.env is missing on the Pi. Create it from .env.example (deck section), then rerun." >&2
+  exit 1
+fi
+for k in EXO_BRIDGE_URL EXO_BRIDGE_TOKEN GEMINI_API_KEY EXO_MIC_DEVICE DECK_UPLOAD_TOKEN ULTRAHUMAN_API_TOKEN; do
   grep -q "^$k=" /srv/deck/.env || echo "MISSING in /srv/deck/.env: $k"
 done
+[ -x /usr/local/bin/deck-kiosk ] || echo "WARNING: /usr/local/bin/deck-kiosk is missing; the Kiosk double-tap will do nothing until it is installed on the Pi"
+S systemctl restart deck-buttons lifelog-collector cyberdeck-dashboard
 systemctl is-active deck-buttons lifelog-collector cyberdeck-dashboard
 R
 } | ssh "$HOST" 'IFS= read -r PW; export PW; bash -s'
