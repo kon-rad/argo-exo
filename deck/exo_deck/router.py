@@ -39,7 +39,7 @@ NUMBERS = {"one": "1", "two": "2", "three": "3", "four": "4", "five": "5", "six"
 _SHOW = re.compile(r"^(?:show|open|go to|switch to)\s+(?:me\s+)?(?:the\s+)?(?P<what>\w+)(?:\s+(?:panel|view|page))?$", re.I)
 _PANEL_N = re.compile(r"^panel\s+(?P<n>\w+)$", re.I)
 _OPEN_N = re.compile(r"^open\s+(?:number\s+)?(?P<n>\d|one|two|three|four|five|six|seven|eight|nine)$", re.I)
-_AUTO = re.compile(r"^(?:(?:turn|switch)\s+)?auto[\s-]?approve\s+(?P<state>on|off)(?:\s+please)?$", re.I)
+_AUTO = re.compile(r"^(?:(?:turn|switch)\s+)?auto[\s-]?approve\s+(?P<state>on|off)(?:[\s,]+please)?$", re.I)
 
 
 def _local(text: str) -> Route | None:
