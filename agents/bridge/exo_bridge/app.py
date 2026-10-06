@@ -64,7 +64,7 @@ def create_app(cfg: Config, kanban, talker, blueprints=()) -> Flask:
             return jsonify(reply=talker.ask(text, session))
         except TalkError as exc:
             log.warning("talk failed: %s", exc)
-            return jsonify(error=str(exc)), 502
+            return jsonify(error="hermes unavailable"), 502
 
     @app.post("/tasks")
     @authed
@@ -81,7 +81,7 @@ def create_app(cfg: Config, kanban, talker, blueprints=()) -> Flask:
             task = kanban.create(title, text, agent, cfg.max_runtime, idem)
         except KanbanError as exc:
             log.warning("create failed: %s", exc)
-            return jsonify(error=str(exc)), 502
+            return jsonify(error="kanban failed"), 502
         if cfg.telegram_chat_id and task.get("id"):
             try:
                 kanban.subscribe(task["id"], cfg.telegram_chat_id)
@@ -95,7 +95,8 @@ def create_app(cfg: Config, kanban, talker, blueprints=()) -> Flask:
         try:
             rows = kanban.list()
         except KanbanError as exc:
-            return jsonify(error=str(exc)), 502
+            log.warning("list failed: %s", exc)
+            return jsonify(error="kanban failed"), 502
         return jsonify(tasks=[{k: t.get(k) for k in BOARD_FIELDS} for t in rows])
 
     for bp in blueprints:

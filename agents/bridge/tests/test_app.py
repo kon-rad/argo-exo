@@ -67,7 +67,7 @@ def test_talk_rejects_bad_input(body):
 
 def test_talk_upstream_failure_is_502():
     r = client(talker=FakeTalker(fail=True)).post("/talk", json={"text": "hi"}, headers=AUTH)
-    assert r.status_code == 502 and "hermes down" in r.json["error"]
+    assert r.status_code == 502 and r.json == {"error": "hermes unavailable"}
 
 
 def test_create_task_and_subscribe():
@@ -115,3 +115,24 @@ def test_register_extension_routes():
     c = app.test_client()
     assert c.get("/ping").status_code == 401           # extension routes are authed too
     assert c.get("/ping", headers=AUTH).json == {"pong": True}
+
+
+def test_502_bodies_do_not_leak_detail():
+    class Leaky(FakeKanban):
+        def create(self, *a):
+            raise KanbanError("create: SECRET stderr http://127.0.0.1:8642")
+
+        def list(self):
+            raise KanbanError("SECRET")
+
+    class LeakyTalker(FakeTalker):
+        def ask(self, *a):
+            raise TalkError("SECRET http://127.0.0.1:8642")
+
+    c = client(kanban=Leaky(), talker=LeakyTalker())
+    for r in (c.post("/talk", json={"text": "hi"}, headers=AUTH),
+              c.post("/tasks", json={"text": "x", "agent": "builder"}, headers=AUTH),
+              c.get("/board", headers=AUTH)):
+        assert r.status_code == 502
+        assert "SECRET" not in r.get_data(as_text=True) and "127.0.0.1" not in r.get_data(as_text=True)
+    assert c.post("/tasks", json={"text": "x", "agent": "builder"}, headers=AUTH).json == {"error": "kanban failed"}

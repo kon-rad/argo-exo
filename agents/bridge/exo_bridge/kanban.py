@@ -6,6 +6,11 @@ import subprocess
 from typing import Callable
 
 
+# Verified against the live CLI on the droplet (Hermes v0.19.0):
+#   hermes kanban notify-subscribe --platform PLATFORM --chat-id CHAT_ID task_id
+#   hermes kanban --board X list --json   -> a JSON list
+
+
 class KanbanError(RuntimeError):
     pass
 
@@ -33,7 +38,8 @@ class Kanban:
 
     def create(self, title: str, body: str, assignee: str, max_runtime: str, idempotency_key: str) -> dict:
         # Options first, then "--", then the title: a transcript can never become a flag.
-        return self._json("create", "--body", body, "--assignee", assignee,
+        # --body=<text> as ONE argv item: a body such as "-x" or "--help" must not be read as a flag.
+        return self._json("create", f"--body={body}", "--assignee", assignee,
                           "--max-runtime", max_runtime, "--idempotency-key", idempotency_key,
                           "--created-by", "exo-deck", "--json", "--", title)
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ipaddress
 from dataclasses import dataclass
 from typing import Mapping
 
@@ -24,9 +25,14 @@ class Config:
         token = env.get("EXO_BRIDGE_TOKEN", "")
         if len(token) < 32:
             raise ValueError("EXO_BRIDGE_TOKEN must be at least 32 characters (openssl rand -hex 32)")
-        host = env.get("EXO_BRIDGE_HOST", "").strip()
-        if host in ("", "0.0.0.0", "::"):
-            raise ValueError("EXO_BRIDGE_HOST must be the droplet's tailnet IP, never empty or a wildcard")
+        host = env.get("EXO_BRIDGE_HOST", "").strip().strip("[]")
+        try:
+            addr = ipaddress.ip_address(host)
+        except ValueError:
+            addr = None
+        if addr is None or addr.is_unspecified:
+            raise ValueError("EXO_BRIDGE_HOST must be the droplet's tailnet IP, never empty, a wildcard or a hostname")
+        host = str(addr)
         key = env.get("API_SERVER_KEY", "")
         if not key:
             raise ValueError("API_SERVER_KEY is required (same value as the gateway's api_server key)")

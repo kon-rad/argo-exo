@@ -23,7 +23,8 @@ def test_create_builds_the_cli_call():
     assert task == TASK
     cmd = r.calls[0]
     assert cmd[:5] == ["hermes", "kanban", "--board", "exo", "create"]
-    for flag, val in [("--body", "full text"), ("--assignee", "researcher"),
+    assert "--body=full text" in cmd
+    for flag, val in [("--assignee", "researcher"),
                       ("--max-runtime", "30m"), ("--idempotency-key", "idem-1"),
                       ("--created-by", "exo-deck")]:
         assert cmd[cmd.index(flag) + 1] == val
@@ -68,3 +69,11 @@ def test_list_and_subscribe():
     assert k.list() == [TASK]
     k.subscribe("t_1", "12345")
     assert r.calls[1][4:] == ["notify-subscribe", "--platform", "telegram", "--chat-id", "12345", "t_1"]
+
+
+@pytest.mark.parametrize("body", ["-x", "--help", "--json"])
+def test_flaglike_body_stays_inside_one_item(body):
+    r = Runner(json.dumps(TASK))
+    Kanban("hermes", "exo", r).create("t", body, "researcher", "30m", "i")
+    cmd = r.calls[0]
+    assert f"--body={body}" in cmd and cmd.count(body) == (1 if body == "--json" else 0)
