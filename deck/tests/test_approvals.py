@@ -127,9 +127,10 @@ def test_panel_shape(tmp_path):
     (tmp_path / "tx-approved").mkdir()
     (tmp_path / "tx-approved" / "000_done.json").write_text(json.dumps({"summary": "done"}))
     p = ap.panel(tmp_path, NOW, 0)
-    assert p["pending_total"] == 9 and len(p["pending"]) == 7 and p["mode"] == "manual"
+    assert p["pending_total"] == 9 and len(p["pending"]) == 5 and p["pending_more"] == 4 and p["mode"] == "manual"
     assert p["approved"][0]["summary"] == "done" and p["auto_request"] is False
-    assert len(ap.panel(tmp_path, NOW, 1)["pending"]) == 2      # page 2
+    p2 = ap.panel(tmp_path, NOW, 1)
+    assert len(p2["pending"]) == 4 and p2["pending_more"] == 0      # page 2
 
 
 def test_panel_auto_request_goes_stale(tmp_path):

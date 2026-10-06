@@ -10,7 +10,8 @@ from pathlib import Path
 
 from .state import _read, _write
 
-PAGE = 7
+PAGE = 7              # rows for plain lists
+PENDING_PAGE = 5      # two-line pending rows that fit the 900 px safe area
 AUTO_WINDOW_S = 5.0
 
 
@@ -161,7 +162,8 @@ def panel(state: Path, now: float, page: int) -> dict:
     items = pending(state, now)
     asked = _asked_at(state)
     return {"mode": mode(state), "pending_total": len(items),
+            "pending_more": max(0, len(items) - (page + 1) * PENDING_PAGE),
             "pending": [dict(i, explanation=str(i.get("explanation") or "")[:120])
-                        for i in items[page * PAGE:(page + 1) * PAGE]],
+                        for i in items[page * PENDING_PAGE:(page + 1) * PENDING_PAGE]],
             "approved": recent_approved(state),
             "auto_request": asked is not None and 0 <= now - asked <= AUTO_WINDOW_S}
