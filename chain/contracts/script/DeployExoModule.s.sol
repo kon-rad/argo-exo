@@ -12,8 +12,13 @@ import {ExoModule} from "../src/ExoModule.sol";
 ///      CRE_SIMULATOR, EXO_CONFIRM_CHAIN_ID.
 ///      CRE_SIMULATOR must be non-zero: it is the tx.origin every report must come from while reports go through
 ///      the permissionless MockKeystoneForwarder. With it zero and no workflow identity set, ExoModule would refuse
-///      every report anyway (NoReportAuth). Moving to a real DON is an owner action after deploy:
-///      setExpectedWorkflowId and/or setExpectedAuthor first, then setDemoReporter(address(0)).
+///      every report anyway (NoReportAuth). Moving to a real DON is an owner action after deploy, in the exact
+///      order of the checklist in chain/README.md ("Moving ExoModule from simulation to a DON"):
+///      1. setForwarderAddress(real KeystoneForwarder for the chain, from Chainlink's docs, not the mock);
+///      2. setExpectedWorkflowId and/or setExpectedAuthor;
+///      3. only then setDemoReporter(address(0)).
+///      A workflow identity behind the mock forwarder is forgeable by anyone. Never clear demoReporter while the
+///      mock is set, and never call setForwarderAddress(address(0)).
 contract DeployExoModule is Script {
     function run() external returns (ExoModule m) {
         require(vm.envUint("EXO_CONFIRM_CHAIN_ID") == block.chainid, "EXO_CONFIRM_CHAIN_ID != target chain");

@@ -487,6 +487,28 @@ contract ExoModuleTest is Test {
         assertEq(sink.hits(), 1);
     }
 
+    /// Documents the hazard the README migration checklist prevents: the mock forwarder doesn't verify
+    /// signatures, so with demoReporter cleared and only a workflow identity set, anyone who calls it with forged
+    /// metadata gets an approval through. Here `forwarder` stands in for the permissionless MockKeystoneForwarder.
+    /// This test passing is the hazard, not a feature; the guard is operational (switch the forwarder first).
+    function test_hazard_identity_behind_mock_forwarder_is_forgeable() public {
+        bytes32 wfId = keccak256("exo-guardian");
+        address author = address(0xA0);
+        vm.startPrank(owner);
+        m.setExpectedWorkflowId(wfId);
+        m.setExpectedAuthor(author);
+        m.setDemoReporter(address(0));                                 // the step done too early
+        vm.stopPrank();
+        bytes32 h = m.approvalHash(address(sink), 0.5 ether, data, salt);
+        bytes memory forged = abi.encodePacked(wfId, bytes10(0), author, bytes2(0));   // public values, no DON
+        vm.prank(forwarder, address(0xBAD));                           // attacker relays via the open mock
+        m.onReport(forged, abi.encode(uint8(1), h, uint64(block.timestamp + 600), bytes32(0)));
+        assertEq(m.approvedUntil(h), uint64(block.timestamp + 600));   // forged approval accepted
+        vm.prank(deck);
+        m.execute(address(sink), 0.5 ether, data, salt);
+        assertEq(address(sink).balance, 0.5 ether);
+    }
+
     function test_identity_author_only_is_enough() public {
         vm.startPrank(owner);
         m.setDemoReporter(address(0));

@@ -21,6 +21,9 @@ interface ISafe {
 ///        the allowance until it is revoked.
 ///      - Reports are accepted only if the demo reporter (simulation, tx.origin) or a workflow identity
 ///        (expected workflow ID or author, from ReceiverTemplate) is configured; otherwise they revert.
+///        A workflow identity only authenticates behind the real KeystoneForwarder: behind the mock forwarder the
+///        metadata is caller-supplied. Migration order is in chain/README.md (real forwarder, then identity,
+///        then clear demoReporter); never setForwarderAddress(address(0)).
 ///      - Approvals live at most MAX_APPROVAL_TTL; a refuse revokes a pending approval of the same hash.
 contract ExoModule is ReceiverTemplate {
     uint8 internal constant APPROVE = 1;

@@ -20,6 +20,24 @@ exact hash, only when the deck hot key asks, at most once, and not while the mod
 - **Reports need an authenticated source.** While reports come through the permissionless MockKeystoneForwarder
   (simulated today), each must be sent from the `demoReporter` key (`tx.origin`). With no demo reporter and no
   workflow identity (expected workflow ID or author) configured, every report reverts.
+- **A workflow identity only authenticates reports behind the real KeystoneForwarder.** The real forwarder verifies
+  DON signatures before it passes the metadata on; the mock forwarder doesn't, so anyone calling it can forge
+  any workflow ID or author and approve any hash (`test_hazard_identity_behind_mock_forwarder_is_forgeable`).
+  - Never clear `demoReporter` while the mock forwarder is set.
+  - Never call `setForwarderAddress(address(0))`: it removes the forwarder check entirely.
+  - The simulator key is dedicated. Demo mode trusts `tx.origin`, so any transaction that key signs can deliver a
+    report. It must sign nothing else.
 - **Approvals are short-lived and revocable.** An approval must expire in the future and within 1 hour of landing.
   A refuse report for the same hash revokes it; an executed hash can never run again.
 - **Freeze** comes from a Guardian report, the deck or the owner. Only the owner can unfreeze.
+
+## Moving ExoModule from simulation to a DON
+
+Owner actions, in exactly this order, each confirmed onchain before the next:
+
+1. `setForwarderAddress(<real KeystoneForwarder for the chain>)`. Take the address from Chainlink's CRE docs
+   (forwarder directory for that chain), not the mock forwarder used in simulation, and check it on a block explorer.
+2. `setExpectedWorkflowId(<deployed workflow ID>)` and/or `setExpectedAuthor(<workflow owner address>)`.
+3. Only then, `setDemoReporter(address(0))`.
+
+Doing step 3 before step 1 leaves the module accepting forged reports from anyone. Every step needs Konrad's go-ahead.
