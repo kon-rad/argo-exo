@@ -11,8 +11,12 @@ jobs:
       - run: pip install -r requirements-dev.txt
       - run: python -m pytest -q
       - run: bash scripts/check-public.sh .
-      - uses: gitleaks/gitleaks-action@v2
-        env: { GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}" }
+      - name: gitleaks
+        run: |
+          V=8.21.2
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${V}/gitleaks_${V}_linux_x64.tar.gz" -o "$RUNNER_TEMP/gl.tgz"
+          mkdir "$RUNNER_TEMP/gl" && tar -xzf "$RUNNER_TEMP/gl.tgz" -C "$RUNNER_TEMP/gl"
+          "$RUNNER_TEMP/gl/gitleaks" git . --no-banner --redact
   contracts:
     runs-on: ubuntu-latest
     steps:
