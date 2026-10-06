@@ -1,0 +1,33 @@
+name: ci
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - run: pip install -r requirements-dev.txt
+      - run: python -m pytest -q
+      - run: bash scripts/check-public.sh .
+      - uses: gitleaks/gitleaks-action@v2
+        env: { GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}" }
+  contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { submodules: recursive }
+      - uses: foundry-rs/foundry-toolchain@v1
+      - run: '[ -d chain/contracts ] && (cd chain/contracts && forge test) || echo "no chain/contracts yet"'
+      - run: '[ -d site/contracts ] && (cd site/contracts && forge test) || echo "no site/contracts yet"'
+  typescript:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - uses: actions/setup-node@v4
+        with: { node-version: "20" }
+      - run: '[ -d packages/nownodes-ts ] && (cd packages/nownodes-ts && bun install && bun test) || true'
+      - run: '[ -d chain/cre/exo ] && (cd chain/cre/exo && bun install && bun test) || true'
+      - run: '[ -d site/js-tests ] && node --test site/js-tests/ || true'

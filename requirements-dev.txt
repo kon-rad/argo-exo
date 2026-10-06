@@ -1,0 +1,4 @@
+pytest>=8
+flask>=3
+waitress>=3
+requests>=2.31
