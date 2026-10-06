@@ -3,10 +3,13 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import time
 from pathlib import Path
 from typing import Callable
+
+from exo_nownodes.wss import is_confirmed
 
 from .state import _write
 
@@ -40,7 +43,7 @@ class Announcer:
 
     def handle(self, tx: dict) -> str | None:
         txid = tx.get("txid", "")
-        if not txid:
+        if not txid or not is_confirmed(tx):     # mempool notice: stay silent until it is mined
             return None
         addrs = {a.lower() for part in ("vin", "vout") for io in tx.get(part, []) for a in io.get("addresses", [])}
         if self.module in addrs:
@@ -59,6 +62,8 @@ def main() -> None:
     from . import tts
     from .config import Settings
 
+    logging.basicConfig(level=logging.INFO)
+    logging.getLogger("websockets").setLevel(logging.WARNING)   # DEBUG logs the request line, which carries the key
     s = Settings.from_env()
     module = os.environ["EXO_MODULE_ADDRESS"]
     rpc = Rpc("ethereum")
