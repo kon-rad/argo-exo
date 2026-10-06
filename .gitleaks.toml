@@ -1,2 +1,7 @@
 [extend]
 useDefault = true
+
+[[allowlists]]
+description = "Ethereum addresses (public contract addresses, not private keys)"
+regexTarget = "secret"
+regexes = ["^0x[0-9a-fA-F]{40}$"]
