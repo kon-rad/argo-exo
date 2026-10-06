@@ -42,6 +42,9 @@ export type ChangeOut = {
 export type GuardResult = {
   proposal_id: string | null; verdict: "approve" | "refuse"; risk: Risk; auto_eligible: boolean;
   explanation: string; reasons: string[]; tx_hash: Hex | null; expires_at: number; changes: ChangeOut[]; report_tx: string;
+  /** USD leaving the Safe, priced from the simulated changes; set on an approval only (null otherwise). The runner
+   *  sums it from the ledger into `context.spent_today_usd`, so the daily cap counts what actually got approved. */
+  usd_out: number | null;
 };
 
 const lowerKeys = <V>(o: Record<string, V>) => Object.fromEntries(Object.entries(o ?? {}).map(([k, v]) => [k.toLowerCase(), v]));
@@ -86,8 +89,8 @@ export function runGuard(input: unknown, cfg: Config, ports: GuardPorts): GuardR
   // `bound` is set only once the request is proven to be for this Safe, chain and module: only then may a report be
   // written. Otherwise anyone able to fire the trigger could revoke a pending approval with a mis-bound request
   // that shares its hash.
-  const ctx: { req?: GuardRequest; txHash?: Hex; bound: boolean; sim?: TraceResult; explanation: string; expiresAt: bigint } =
-    { bound: false, explanation: "", expiresAt: 0n };
+  const ctx: { req?: GuardRequest; txHash?: Hex; bound: boolean; sim?: TraceResult; explanation: string; expiresAt: bigint; usdOut: number | null } =
+    { bound: false, explanation: "", expiresAt: 0n, usdOut: null };
   const meta = lowerKeys(cfg.tokens) as TokenMeta;
 
   let d: Decision = failClosed(() => {
@@ -125,7 +128,7 @@ export function runGuard(input: unknown, cfg: Config, ports: GuardPorts): GuardR
     }
 
     // 5. Rules, on the simulated changes (never on the English).
-    const usdOut = usdOutflow(changes, self, meta, ethUsd, policy.stablecoins);
+    const usdOut = (ctx.usdOut = usdOutflow(changes, self, meta, ethUsd, policy.stablecoins));
     const rules = checkRules({ changes, self, source: r.source, intent: r.intent, usdOut,
       spentTodayUsd: r.context?.spent_today_usd ?? 0, meta, to: r.tx.to, module: lower(cfg.module) }, policy);
     const violations = [...rules.violations, ...extra];
@@ -171,6 +174,7 @@ export function runGuard(input: unknown, cfg: Config, ports: GuardPorts): GuardR
     expires_at: Number(ctx.expiresAt),
     changes: ctx.sim ? formatChanges(ctx.sim.changes, meta) : [],
     report_tx: reportTx,
+    usd_out: d.verdict === "approve" && ctx.usdOut !== null && Number.isFinite(ctx.usdOut) ? ctx.usdOut : null,
   };
 }
 

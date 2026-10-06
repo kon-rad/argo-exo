@@ -72,7 +72,7 @@ test("a 20 USDC send to a known contact approves, auto-eligible, and writes a ki
   const r = runGuard(sendReq(), cfg, p);
   const hash = approvalHash(1n, MODULE, USDC, 0n, usdcTrace.input as Hex, SALT);
   expect(r).toMatchObject({ proposal_id: "p-1", verdict: "approve", risk: "low", auto_eligible: true, tx_hash: hash,
-    expires_at: NOW + 600, report_tx: "0xreport", explanation: "You pay 20 USDC to mira.eth. Nothing else changes." });
+    expires_at: NOW + 600, report_tx: "0xreport", explanation: "You pay 20 USDC to mira.eth. Nothing else changes.", usd_out: 20 });
   expect(r.reasons).toEqual(["plain transfer", "matches intent"]);
   expect(r.changes).toEqual([{ kind: "erc20", asset: "USDC", token: USDC, from: SAFE, to: MIRA, amount: "20", raw_amount: "20000000" }]);
   expect(p.reports).toHaveLength(1);
@@ -110,7 +110,7 @@ test("expiry comes from the workflow clock, never requested_at", () => {
 test("a millisecond clock refuses and writes a kind-2 report with no expiry", () => {
   const p = ports({ now: NOW * 1000 });
   const r = runGuard(sendReq(), cfg, p);
-  expect(r).toMatchObject({ verdict: "refuse", risk: "high", auto_eligible: false, expires_at: 0 });
+  expect(r).toMatchObject({ verdict: "refuse", risk: "high", auto_eligible: false, expires_at: 0, usd_out: null });
   const [kind, , exp, rh] = decodeReport(p.reports[0]);
   expect([kind, exp, rh]).toEqual([2, 0n, reasonHash(r.reasons)]);
 });

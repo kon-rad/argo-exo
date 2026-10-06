@@ -41,3 +41,34 @@ Owner actions, in exactly this order, each confirmed onchain before the next:
 3. Only then, `setDemoReporter(address(0))`.
 
 Doing step 3 before step 1 leaves the module accepting forged reports from anyone. Every step needs Konrad's go-ahead.
+
+## The ledger and guardian-run
+
+`chain/ledger/*.sql` is the Postgres ledger: run `schema.sql`, `views.sql`, then `roles.sql` (it takes the two
+passwords as psql variables; see its header). guardian-run (`chain/runner/exo_guardian`) writes as `exo_writer`; the
+kiosk reads `exo_tx_v` and `exo_cre_calls_v` as `exo_reader`, which can't see the base tables.
+
+`exo-bridge` serves the Guardian routes (`/guard`, `/approvals/pending`, `/approvals/<id>/executed`, `/freeze`) when
+`EXO_LEDGER_WRITER_DSN` is set and `chain/runner` is on its `PYTHONPATH`; otherwise they answer 503. The Hermes skill
+calls `python -m exo_guardian.cli guard '<request json>'` with the same env.
+
+An item reaches the deck's approval queue only when all of these hold:
+
+| Check | Otherwise |
+|---|---|
+| The workflow answered `approve` for this proposal id, in a well-formed result | `refused` |
+| The run was `--broadcast` (`EXO_GUARDIAN_BROADCAST=1`) | `simulated`, never queued |
+| `report_tx` is a real, non-zero tx hash (the approval is onchain) | `refused` |
+| The workflow's `tx_hash` equals the approval hash recomputed in Python from the exact to/value/data/salt sent, with `chainId` and `module` from `exo/config.mainnet.json` | `refused` ("approval hash mismatch") |
+| The approval hasn't expired (the workflow's `expires_at`) | `refused`; `pending` never returns expired items |
+
+The runner sets the salt (`os.urandom(32)`), the proposal id, `requested_at` and `context.spent_today_usd` (today's
+UTC `usd_out` of executed and unexpired waiting approvals, from the ledger); the requester can't. A simulator
+failure, timeout or unreadable output is a refusal recorded with its latency, and the bridge answers 502
+`guardian unavailable`.
+
+**`EXO_GUARDIAN_BROADCAST=1` sends real mainnet report transactions from the simulator key on every guard and
+freeze.** Leave it unset until Konrad gives the go-ahead. Without it, `/freeze` answers `{"ok": false, "simulated": true}`.
+
+PgStore tests run only against a throwaway database (`EXO_TEST_PG_ADMIN_DSN`, `EXO_TEST_PG_WRITER_DSN`,
+`EXO_TEST_PG_READER_DSN`; see `chain/runner/tests/guardian_pg.py`). They truncate the ledger.
