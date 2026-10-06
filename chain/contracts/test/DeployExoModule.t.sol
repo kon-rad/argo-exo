@@ -19,7 +19,7 @@ contract DeployExoModuleTest is Test {
         vm.setEnv("EXO_CONFIRM_CHAIN_ID", vm.toString(confirmChainId));
     }
 
-    function test_deploy_script_wires_hands_off_and_refuses_wrong_chain() public {
+    function test_deploy_script_wires_hands_off_and_refuses_bad_env() public {
         _env(block.chainid);
         ExoModule m = new DeployExoModule().run();
         assertEq(m.owner(), address(0x0C));
@@ -35,6 +35,12 @@ contract DeployExoModuleTest is Test {
         _env(block.chainid + 1);
         DeployExoModule s = new DeployExoModule();
         vm.expectRevert(bytes("EXO_CONFIRM_CHAIN_ID != target chain"));
+        s.run();
+
+        // a zero simulator is refused rather than deploying a module that rejects every report
+        _env(block.chainid);
+        vm.setEnv("CRE_SIMULATOR", vm.toString(address(0)));
+        vm.expectRevert(bytes("CRE_SIMULATOR must be set"));
         s.run();
     }
 }

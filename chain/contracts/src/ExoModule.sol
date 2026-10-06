@@ -12,11 +12,22 @@ interface ISafe {
 ///         kind 1 = approve, 2 = refuse (recorded), 3 = freeze.
 /// @dev Approval hash: keccak256(abi.encode(block.chainid, address(this), to, value, keccak256(data), salt)),
 ///      pinned by chain/test-vectors/approval-hash.json. Calls go through the Safe as CALL (operation 0), never
-///      DELEGATECALL. Native value is capped per tx and per UTC day; ERC-20 amounts are not capped onchain.
+///      DELEGATECALL, and never to the Safe or this module (no owner/module/guard/threshold/cap changes).
+///      Threat model:
+///      - Native value is capped per tx and per UTC calendar day (block.timestamp / 1 days), so up to twice the
+///        day cap can leave across a UTC midnight. ERC-20 amounts are NOT capped onchain; they are bounded by
+///        the Guardian's rules and the human key.
+///      - An approved approve/permit/setApprovalForAll grant outlives the single transaction: the spender keeps
+///        the allowance until it is revoked.
+///      - Reports are accepted only if the demo reporter (simulation, tx.origin) or a workflow identity
+///        (expected workflow ID or author, from ReceiverTemplate) is configured; otherwise they revert.
+///      - Approvals live at most MAX_APPROVAL_TTL; a refuse revokes a pending approval of the same hash.
 contract ExoModule is ReceiverTemplate {
     uint8 internal constant APPROVE = 1;
     uint8 internal constant REFUSE = 2;
     uint8 internal constant FREEZE = 3;
+    /// @notice Longest an approval may live from the moment its report lands.
+    uint64 public constant MAX_APPROVAL_TTL = 1 hours;
 
     ISafe public immutable safe;
     address public deck;
@@ -37,6 +48,9 @@ contract ExoModule is ReceiverTemplate {
     event Executed(bytes32 indexed txHash, address to, uint256 value);
     event Frozen(address by);
     event Unfrozen();
+    event CapsSet(uint256 maxNativePerTx, uint256 maxNativePerDay);
+    event DeckSet(address deck);
+    event DemoReporterSet(address reporter);
 
     error NotDeck();
     error NotApproved();
@@ -48,14 +62,19 @@ contract ExoModule is ReceiverTemplate {
     error BadReporter();
     error UnknownKind(uint8 kind);
     error SafeCallFailed();
+    error SelfCall();
+    error NoReportAuth();
+    error BadExpiry();
+    error ZeroAddress();
+    error BadCaps();
 
     constructor(address forwarder, address safe_, address deck_, address owner_, uint256 perTx, uint256 perDay)
         ReceiverTemplate(forwarder)
     {
+        if (safe_ == address(0) || deck_ == address(0) || owner_ == address(0)) revert ZeroAddress();
         safe = ISafe(safe_);
         deck = deck_;
-        maxNativePerTx = perTx;
-        maxNativePerDay = perDay;
+        _setCaps(perTx, perDay);
         _transferOwnership(owner_);
     }
 
@@ -65,12 +84,21 @@ contract ExoModule is ReceiverTemplate {
 
     /// @dev Called by ReceiverTemplate.onReport after the forwarder (and any workflow identity) checks pass.
     function _processReport(bytes calldata report) internal override {
-        if (demoReporter != address(0) && tx.origin != demoReporter) revert BadReporter();
+        if (demoReporter != address(0)) {
+            if (tx.origin != demoReporter) revert BadReporter();
+        } else if (this.getExpectedWorkflowId() == bytes32(0) && this.getExpectedAuthor() == address(0)) {
+            // the template keeps these private behind external getters, hence the self-staticcall
+            // fail closed: with no reporter and no workflow identity, anyone who can reach the forwarder could approve
+            revert NoReportAuth();
+        }
         (uint8 kind, bytes32 h, uint64 exp, bytes32 reason) = abi.decode(report, (uint8, bytes32, uint64, bytes32));
         if (kind == APPROVE) {
+            // rejects already-expired approvals and ones that would outlive MAX_APPROVAL_TTL (e.g. a ms timestamp)
+            if (exp <= block.timestamp || exp > block.timestamp + MAX_APPROVAL_TTL) revert BadExpiry();
             approvedUntil[h] = exp;
             emit Approved(h, exp, reason);
         } else if (kind == REFUSE) {
+            delete approvedUntil[h]; // revokes a pending approval; a used hash stays used
             emit Refused(h, reason);
         } else if (kind == FREEZE) {
             frozen = true;
@@ -84,6 +112,7 @@ contract ExoModule is ReceiverTemplate {
     function execute(address to, uint256 value, bytes calldata data, bytes32 salt) external returns (bytes32 h) {
         if (msg.sender != deck) revert NotDeck();
         if (frozen) revert IsFrozen();
+        if (to == address(safe) || to == address(this)) revert SelfCall();
         h = approvalHash(to, value, data, salt);
         uint64 exp = approvedUntil[h];
         if (exp == 0) revert NotApproved();
@@ -112,11 +141,23 @@ contract ExoModule is ReceiverTemplate {
     }
 
     function setCaps(uint256 perTx, uint256 perDay) external onlyOwner {
-        maxNativePerTx = perTx;
-        maxNativePerDay = perDay;
+        _setCaps(perTx, perDay);
     }
 
-    function setDeck(address d) external onlyOwner { deck = d; }
+    function setDeck(address d) external onlyOwner {
+        deck = d;
+        emit DeckSet(d);
+    }
 
-    function setDemoReporter(address r) external onlyOwner { demoReporter = r; }
+    function setDemoReporter(address r) external onlyOwner {
+        demoReporter = r;
+        emit DemoReporterSet(r);
+    }
+
+    function _setCaps(uint256 perTx, uint256 perDay) internal {
+        if (perTx > perDay) revert BadCaps();
+        maxNativePerTx = perTx;
+        maxNativePerDay = perDay;
+        emit CapsSet(perTx, perDay);
+    }
 }
