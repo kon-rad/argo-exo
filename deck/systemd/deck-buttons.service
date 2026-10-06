@@ -6,6 +6,7 @@ After=multi-user.target
 Type=simple
 User=deck
 Environment=GPIOZERO_PIN_FACTORY=lgpio
+Environment=PYTHONPATH=/srv/deck/app/deck
 Environment=XDG_RUNTIME_DIR=/run/user/1000
 Environment=WAYLAND_DISPLAY=wayland-0
 EnvironmentFile=/srv/deck/.env

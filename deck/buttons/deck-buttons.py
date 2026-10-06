@@ -19,17 +19,22 @@ Lights follow state files, so other services (voice loop, CRE, wallet) only need
 
 Approval queue (state/):
   tx-queue/*.json      transactions CRE has approved, waiting for the human (oldest name first)
-  approve-mode         "manual" (default) or "auto"; auto approves each queued transaction by itself
+  approve-mode         "manual" (default) or "auto"; auto approves only Guardian low-risk, auto_eligible,
+                       unexpired items; everything else waits for the key. Turning auto on needs a key press
+                       within 5 s of state/auto-request. Expired items move to tx-expired/ unsent.
   tx-approved/         a press (or auto) moves the oldest file here, then runs hooks/approve <file>,
                        which signs and broadcasts it through NOWNodes
   tx-sent              the signer rewrites this after each broadcast (e.g. the tx hash); the key flashes
 
 Hooks are optional executables in /srv/deck/hooks/; a missing hook is logged, not an error.
 """
-import logging, json, os, subprocess, threading, time
+import logging, json, os, subprocess, sys, threading, time
 from pathlib import Path
 
 from gpiozero import Button, LED
+
+sys.path.insert(0, os.environ.get("EXO_DECK_PKG", "/srv/deck/app/deck"))
+from exo_deck import approvals   # noqa: E402
 
 DECK = Path(os.environ.get("DECK_ROOT", "/srv/deck"))
 HOOKS, STATE = DECK / "hooks", DECK / "state"
@@ -60,17 +65,6 @@ def mtime(path):
         return path.stat().st_mtime
     except OSError:
         return None
-
-
-def queued():
-    return sorted(QUEUE.glob("*.json")) if QUEUE.exists() else []
-
-
-def approve_mode():
-    try:
-        return (STATE / "approve-mode").read_text().strip().lower() or "manual"
-    except OSError:
-        return "manual"
 
 
 class Gestures:
@@ -134,28 +128,32 @@ class Deck:
         self.last_sent = mtime(STATE / "tx-sent")
 
     # --- approval key -------------------------------------------------
-    def approve_next(self, source):
+    def approve(self, item, source):
         now = time.time()
         if now - self.last_approve < APPROVE_GAP_S:
             return False
-        pending = queued()
-        if not pending:
-            log.info("approve (%s): queue empty", source)
-            return False
         self.last_approve = now
         APPROVED.mkdir(parents=True, exist_ok=True)
-        dest = APPROVED / pending[0].name
+        dest = APPROVED / item["file"]
         try:
-            pending[0].replace(dest)       # atomic: a transaction can only be approved once
+            (QUEUE / item["file"]).replace(dest)       # atomic: approved at most once
         except OSError:
             return False
-        log.info("approved %s (%s), %d left", dest.name, source, len(pending) - 1)
+        log.info("approved %s (%s)", dest.name, source)
         hook("approve", str(dest))
         return True
 
     def key_pressed(self):
-        if approve_mode() == "manual":
-            self.approve_next("key")
+        now = time.time()
+        if approvals.confirm_auto(STATE, now):          # a press right after "auto approve on"
+            log.info("auto-approve turned on by key")
+            self.flash("key", 2)
+            return
+        item = approvals.next_manual(approvals.pending(STATE, now))
+        if item:
+            self.approve(item, "key")
+        else:
+            log.info("approve (key): queue empty")
 
     # --- talk -------------------------------------------------------------
     def talk_start(self):
@@ -195,14 +193,16 @@ class Deck:
         threading.Thread(target=go, daemon=True).start()
 
     def tick(self, now):
-        mode = approve_mode()
-        pending = queued()
-        if mode == "auto" and pending:
-            self.approve_next("auto")
+        items = approvals.pending(STATE, now)
+        if approvals.mode(STATE) == "auto":
+            item = approvals.next_auto(items, now)
+            if item and self.approve(item, "auto"):
+                items = [i for i in items if i["file"] != item["file"]]
+        waiting = bool(items)          # anything left needs the key, in either mode
 
         blink = int(now * 2) % 2 == 0
         if not self.flashing["key"]:
-            self.led["key"].value = mode == "manual" and bool(pending) and blink
+            self.led["key"].value = waiting and blink
         self.led["listen"].value = self.talking or (STATE / "listening").exists()
         self.led["rec"].value = self.clip_recording()
         self.led["wait"].value = (STATE / "waiting-key").exists() and blink
@@ -224,7 +224,7 @@ def main():
     for d in (STATE, QUEUE, APPROVED):
         d.mkdir(parents=True, exist_ok=True)
     deck = Deck()
-    log.info("deck-buttons ready (approve mode: %s)", approve_mode())
+    log.info("deck-buttons ready (approve mode: %s)", approvals.mode(STATE))
     while True:
         deck.tick(time.time())
         time.sleep(0.1)

@@ -27,6 +27,7 @@ def _write(path: Path, text: str) -> None:
     try:
         with os.fdopen(fd, "w") as f:
             f.write(text)
+        os.chmod(tmp, 0o644)      # mkstemp makes 0600; other services' users must still read it
         os.replace(tmp, path)
     except BaseException:
         try:
@@ -100,7 +101,7 @@ def recent_turns(state: Path, n: int = 7) -> list[dict]:
 
 
 def snapshot(state: Path) -> dict:
-    queue = state / "tx-queue"
+    from . import approvals     # lazy: approvals imports this module's helpers
     try:
         pg = int(_read(state / "page", "0"))
     except ValueError:
@@ -108,8 +109,8 @@ def snapshot(state: Path) -> dict:
     return {
         "panel": get_panel(state), "page": pg,
         "listening": (state / "listening").exists(),
-        "mode": _read(state / "approve-mode", "manual").lower() or "manual",
-        "pending": len(list(queue.glob("*.json"))) if queue.exists() else 0,
+        "mode": approvals.mode(state),
+        "pending": len(approvals.pending(state, time.time())),
         "frozen": (state / "frozen").exists(),
         "heard": _read(state / "last-heard.txt")[:300],
         "reply": _read(state / "last-reply.txt")[:300],

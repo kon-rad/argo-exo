@@ -1,18 +1,20 @@
 import logging
 import os
 import sys
+import time
 
 import requests
 from waitress import serve
 
-from .. import state as st
+from .. import approvals, state as st
 from ..config import Settings
 from .app import create_app
 
 
 def build_providers(s: Settings) -> dict:
     providers = {"talk": lambda page: {"turns": st.recent_turns(s.state, 7)}}
-    # 10.2-10.8 add: approvals, agents, transactions, wallets, cre, body, sensors, media (add each one's imports here too)
+    providers["approvals"] = lambda page: approvals.panel(s.state, time.time(), page)
+    # 10.3-10.8 add: agents, transactions, wallets, cre, body, sensors, media (add each one's imports here too)
     return providers
 
 
