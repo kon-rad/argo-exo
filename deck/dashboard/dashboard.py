@@ -5,7 +5,7 @@ Cyberdeck dashboard — VITURE kiosk at http://localhost:8080
 Reads: /srv/deck/body.db (SQLite), /srv/deck/outbox/, Tailscale droplet ping.
 Start: python3 /srv/deck/dashboard.py
 Autostart: see cyberdeck-dashboard.service systemd unit
-Env: DECK_DROPLET=hermes-droplet  (Tailscale hostname of the DO droplet)
+Env: DECK_DROPLET  (Tailscale hostname of the droplet, read from env; unset disables the droplet check)
 """
 import json, os, time, subprocess, glob
 from pathlib import Path
@@ -15,7 +15,7 @@ import sqlite3
 DECK_ROOT = Path(os.environ.get("DECK_ROOT", "/srv/deck"))
 DB_PATH   = DECK_ROOT / "body.db"
 OUTBOX    = DECK_ROOT / "outbox"
-DROPLET   = os.environ.get("DECK_DROPLET", "hermes-droplet")
+DROPLET   = os.environ.get("DECK_DROPLET", "")
 
 app = Flask(__name__)
 
@@ -63,6 +63,8 @@ def _outbox_count():
 
 
 def _droplet_ok():
+    if not DROPLET:
+        return False
     try:
         r = subprocess.run(
             ["ping", "-c", "1", "-W", "2", DROPLET],

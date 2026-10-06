@@ -11,10 +11,10 @@
 #include "SD.h"
 #include "time.h"
 
-#include "secrets.h"                          // WIFI_SSID_S, WIFI_PASS_S, DECK_TOKEN_S (not in the vault)
+#include "secrets.h"                          // WIFI_SSID_S, WIFI_PASS_S, DECK_TOKEN_S, DECK_HOST_S (not in the vault)
 const char* WIFI_SSID = WIFI_SSID_S;
 const char* WIFI_PASS = WIFI_PASS_S;
-const char* PI_HOST   = "cyberdeck";           // mDNS name without .local
+const char* PI_HOST   = DECK_HOST_S;           // mDNS name without .local
 const char* TOKEN     = DECK_TOKEN_S;
 const uint16_t PI_PORT = 8081;
 const int MIC_CHUNK_S = 10;                    // mic stops at most this long after "off"
