@@ -1,0 +1,14 @@
+[Unit]
+Description=Exo live confirmations (NOWNodes WSS)
+After=network-online.target
+
+[Service]
+User=deck
+EnvironmentFile=/srv/deck/.env
+Environment=PYTHONPATH=/srv/deck/app/deck:/srv/deck/app/packages/nownodes-py
+ExecStart=/srv/deck/venv/bin/python -m exo_deck.confirm
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -8,8 +8,9 @@ HOST="${DECK_HOST:?set DECK_HOST, e.g. deck@<deck-hostname>}"
 read -rsp "Pi sudo password: " PW; echo
 
 # Minimal first hop (same stdin-password pattern): make sure the target dir exists and is deck-owned.
-printf '%s\n' "$PW" | ssh "$HOST" 'IFS= read -r PW; printf "%s\n" "$PW" | sudo -S -p "" mkdir -p /srv/deck/app/deck; printf "%s\n" "$PW" | sudo -S -p "" chown deck:deck /srv/deck /srv/deck/app /srv/deck/app/deck'
+printf '%s\n' "$PW" | ssh "$HOST" 'IFS= read -r PW; printf "%s\n" "$PW" | sudo -S -p "" mkdir -p /srv/deck/app/deck /srv/deck/app/packages/nownodes-py; printf "%s\n" "$PW" | sudo -S -p "" chown -R deck:deck /srv/deck/app/packages; printf "%s\n" "$PW" | sudo -S -p "" chown deck:deck /srv/deck /srv/deck/app /srv/deck/app/deck'
 rsync -az --delete --exclude tests --exclude __pycache__ --exclude .venv ./ "$HOST:/srv/deck/app/deck/"
+rsync -az --delete --exclude tests --exclude __pycache__ ../packages/nownodes-py/ "$HOST:/srv/deck/app/packages/nownodes-py/"
 
 { printf '%s\n' "$PW"; cat <<'R'
 set -e
@@ -40,6 +41,7 @@ for k in EXO_BRIDGE_URL EXO_BRIDGE_TOKEN GEMINI_API_KEY EXO_MIC_DEVICE DECK_UPLO
   grep -q "^$k=" /srv/deck/.env || echo "MISSING in /srv/deck/.env: $k"
 done
 [ -x /usr/local/bin/deck-kiosk ] || echo "WARNING: /usr/local/bin/deck-kiosk is missing; the Kiosk double-tap will do nothing until it is installed on the Pi"
+echo "NOTE: deck-confirm.service is installed but not enabled. Once NOWNODES_API_KEY, EXO_WATCH_ADDRESSES and EXO_MODULE_ADDRESS are in /srv/deck/.env, run: sudo systemctl enable --now deck-confirm"
 S systemctl restart deck-buttons lifelog-collector cyberdeck-dashboard
 systemctl is-active deck-buttons lifelog-collector cyberdeck-dashboard
 R
