@@ -7,14 +7,16 @@ import os
 import sys
 import urllib.error
 import urllib.request
+from urllib.parse import urlsplit
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from exo_nownodes import hosts
-from exo_nownodes.rpc import Rpc
+from exo_nownodes.rpc import redact
 
 ALIASES = {"eth": "ethereum", "mainnet": "ethereum", "ethereum": "ethereum", "base": "base",
            "arbitrum": "arbitrum", "arb": "arbitrum", "polygon": "polygon", "matic": "polygon"}
 LOOPBACK = {"127.0.0.1", "::1", "localhost"}
+HOST_NAMES = {"127.0.0.1", "localhost", "[::1]"}
 MAX_BODY = 1_000_000
 UPSTREAM_TIMEOUT = 30
 
@@ -27,7 +29,6 @@ def nownodes_forward(chain: str, body: bytes) -> tuple[int, bytes]:
     key = os.environ.get("NOWNODES_API_KEY", "")
     if not key:
         return 503, _err("NOWNODES_API_KEY is not set")
-    redact = Rpc(chain, api_key=key)._redact
     req = urllib.request.Request(f"https://{hosts.RPC[chain]}", data=body, method="POST",
                                  headers={"api-key": key, "Content-Type": "application/json"})
     try:
@@ -37,7 +38,7 @@ def nownodes_forward(chain: str, body: bytes) -> tuple[int, bytes]:
         status, out = e.code, e.read()
     except (urllib.error.URLError, TimeoutError, OSError):
         return 502, _err("upstream unreachable")
-    return status, redact(out.decode("utf-8", "replace")).encode()
+    return status, redact(out.decode("utf-8", "replace"), key).encode()
 
 
 def make_server(host: str, port: int, forward) -> ThreadingHTTPServer:
@@ -53,7 +54,18 @@ def make_server(host: str, port: int, forward) -> ThreadingHTTPServer:
             self.wfile.write(out)
 
         def do_POST(self):
-            chain = ALIASES.get(self.path.strip("/").split("/")[0].lower())
+            # Browser defences: a web page (or DNS rebinding) must not reach the keyed upstream.
+            if self.headers.get("Origin") is not None:
+                return self._reply(403, _err("browser requests refused"))
+            host = (self.headers.get("Host") or "").strip().lower()
+            name, _, hport = host.rpartition(":") if not host.endswith("]") and ":" in host else (host, "", "")
+            if name not in HOST_NAMES or (hport and hport != str(self.server.server_address[1])):
+                return self._reply(403, _err("bad Host"))
+            ctype = (self.headers.get("Content-Type") or "").split(";")[0].strip().lower()
+            if ctype != "application/json":
+                return self._reply(415, _err("Content-Type must be application/json"))
+            segs = [x for x in urlsplit(self.path).path.split("/") if x]
+            chain = ALIASES.get(segs[0].lower()) if len(segs) == 1 else None
             if not chain:
                 return self._reply(404, _err("unknown chain"))
             try:

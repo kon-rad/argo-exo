@@ -32,6 +32,40 @@ def test_forwards_by_chain_alias():
     srv.shutdown()
 
 
+def raw(port, path, body=b"{}", headers=None):
+    import http.client
+    c = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+    c.putrequest("POST", path, skip_host=True, skip_accept_encoding=True)
+    for k, v in (headers or {}).items():
+        c.putheader(k, v)
+    c.putheader("Content-Length", str(len(body)))
+    c.endheaders(body)
+    r = c.getresponse()
+    return r.status, r.read()
+
+
+def test_browser_defences():
+    seen = []
+    srv, port = serve(lambda c, b: (seen.append(b) or (200, b"{}")))
+    J = "application/json"
+    assert raw(port, "/eth", headers={"Host": "evil.com", "Content-Type": J})[0] == 403
+    assert raw(port, "/eth", headers={"Host": f"127.0.0.1:{port + 1}", "Content-Type": J})[0] == 403
+    assert raw(port, "/eth", headers={"Host": f"127.0.0.1:{port}", "Origin": "http://evil.com", "Content-Type": J})[0] == 403
+    assert raw(port, "/eth", headers={"Host": f"127.0.0.1:{port}", "Content-Type": "text/plain"})[0] == 415
+    assert seen == []
+    for h in (f"127.0.0.1:{port}", "127.0.0.1", f"localhost:{port}", f"[::1]:{port}"):
+        assert raw(port, "/eth", headers={"Host": h, "Content-Type": "application/json; charset=utf-8"})[0] == 200
+    srv.shutdown()
+
+
+def test_path_handling():
+    srv, port = serve(lambda c, b: (200, b"{}"))
+    assert post(port, "/eth?x=1", b"{}")[0] == 200
+    assert post(port, "/eth/extra", b"{}")[0] == 404
+    assert post(port, "/", b"{}")[0] == 404
+    srv.shutdown()
+
+
 def test_unknown_chain_404():
     srv, port = serve(lambda c, b: (200, b""))
     assert post(port, "/solana", b"{}")[0] == 404
@@ -84,3 +118,8 @@ def test_nownodes_forward_missing_key(monkeypatch):
     monkeypatch.delenv("NOWNODES_API_KEY", raising=False)
     status, out = np.nownodes_forward("base", b"{}")
     assert status == 503 and b"NOWNODES_API_KEY" in out
+
+
+def test_public_redact_helper():
+    from exo_nownodes.rpc import redact
+    assert redact("a k1 b", "k1") == "a *** b" and redact("a", "") == "a"

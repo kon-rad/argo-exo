@@ -20,6 +20,10 @@ class RpcError(RuntimeError):
     pass
 
 
+def redact(text: str, key: str) -> str:
+    return text.replace(key, "***") if key else text
+
+
 def default_usage() -> Usage:
     return Usage(Path(os.environ.get("EXO_NOWNODES_USAGE", Path.home() / ".cache" / "exo-nownodes" / "usage.json")))
 
@@ -35,7 +39,7 @@ class Rpc:
         self.post, self.sleep, self.counter = post, sleep, counter
 
     def _redact(self, text: str) -> str:
-        return text.replace(self.key, "***") if self.key else text
+        return redact(text, self.key)
 
     def _err_text(self, err) -> str:
         msg = err.get("message", err) if isinstance(err, dict) else err
