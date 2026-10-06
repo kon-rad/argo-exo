@@ -8,7 +8,7 @@ import { judgeFromReply, latestRoundDataParams, openRouterRequest, parseEthUsd, 
 import { judgePrompt, type Judgement, type Risk } from "./judge";
 import { approvalExpiry, reportPayload } from "./payload";
 import { parseFreezeReason, parseGuardRequest, type GuardRequest } from "./request";
-import { checkRules, parsePolicy, usdOutflow } from "./rules";
+import { checkRules, parsePolicy, usdOutflow, type Policy } from "./rules";
 import { changesFromCallTrace, changesFromSimulateV1 } from "./trace";
 import type { Change, Hex, TokenMeta, TraceResult } from "./types";
 import { decide, failClosed, understood, type Decision } from "./verdict";
@@ -74,6 +74,8 @@ export function requestViolations(req: GuardRequest, cfg: Config): string[] {
   return v;
 }
 
+const refuseWith = (reasons: string[]): Decision => ({ verdict: "refuse", risk: "high", auto_eligible: false, reasons });
+
 const isNativeOutflow = (c: Change, me: string) => c.kind === "native" && c.from.toLowerCase() === me && c.to.toLowerCase() !== me;
 
 /** The full guard pipeline (§4.3): parse, simulate the exact transaction, price, rules, explain, two judges, decide,
@@ -81,8 +83,11 @@ const isNativeOutflow = (c: Change, me: string) => c.kind === "native" && c.from
  *  anywhere before the verdict is a refusal (failClosed). */
 export function runGuard(input: unknown, cfg: Config, ports: GuardPorts): GuardResult {
   // Filled in as the pipeline gets that far; whatever is missing after a throw stays at its safe default.
-  const ctx: { req?: GuardRequest; txHash?: Hex; sim?: TraceResult; explanation: string; expiresAt: bigint } =
-    { explanation: "", expiresAt: 0n };
+  // `bound` is set only once the request is proven to be for this Safe, chain and module: only then may a report be
+  // written. Otherwise anyone able to fire the trigger could revoke a pending approval with a mis-bound request
+  // that shares its hash.
+  const ctx: { req?: GuardRequest; txHash?: Hex; bound: boolean; sim?: TraceResult; explanation: string; expiresAt: bigint } =
+    { bound: false, explanation: "", expiresAt: 0n };
   const meta = lowerKeys(cfg.tokens) as TokenMeta;
 
   let d: Decision = failClosed(() => {
@@ -90,10 +95,14 @@ export function runGuard(input: unknown, cfg: Config, ports: GuardPorts): GuardR
     const self = r.from;
     ctx.txHash = approvalHash(BigInt(cfg.chainId), lower(cfg.module), r.tx.to, r.tx.value, r.tx.data, r.tx.salt);
     const early = requestViolations(r, cfg);
-    if (early.length) return { verdict: "refuse", risk: "high", auto_eligible: false, reasons: early };
+    if (early.length) return refuseWith(early);
+    ctx.bound = true;
 
-    const s = ports.secrets();
-    const policy = parsePolicy(s.POLICY_JSON); // strict; a bad policy throws → refuse
+    // Fixed reasons, never e.message: a JSON parse error quotes the policy text ("Unexpected identifier \"mira\"").
+    let s: Secrets;
+    try { s = ports.secrets(); } catch { return refuseWith(["secrets unavailable"]); }
+    let policy: Policy;
+    try { policy = parsePolicy(s.POLICY_JSON); } catch { return refuseWith(["policy unreadable"]); }
     const chain = chainForId(cfg.chainId);
     const rpc = <T>(method: string, params: unknown[]): T => {
       const reply = ports.post(rpcHttpRequest(chain, s.NOWNODES_API_KEY, method, params));
@@ -138,8 +147,8 @@ export function runGuard(input: unknown, cfg: Config, ports: GuardPorts): GuardR
   if (d.verdict !== "approve") ctx.expiresAt = 0n;
 
   let reportTx = "";
-  // A report needs the exact hash and a real module; with neither there is nothing onchain to approve or revoke.
-  if (ctx.txHash && !isZeroAddress(cfg.module)) {
+  // A report needs a request bound to this Safe, chain and module (so its hash is ours to approve or revoke).
+  if (ctx.bound && ctx.txHash && !isZeroAddress(cfg.module)) {
     try {
       reportTx = ports.writeReport(reportPayload(d.verdict === "approve" ? 1 : 2, ctx.txHash, ctx.expiresAt, d.reasons.join("; ")));
     } catch {

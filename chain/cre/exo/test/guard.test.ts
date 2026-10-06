@@ -133,19 +133,24 @@ test("a reverted trace and an unknown function both refuse", () => {
 });
 
 test("any throwing port is a refusal (failClosed), and the refusal is still reported for a known hash", () => {
-  for (const o of [{ post: () => { throw new Error("rpc down"); } }, { secrets: () => { throw new Error("vault"); } }] as const) {
+  for (const [o, reason] of [[{ post: () => { throw new Error("rpc down"); } }, "the check failed: rpc down"],
+    [{ secrets: () => { throw new Error("vault said NOWNODES_API_KEY=abc"); } }, "secrets unavailable"]] as const) {
     const p = ports(o as any);
     const r = runGuard(sendReq(), cfg, p);
-    expect(r).toMatchObject({ verdict: "refuse", risk: "high" });
-    expect(r.reasons[0]).toStartWith("the check failed: ");
+    expect(r).toMatchObject({ verdict: "refuse", risk: "high", reasons: [reason] });
     expect(decodeReport(p.reports[0])[0]).toBe(2);
   }
 });
 
-test("a policy with a typo'd key refuses", () => {
-  const r = runGuard(sendReq(), cfg, ports({ policy: JSON.stringify({ ...POLICY, allow_aproval_for_all: true }) }));
-  expect(r.verdict).toBe("refuse");
-  expect(runGuard(sendReq(), cfg, ports({ policy: "not json" })).verdict).toBe("refuse");
+test("an unreadable policy refuses with a fixed reason that quotes none of it", () => {
+  for (const policy of [JSON.stringify({ ...POLICY, allow_aproval_for_all: true }), "{address_book: mira}", "not json",
+    JSON.stringify({ ...POLICY, address_book: { "0xmira": "mira.eth" } })]) {
+    const p = ports({ policy });
+    const r = runGuard(sendReq(), cfg, p);
+    expect(r).toMatchObject({ verdict: "refuse", reasons: ["policy unreadable"], explanation: "Refused: policy unreadable." });
+    expect(JSON.stringify(r)).not.toMatch(/mira|aproval|address_book/);
+    expect(decodeReport(p.reports[0])[0]).toBe(2); // the request itself is bound to the Safe: its refusal is reported
+  }
 });
 
 test("a malformed request refuses with no hash and writes nothing", () => {
@@ -165,8 +170,13 @@ test("a request not from the Safe, or for another chain, refuses before simulati
   const r = runGuard(sendReq({ from: MIRA }), cfg, p);
   expect(r.reasons).toEqual(["is not from the agent Safe this Guardian protects"]);
   expect(p.posts).toHaveLength(0);
-  expect(decodeReport(p.reports[0])[0]).toBe(2);
-  expect(runGuard(sendReq({}, { chain_id: 8453 }), cfg, ports()).reasons).toEqual(["is for chain 8453, not chain 1"]);
+  // Not bound to this Safe/chain: refuse in the result, but write nothing (it would revoke a real approval sharing
+  // the hash, since the hash does not bind `from`).
+  expect(p.reports).toHaveLength(0);
+  expect(r.report_tx).toBe("");
+  const c = ports();
+  expect(runGuard(sendReq({}, { chain_id: 8453 }), cfg, c).reasons).toEqual(["is for chain 8453, not chain 1"]);
+  expect(c.reports).toHaveLength(0);
   // checksummed / uppercase input addresses are the same Safe
   expect(runGuard(sendReq({ from: SAFE.toUpperCase().replace("0X", "0x") }), cfg, ports()).verdict).toBe("approve");
 });
@@ -177,8 +187,23 @@ test("an unconfigured module or Safe refuses and writes no report", () => {
     const r = runGuard(sendReq(), c, p);
     expect(r.verdict).toBe("refuse");
     expect(r.reasons[0]).toContain("not configured");
-    expect(p.reports.length).toBe(c.module === cfg.module ? 1 : 0);
+    expect(p.reports).toHaveLength(0);
   }
+});
+
+test("a request with the same hash as a pending approval but the wrong from cannot revoke it; a bound refusal can", () => {
+  const legit = ports();
+  const ok = runGuard(sendReq(), cfg, legit);
+  expect(ok.verdict).toBe("approve");
+  const attack = ports();
+  const r = runGuard(sendReq({ from: MIRA, source: "camera" }), cfg, attack);
+  expect(r).toMatchObject({ verdict: "refuse", tx_hash: ok.tx_hash, report_tx: "" });
+  expect(attack.reports).toHaveLength(0);
+  const bound = ports();
+  const refused = runGuard(sendReq({ source: "camera" }), cfg, bound); // same hash, bound to the Safe, refused by rules
+  expect(refused.verdict).toBe("refuse");
+  const [kind, h] = decodeReport(bound.reports[0]);
+  expect([kind, h]).toEqual([2, ok.tx_hash!]);
 });
 
 test("calling the module or the Safe directly refuses", () => {

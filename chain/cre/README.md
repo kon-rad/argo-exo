@@ -82,7 +82,10 @@ moment.
 
 ## Before deploying (not done)
 
-- The HTTP triggers use `{}`, which is valid only in simulation. A deployed workflow needs `authorizedKeys` with
-  the bridge's signing address (TODO(konrad) in `main.ts`).
+- **Set `authorizedKeys` on both HTTP triggers (`guard` and `freeze`) before any deploy.** They take `{}` today,
+  which works only in simulation. Each one needs the bridge's signing address (TODO(konrad) in `main.ts`). Without
+  it, anyone who can reach the trigger can freeze the module, or spend the workflow's quota on refusals.
+- A guard request that isn't bound to this Safe, chain and module is refused, and no report is written for it.
+  Only a correctly bound request can write a kind-2 report, which revokes a pending approval with the same hash.
 - Order the ExoModule migration as described in `chain/README.md`: forwarder first, then identity, then
   `demoReporter`.
