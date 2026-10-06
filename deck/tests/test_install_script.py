@@ -47,3 +47,14 @@ def test_venv_and_paths():
             body = h.read_text()
             assert "$DECK_ROOT/venv/bin/python" in body
             assert "$DECK_ROOT/app/deck" in body
+
+
+def test_enabled_units_have_files():
+    text = SCRIPT.read_text()
+    names = set()
+    for m in re.finditer(r"systemctl (?:enable|restart)(?: --now)? ([\w\- ]+)", text):
+        names.update(m.group(1).split())
+    assert {"deck-buttons", "lifelog-collector", "cyberdeck-dashboard"} <= names
+    for n in names:
+        assert (DECK / "systemd" / f"{n}.service").is_file(), n
+    assert not (DECK / "systemd" / "cyberdeck-voice.service").exists()

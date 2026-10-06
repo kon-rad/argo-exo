@@ -1,0 +1,14 @@
+[Unit]
+Description=Cyberdeck lifelog collector
+After=network.target srv-deck.mount
+
+[Service]
+Type=simple
+User=deck
+EnvironmentFile=/srv/deck/.env
+ExecStart=/srv/deck/venv/bin/python3 /srv/deck/lifelog-collector.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
