@@ -49,8 +49,12 @@ passwords as psql variables; see its header). guardian-run (`chain/runner/exo_gu
 kiosk reads `exo_tx_v` and `exo_cre_calls_v` as `exo_reader`, which can't see the base tables.
 
 `exo-bridge` serves the Guardian routes (`/guard`, `/approvals/pending`, `/approvals/<id>/executed`, `/freeze`) when
-`EXO_LEDGER_WRITER_DSN` is set and `chain/runner` is on its `PYTHONPATH`; otherwise they answer 503. The Hermes skill
-calls `python -m exo_guardian.cli guard '<request json>'` with the same env.
+`EXO_LEDGER_WRITER_DSN` is set and `chain/runner` is on its `PYTHONPATH`; otherwise they answer 503. The writer DSN
+lives only in the bridge's env. The Hermes skill calls `python -m exo_guardian.cli guard '<request json>'` with
+`EXO_BRIDGE_URL` and `EXO_BRIDGE_TOKEN`; the CLI POSTs to the bridge's `/guard` and never touches the ledger.
+
+Guards run one at a time, end to end (a Postgres advisory lock from reading `spent_today_usd` to recording the
+verdict), so two concurrent requests can't both spend the same daily headroom. `/freeze` doesn't wait on that lock.
 
 An item reaches the deck's approval queue only when all of these hold:
 

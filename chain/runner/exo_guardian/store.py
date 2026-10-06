@@ -8,11 +8,15 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Protocol
+import threading
+from contextlib import contextmanager
+from typing import Iterator, Protocol
 
 STATUSES = ("proposed", "refused", "simulated", "waiting_key", "executed", "failed")
 REAL_TX = re.compile(r"^0x(?!0{64}$)[0-9a-f]{64}$")
 DAY = 86_400
+GUARD_LOCK_KEY = 0x45584F4755415244   # "EXOGUARD": the one advisory lock every guard call holds
+GUARD_LOCK_TIMEOUT_S = 300            # longer than one simulation (240 s); a stuck holder fails the next guard
 
 
 def is_real_tx(h) -> bool:
@@ -37,6 +41,7 @@ def _day_start(now: float) -> int:
 
 
 class Store(Protocol):
+    def guard_lock(self) -> Iterator[None]: ...   # a context manager: one guard at a time, across processes
     def insert_proposal(self, p: dict) -> None: ...
     def record_verdict(self, pid: str, result: dict, latency_ms: int, status: str) -> None: ...
     def record_call(self, handler: str, verdict: str, reason: str, latency_ms: int, pid: str | None = None) -> None: ...
@@ -59,14 +64,27 @@ def _queue_item(pid, p, v) -> dict:
 class MemoryStore:
     def __init__(self):
         self.proposals, self.verdicts, self.executions, self.calls = {}, {}, {}, []
+        self._guard = threading.Lock()
+
+    @contextmanager
+    def guard_lock(self):
+        if not self._guard.acquire(timeout=GUARD_LOCK_TIMEOUT_S):
+            raise RuntimeError("timed out waiting for the guard lock")
+        try:
+            yield
+        finally:
+            self._guard.release()
 
     def insert_proposal(self, p):
         self.proposals[p["id"]] = dict(p, status="proposed")
 
     def record_verdict(self, pid, result, latency_ms, status):
         _check_status(status, result)
+        if pid in self.verdicts:   # verdicts.proposal_id is the primary key
+            raise RuntimeError(f"proposal {pid} already has a verdict")
         self.verdicts[pid] = dict(result)
-        self.proposals[pid]["status"] = status
+        if self.proposals[pid]["status"] == "proposed":
+            self.proposals[pid]["status"] = status
         self.record_call("guard", result["verdict"], (result.get("reasons") or [""])[0], latency_ms, pid)
 
     def record_call(self, handler, verdict, reason, latency_ms, pid=None):
@@ -128,6 +146,23 @@ class PgStore:
         import psycopg
         from psycopg.rows import dict_row
         return psycopg.connect(self.dsn, row_factory=dict_row)   # `with` commits on success, rolls back on error
+
+    @contextmanager
+    def guard_lock(self):
+        """A session-level advisory lock on its own connection, held for the whole guard call (spent_today read →
+        simulation → verdict). Serialises guards across bridge threads and the CLI's processes; if this process dies,
+        Postgres drops the connection and the lock with it."""
+        import psycopg
+        with psycopg.connect(self.dsn, autocommit=True) as c:
+            c.execute(f"SET lock_timeout = '{GUARD_LOCK_TIMEOUT_S}s'")
+            c.execute("SELECT pg_advisory_lock(%s)", (GUARD_LOCK_KEY,))
+            try:
+                yield
+            finally:
+                try:
+                    c.execute("SELECT pg_advisory_unlock(%s)", (GUARD_LOCK_KEY,))
+                except psycopg.Error:
+                    pass   # closing the connection releases it anyway
 
     def insert_proposal(self, p):
         with self._conn() as c:

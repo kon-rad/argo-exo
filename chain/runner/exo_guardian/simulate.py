@@ -31,37 +31,37 @@ class SimulationError(RuntimeError):
         self.kind = kind
 
 
+# A marker line *starts* with the marker, after optional whitespace and a status glyph (✓, ►, ANSI already
+# stripped). "[USER LOG] Workflow Simulation Result: …" or a result whose text quotes the marker is not one.
+_MARKER_LINE = re.compile(r"^[^\w\[\]{}\"'<>]*" + re.escape(MARKER) + r"(.*)$")
+
+
 def _is_result(val) -> bool:
     return isinstance(val, dict) and ("verdict" in val or "ok" in val)
 
 
-def _decode(text: str):
-    text = text.strip()
-    if not text or text[0] not in '{"':
-        return None
+def parse_result(stdout: str) -> dict:
+    """The workflow's result: the value belonging to the one marker line, i.e. the rest of that line, or the next
+    non-empty line when the marker ends its line. It must be a single JSON object (or a JSON string of one) on that
+    line. No marker, more than one marker, or anything else there raises: nothing else in the output is trusted."""
+    lines = [_ANSI.sub("", ln) for ln in stdout.splitlines()]
+    marks = [(i, m) for i, ln in enumerate(lines) if (m := _MARKER_LINE.match(ln))]
+    if len(marks) != 1:
+        raise SimulationError(f"expected one result marker, found {len(marks)}: " + stdout.strip()[-300:],
+                              "no workflow result")
+    i, m = marks[0]
+    value = m.group(1).strip()
+    if not value:
+        value = next((ln.strip() for ln in lines[i + 1:] if ln.strip()), "")
     try:
-        val = json.loads(text)
+        val = json.loads(value)
         if isinstance(val, str):
             val = json.loads(val)
     except (json.JSONDecodeError, TypeError):
-        return None
-    return val if _is_result(val) else None
-
-
-def parse_result(stdout: str) -> dict:
-    """The workflow's result: the first decodable result after the last marker, else the last one anywhere."""
-    lines = [_ANSI.sub("", ln) for ln in stdout.splitlines()]
-    marks = [i for i, ln in enumerate(lines) if MARKER in ln]
-    if marks:
-        i = marks[-1]
-        candidates = [lines[i].split(MARKER, 1)[1]] + lines[i + 1:]
-    else:
-        candidates = list(reversed(lines))
-    for ln in candidates:
-        val = _decode(ln)
-        if val is not None:
-            return val
-    raise SimulationError("no workflow result in simulator output: " + stdout.strip()[-300:], "no workflow result")
+        val = None
+    if not _is_result(val):
+        raise SimulationError("the result marker's value is not a workflow result: " + value[:300], "no workflow result")
+    return val
 
 
 def run_simulation(payload: dict, trigger_index: int, broadcast: bool, run=subprocess.run,

@@ -286,24 +286,6 @@ def test_freeze_reason_is_cleaned():
     assert sim.calls[0][0]["reason"] == "a b" + "x" * 197
 
 
-def test_cli(capsys):
-    import json
-    from exo_guardian.cli import main
-    from exo_guardian.store import MemoryStore
-    mk = lambda sim: (lambda: guardian(MemoryStore(), sim))  # noqa: E731
-    assert main(["guard", json.dumps(REQ)], make_guardian=mk(Sim())) == 0
-    assert json.loads(capsys.readouterr().out)["queued"] is True
-
-    def boom(payload, trigger_index, broadcast):
-        raise SimulationError("x")
-    assert main(["guard", json.dumps(REQ)], make_guardian=mk(boom)) == 1
-    assert json.loads(capsys.readouterr().out)["unavailable"] is True
-    assert main(["guard", "{not json"], make_guardian=mk(Sim())) == 2
-    assert main(["guard", "{}"], make_guardian=mk(Sim())) == 2
-    assert main(["freeze"], make_guardian=mk(Sim())) == 2
-    assert main(["guard", "{}"], env={}) == 2   # no DSN
-
-
 def test_binding_comes_from_the_workflow_config():
     from exo_guardian.service import workflow_binding
     chain_id, module = workflow_binding()
@@ -313,3 +295,56 @@ def test_binding_comes_from_the_workflow_config():
 def test_default_is_a_dry_run(store):
     g = Guardian(store, simulate=Sim(), clock=lambda: NOW, module=MODULE, chain_id=1)
     assert g.broadcast is False and g.guard(REQ)["status"] == "simulated" and g.pending() == []
+
+
+# ── fix round 1 ───────────────────────────────────────────────────────────────────────────────────────────────
+def test_a_second_verdict_never_changes_the_status(store):
+    g = guardian(store, Sim("refuse"))
+    pid = g.guard(REQ)["proposal_id"]
+    approve = {"verdict": "approve", "risk": "low", "auto_eligible": True, "explanation": "e", "reasons": [],
+               "tx_hash": "0x" + "c" * 64, "expires_at": NOW + 600, "report_tx": REPORT_TX, "usd_out": 1.0}
+    with pytest.raises(Exception):
+        store.record_verdict(pid, approve, 1, "waiting_key")
+    assert store.get_status(pid) == "refused" and g.pending() == []
+
+
+def _second_store(store):
+    from exo_guardian.store import PgStore
+    if isinstance(store, PgStore):
+        from guardian_pg import WRITER
+        return PgStore(WRITER)          # a second connection pool, as a second bridge thread or process would be
+    return store
+
+
+class CapSim(Sim):
+    """Emulates the workflow's daily cap: approve only if spent_today + this send fits. Slow, to open a race."""
+
+    def __init__(self, cap, usd, delay=0.3):
+        super().__init__(usd_out=usd)
+        self.cap, self.usd, self.delay = cap, usd, delay
+
+    def __call__(self, payload, trigger_index, broadcast):
+        import time as _t
+        spent = payload["context"]["spent_today_usd"]
+        _t.sleep(self.delay)
+        r, ms = super().__call__(payload, trigger_index, broadcast)
+        if spent + self.usd > self.cap:
+            r.update(verdict="refuse", risk="high", auto_eligible=False, expires_at=0, usd_out=None,
+                     reasons=["over the daily limit"], explanation="Refused: over the daily limit.")
+        return r, ms
+
+
+def test_concurrent_guards_cannot_both_spend_the_cap(store):
+    import threading
+    stores = [store, _second_store(store)]
+    results = []
+
+    def run(s):
+        results.append(guardian(s, CapSim(cap=30, usd=20)).guard(REQ))
+    threads = [threading.Thread(target=run, args=(s,)) for s in stores]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert sorted(r["verdict"] for r in results) == ["approve", "refuse"]
+    assert len(guardian(store, Sim()).pending()) == 1

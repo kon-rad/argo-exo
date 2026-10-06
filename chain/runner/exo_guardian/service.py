@@ -116,6 +116,12 @@ class Guardian:
         salt = self.salt(32)
         if not isinstance(salt, (bytes, bytearray)) or len(salt) != 32:
             raise RuntimeError("salt source must return 32 bytes")
+        # One guard at a time, end to end: two in-flight guards would otherwise read the same spent_today_usd and
+        # could together exceed the daily cap. Freeze is deliberately not behind this lock.
+        with self.store.guard_lock():
+            return self._guard_locked(r, bytes(salt))
+
+    def _guard_locked(self, r: dict, salt: bytes) -> dict:
         pid, now = str(uuid.uuid4()), int(self.clock())
         tx = dict(r["tx"], salt="0x" + bytes(salt).hex())
         self.store.insert_proposal({"id": pid, "created_at": now, "source": r["source"], "intent": r["intent"],
