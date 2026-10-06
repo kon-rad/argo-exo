@@ -101,3 +101,19 @@ def test_repeat_speaks_last_reply(tmp_path):
     spoken = []
     voice.handle_repeat(s, spoken.append)
     assert spoken == ["again"]
+
+
+def test_unexpected_exception_is_spoken_not_silent(tmp_path):
+    s = settings(tmp_path)
+    d, spoken = deps()
+    d.transcribe = lambda wav: (_ for _ in ()).throw(RuntimeError("boom"))
+    (s.state / "listening").touch()
+    stop(s, d)
+    assert spoken == ["Something went wrong on the deck."] and not (s.state / "listening").exists()
+
+
+def test_wav_deleted_after_read(tmp_path):
+    s = settings(tmp_path)
+    d, _ = deps()
+    stop(s, d)
+    assert not (s.state / "rec.wav").exists()

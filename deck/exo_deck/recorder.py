@@ -19,20 +19,37 @@ def _pid(state: Path) -> int | None:
         return None
 
 
+def _read_cmdline(pid: int) -> str | None:
+    """argv of `pid` from /proc, "" if the pid is gone, None where there is no /proc (macOS)."""
+    if not Path("/proc/self").exists():
+        return None
+    try:
+        return Path(f"/proc/{pid}/cmdline").read_bytes().replace(b"\0", b" ").decode(errors="replace")
+    except OSError:
+        return ""
+
+
 def _alive(pid: int, kill: Callable = os.kill) -> bool:
     try:
         kill(pid, 0)
         return True
-    except ProcessLookupError:
+    except (ProcessLookupError, PermissionError):
         return False
-    except PermissionError:
-        return True   # exists, just not ours
 
 
-def start(state: Path, cmd: list, popen: Callable = subprocess.Popen) -> bool:
+def _ours(pid: int, kill: Callable, cmdline: Callable) -> bool:
+    """A recorded pid is ours only if it is alive and looks like arecord; anything else is stale."""
+    if not _alive(pid, kill):
+        return False
+    cl = cmdline(pid)
+    return cl is None or "arecord" in cl
+
+
+def start(state: Path, cmd: list, popen: Callable = subprocess.Popen, kill: Callable = os.kill,
+          cmdline: Callable = _read_cmdline) -> bool:
     state.mkdir(parents=True, exist_ok=True)
     pid = _pid(state)
-    if pid and _alive(pid):
+    if pid and _ours(pid, kill, cmdline):
         return False
     wav = state / "rec.wav"
     wav.unlink(missing_ok=True)
@@ -43,32 +60,36 @@ def start(state: Path, cmd: list, popen: Callable = subprocess.Popen) -> bool:
     return True
 
 
-def _finish(state: Path, sig: int, kill: Callable, wait_s: float) -> None:
+def _finish(state: Path, sig: int, kill: Callable, wait_s: float, cmdline: Callable) -> None:
     pid = _pid(state)
-    if pid:
-        try:
-            kill(pid, sig)
-        except ProcessLookupError:
-            pass
-        deadline = time.monotonic() + wait_s
-        while time.monotonic() < deadline:
+    try:
+        if pid and _ours(pid, kill, cmdline):
             try:
-                kill(pid, 0)
-            except ProcessLookupError:
-                break
-            time.sleep(0.05)
-    (state / "rec.pid").unlink(missing_ok=True)
-    (state / "listening").unlink(missing_ok=True)
+                kill(pid, sig)
+            except (ProcessLookupError, PermissionError):
+                pass
+            deadline = time.monotonic() + wait_s
+            while time.monotonic() < deadline and _alive(pid, kill):
+                time.sleep(0.05)
+            if _alive(pid, kill):
+                try:
+                    kill(pid, signal.SIGKILL)
+                except (ProcessLookupError, PermissionError):
+                    pass
+    finally:
+        (state / "rec.pid").unlink(missing_ok=True)
+        (state / "listening").unlink(missing_ok=True)
 
 
-def stop(state: Path, min_bytes: int, kill: Callable = os.kill, wait_s: float = 3.0) -> Path | None:
-    _finish(state, signal.SIGINT, kill, wait_s)
+def stop(state: Path, min_bytes: int, kill: Callable = os.kill, wait_s: float = 3.0,
+         cmdline: Callable = _read_cmdline) -> Path | None:
+    _finish(state, signal.SIGINT, kill, wait_s, cmdline)
     wav = state / "rec.wav"
     if not wav.exists() or wav.stat().st_size < min_bytes:
         return None
     return wav
 
 
-def cancel(state: Path, kill: Callable = os.kill) -> None:
-    _finish(state, signal.SIGTERM, kill, 1.0)
+def cancel(state: Path, kill: Callable = os.kill, cmdline: Callable = _read_cmdline) -> None:
+    _finish(state, signal.SIGTERM, kill, 1.0, cmdline)
     (state / "rec.wav").unlink(missing_ok=True)

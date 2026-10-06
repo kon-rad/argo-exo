@@ -18,6 +18,7 @@ log = logging.getLogger("exo-voice")
 DIDNT_CATCH = "Sorry, I didn't catch that."
 STT_DOWN = "Speech recognition is down. Try again in a moment."
 BRIDGE_DOWN = "I can't reach Hermes right now."
+GENERIC_FAIL = "Something went wrong on the deck."
 
 recorder_stop: Callable = recorder.stop   # swapped in tests
 
@@ -37,12 +38,14 @@ def _say(s: Settings, d: Deps, text: str) -> str:
     return text
 
 
-def handle_stop(s: Settings, d: Deps) -> str:
+def _handle_stop(s: Settings, d: Deps) -> str:
     wav = recorder_stop(s.state, s.min_wav_bytes)
     if wav is None:
         return ""
     try:
-        heard, provider = d.transcribe(wav.read_bytes())
+        audio = wav.read_bytes()
+        wav.unlink(missing_ok=True)
+        heard, provider = d.transcribe(audio)
     except stt.STTError as exc:
         log.warning("stt failed: %s", exc)
         return _say(s, d, STT_DOWN)
@@ -58,6 +61,20 @@ def handle_stop(s: Settings, d: Deps) -> str:
     except BridgeError as exc:
         log.warning("bridge failed: %s", exc)
         return _say(s, d, BRIDGE_DOWN)
+
+
+def handle_stop(s: Settings, d: Deps) -> str:
+    """Never silent: any unexpected failure is logged and spoken as a generic error."""
+    try:
+        return _handle_stop(s, d)
+    except Exception:
+        log.exception("voice stop failed")
+        (s.state / "listening").unlink(missing_ok=True)
+        try:
+            return _say(s, d, GENERIC_FAIL)
+        except Exception:
+            log.exception("could not speak failure")
+            return ""
 
 
 def handle_repeat(s: Settings, speak: Callable) -> None:
