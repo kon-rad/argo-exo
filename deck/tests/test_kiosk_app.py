@@ -82,11 +82,23 @@ def _media_client(tmp_path):
     return c
 
 
-def test_media_file_serves_and_refuses_traversal(tmp_path):
+def test_media_file_serves_and_sets_nosniff(tmp_path):
     c = _media_client(tmp_path)
-    assert c.get("/api/media/file/photos/a.jpg").data == b"jpegbytes"
+    r = c.get("/api/media/file/photos/a.jpg")
+    assert r.data == b"jpegbytes" and r.headers["X-Content-Type-Options"] == "nosniff"
+
+
+def test_media_file_refuses_traversal(tmp_path):
+    c = _media_client(tmp_path)
     for bad in ("photos/../../.env", "..%2f.env", "photos/%2e%2e/%2e%2e/.env", "photos/link.jpg",
                 "photos/../photos_evil/x.jpg", "photos_evil/x.jpg", "%2e%2e/.env", "state/panel", "photos/nope.jpg"):
         assert c.get(f"/api/media/file/{bad}").status_code == 404, bad
         assert c.get(f"/api/media/thumb/{bad}").status_code == 404, bad
     assert c.get("/api/media/file//etc/passwd", follow_redirects=True).status_code == 404
+
+
+def test_media_file_refuses_non_media_extensions(tmp_path):
+    c = _media_client(tmp_path)
+    (tmp_path / "outbox/photos/x.html").write_text("<script>alert(1)</script>")
+    assert c.get("/api/media/file/photos/x.html").status_code == 404
+    assert c.get("/api/media/thumb/photos/x.html").status_code == 404

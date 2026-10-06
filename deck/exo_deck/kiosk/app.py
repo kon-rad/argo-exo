@@ -57,15 +57,19 @@ def create_app(settings, providers: dict[str, Callable[[int], dict]], hermes_ok:
     @app.get("/api/media/file/<path:rel>")
     def media_file(rel):
         p = media.safe_path(settings.deck_root, rel)
-        if p is None or not p.is_file():
+        if p is None or not p.is_file() or p.suffix.lower() not in media.EXT[rel.partition("/")[0]]:
             abort(404)
-        return send_file(p, conditional=True)
+        r = send_file(p, conditional=True)
+        r.headers["X-Content-Type-Options"] = "nosniff"
+        return r
 
     @app.get("/api/media/thumb/<path:rel>")
     def media_thumb(rel):
         p = media.thumb(settings.deck_root, rel, settings.deck_root / "thumbs")
         if p is None:
             abort(404)
-        return send_file(p, mimetype="image/jpeg")
+        r = send_file(p, mimetype="image/jpeg")
+        r.headers["X-Content-Type-Options"] = "nosniff"
+        return r
 
     return app

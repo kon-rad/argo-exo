@@ -16,7 +16,7 @@ mkdir -p "$ROOT/outbox/photos" "$ROOT/outbox/audio" "$ROOT/media/video" "$ROOT/s
 # --min-age keeps files still being uploaded by the clip (.part) or recorded out of the push
 rclone copy "$ROOT/outbox/photos" exo-media:photos --min-age 30s --transfers 2 --exclude '*.part' --quiet
 rclone copy "$ROOT/outbox/audio"  exo-media:audio  --min-age 30s --transfers 2 --exclude '*.part' --quiet
-rclone copy "$ROOT/media/video"   exo-media:video  --min-age 60s --transfers 1 --quiet
+rclone copy "$ROOT/media/video"   exo-media:video  --min-age 60s --transfers 1 --exclude '*.part' --quiet
 # manifest paths are relative to the remote root: photos/…, audio/…, video/…, matching the kiosk's rel paths
 rclone lsf -R --files-only exo-media: \
   | python3 -c 'import json,sys,time; print(json.dumps({"synced_at": int(time.time()), "files": [l.strip() for l in sys.stdin if l.strip()]}))' \

@@ -36,8 +36,7 @@ h1 { font: 500 48px var(--head); margin: 0 0 16px; color: var(--accent); }
 .ok { color: var(--ok); } .bad { color: var(--danger); } .warn { color: var(--accent); }
 .cols { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
 .grid9 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px 16px; margin-top: 8px; }
-.grid9 figure { margin: 0; background: var(--bg); border: 3px solid var(--edge); border-radius: 12px; padding: 8px; }
-.grid9 figure { padding: 6px; }
+.grid9 figure { margin: 0; background: var(--bg); border: 3px solid var(--edge); border-radius: 12px; padding: 6px; }
 .thumb { position: relative; height: 130px; background: var(--card); border-radius: 8px; overflow: hidden; display: grid; place-items: center; }
 .thumb .glyph { font-size: 64px; color: var(--muted); }
 .thumb img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }

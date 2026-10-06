@@ -4,6 +4,8 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
+import tempfile
 import subprocess
 from pathlib import Path
 from typing import Callable
@@ -80,21 +82,32 @@ def thumb(deck_root, rel: str, cache_dir, runner: Callable[[list[str]], None] = 
     out = Path(cache_dir) / (hashlib.sha1(rel.encode()).hexdigest()[:16] + ".jpg")
     if out.exists() and out.stat().st_mtime >= src.stat().st_mtime:
         return out
+    if src.suffix.lower() not in EXT[rel.partition("/")[0]]:
+        return None
     out.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(dir=out.parent, prefix=out.name + ".", suffix=".tmp.jpg")
+    os.close(fd)
+    tmp = Path(tmp_name)
     try:
         if rel.startswith("photos/"):
             from PIL import Image
             with Image.open(src) as im:
                 im.thumbnail((480, 480))
-                im.convert("RGB").save(out, "JPEG", quality=80)
+                im.convert("RGB").save(tmp, "JPEG", quality=80)
         elif rel.startswith("video/"):
             runner(["ffmpeg", "-y", "-loglevel", "error", "-ss", "1", "-i", str(src), "-frames:v", "1",
-                    "-vf", "scale=480:-2", str(out)])
+                    "-vf", "scale=480:-2", str(tmp)])
+        else:
+            return None
+        if not tmp.exists() or tmp.stat().st_size == 0:
+            return None
+        os.replace(tmp, out)              # atomic: readers see the whole JPEG or none
     except Exception as exc:              # corrupt image, ffmpeg missing or timed out: no thumbnail, not a 500
         log.warning("thumb %s failed: %s", rel, exc)
-        out.unlink(missing_ok=True)
         return None
-    return out if out.exists() else None
+    finally:
+        tmp.unlink(missing_ok=True)
+    return out
 
 
 def panel(deck_root, state, page: int) -> dict:

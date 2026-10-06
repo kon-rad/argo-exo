@@ -3,6 +3,7 @@ const NAMES = { talk: 'Talk', agents: 'Agents', approvals: 'Approvals', transact
   wallets: 'Wallets', cre: 'CRE', body: 'Body', sensors: 'Sensors', media: 'Media' };
 const $ = (id) => document.getElementById(id);
 export const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+export const encPath = (rel) => String(rel).split('/').map(encodeURIComponent).join('/');
 export const ago = (ts) => { const s = Math.max(0, Date.now() / 1000 - ts); return s < 90 ? `${s | 0}s` : s < 5400 ? `${(s / 60) | 0}m` : s < 172800 ? `${(s / 3600) | 0}h` : `${(s / 86400) | 0}d`; };
 
 export const RENDER = {
@@ -49,13 +50,13 @@ export const RENDER = {
     const tag = { both: '<span class="ok">synced</span>', sd: '<span class="warn">SD only</span>', cloud: '<span class="muted">cloud only</span>' };
     const glyph = { photo: '▣', audio: '♪', video: '▶' };
     if (j.open) {
-      const f = `/api/media/file/${encodeURI(j.open.rel)}`;
+      const f = `/api/media/file/${encPath(j.open.rel)}`;
       const body = j.open.where === 'cloud' ? '<p class="muted big">Stored in the cloud only</p>'
-        : j.open.kind === 'photo' ? `<img src="${f}" alt="">` : j.open.kind === 'video' ? `<video src="${f}" poster="/api/media/thumb/${encodeURI(j.open.rel)}" autoplay playsinline></video>` : `<div class="glyph big">♪ Playing</div><audio src="${f}" autoplay></audio>`;
+        : j.open.kind === 'photo' ? `<img src="${f}" alt="">` : j.open.kind === 'video' ? `<video src="${f}" poster="/api/media/thumb/${encPath(j.open.rel)}" autoplay playsinline></video>` : `<div class="glyph big">♪ Playing</div><audio src="${f}" autoplay></audio>`;
       return `<h1 class="clamp">${j.open.n} · ${esc(j.open.rel.split('/').pop())}</h1><p class="muted tight">${tag[j.open.where]} · say "close"</p><div class="full">${body}</div>`;
     }
     const tile = (i) => {
-      const img = i.kind !== 'audio' && i.where !== 'cloud' ? `<img src="/api/media/thumb/${encodeURI(i.rel)}" alt="" onerror="this.remove()">` : '';
+      const img = i.kind !== 'audio' && i.where !== 'cloud' ? `<img src="/api/media/thumb/${encPath(i.rel)}" alt="" onerror="this.remove()">` : '';
       return `<figure><div class="thumb"><span class="glyph">${i.where === 'cloud' ? '☁' : glyph[i.kind] || ''}</span>${img}<b class="num">${esc(i.n)}</b></div>
         <figcaption>${i.mtime ? ago(i.mtime) : '–'} · ${tag[i.where]}</figcaption></figure>`;
     };
@@ -88,8 +89,8 @@ async function tick() {
     setHtml('chips', chips(s));
     $('heard').textContent = s.heard; $('said').textContent = s.reply;
     const j = await (await fetch(`/api/panel/${s.panel}`)).json();
-    $('panel').innerHTML = j.error ? `<h1>${NAMES[s.panel]}</h1><p class="bad">${esc(j.error)}</p>`
-      : (RENDER[s.panel] || (() => `<h1>${NAMES[s.panel]}</h1>`))(j, s);
+    setHtml('panel', j.error ? `<h1>${NAMES[s.panel]}</h1><p class="bad">${esc(j.error)}</p>`
+      : (RENDER[s.panel] || (() => `<h1>${NAMES[s.panel]}</h1>`))(j, s));
     current = s.panel;
   } catch (e) { setHtml('chips', `<span class="chip bad">KIOSK OFFLINE</span>`); }
   finally { busy = false; }

@@ -133,3 +133,24 @@ def test_install_and_units_for_media_sync():
     assert "rclone ffmpeg" in (deck / "install.sh").read_text()
     assert (deck / "systemd" / "deck-media-sync.service").is_file() and (deck / "systemd" / "deck-media-sync.timer").is_file()
     assert os.access(deck / "bin" / "deck-media-sync", os.X_OK)
+
+
+def test_failed_thumb_leaves_no_partial_file(tmp_path):
+    root = setup(tmp_path)
+    cache = tmp_path / "thumbs"
+
+    def half(cmd):
+        open(cmd[-1], "wb").write(b"half")
+        raise subprocess.TimeoutExpired(cmd, 20)
+    assert media.thumb(root, "video/v.mp4", cache, half) is None
+    assert list(cache.iterdir()) == []                      # no final file, no temp leftovers
+    assert media.thumb(root, "photos/a.jpg", cache) is None  # corrupt jpeg
+    assert list(cache.iterdir()) == []
+
+
+def test_thumb_only_runs_ffmpeg_on_video_extensions(tmp_path):
+    root = setup(tmp_path)
+    (root / "media/video/notes.txt").write_bytes(b"x")
+    calls = []
+    assert media.thumb(root, "video/notes.txt", tmp_path / "thumbs", lambda c: calls.append(c)) is None
+    assert calls == []
