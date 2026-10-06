@@ -4,3 +4,7 @@ waitress>=3
 requests>=2.31
 pillow>=10
 websockets>=12
+eth-abi>=5
+eth-utils>=4
+eth-account>=0.13
+psycopg[binary]>=3.1

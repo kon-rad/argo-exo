@@ -4,5 +4,5 @@ version = "0.1.0"
 requires-python = ">=3.11"
 
 [tool.pytest.ini_options]
-pythonpath = ["deck", "deck/ring", "agents/bridge", "packages/nownodes-py", "infra/nownodes-proxy"]
-testpaths = ["tests", "deck/tests", "deck/ring/tests", "agents/bridge/tests", "packages/nownodes-py/tests", "infra/nownodes-proxy"]
+pythonpath = ["deck", "deck/ring", "agents/bridge", "packages/nownodes-py", "infra/nownodes-proxy", "chain/runner"]
+testpaths = ["tests", "deck/tests", "deck/ring/tests", "agents/bridge/tests", "packages/nownodes-py/tests", "infra/nownodes-proxy", "chain/runner/tests"]
