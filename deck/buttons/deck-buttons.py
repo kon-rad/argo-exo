@@ -35,6 +35,7 @@ from gpiozero import Button, LED
 
 sys.path.insert(0, os.environ.get("EXO_DECK_PKG", "/srv/deck/app/deck"))
 from exo_deck import approvals   # noqa: E402
+from exo_deck.hookq import HookQueue   # noqa: E402
 
 DECK = Path(os.environ.get("DECK_ROOT", "/srv/deck"))
 HOOKS, STATE = DECK / "hooks", DECK / "state"
@@ -50,7 +51,23 @@ log = logging.getLogger("deck-buttons")
 
 def run(*cmd):
     log.info("run %s", " ".join(cmd))
-    subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    try:
+        subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except OSError as e:
+        log.error("cannot run %s: %s", cmd[0], e)
+
+
+def run_wait(name, *args):
+    """Run a hook and wait for it to exit (used by the talk queue). Never raises on a missing binary."""
+    path = HOOKS / name
+    if not os.access(path, os.X_OK):
+        log.info("hook %s not installed %s", name, " ".join(args))
+        return
+    log.info("run %s %s", path, " ".join(args))
+    try:
+        subprocess.run([str(path), *args], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=300)
+    except (OSError, subprocess.TimeoutExpired) as e:
+        log.error("hook %s failed: %s", name, e)
 
 
 def hook(name, *args):
@@ -112,10 +129,12 @@ class Gestures:
 class Deck:
     def __init__(self):
         self.key = Button(5, bounce_time=0.05)
-        self.talk, self.camera, self.mic, self.kiosk = Button(26), Button(6), Button(13), Button(16)
+        self.talk, self.camera, self.mic, self.kiosk = Button(26, bounce_time=0.03), Button(6, bounce_time=0.03), \
+            Button(13, bounce_time=0.03), Button(16, bounce_time=0.03)
         self.led = {k: LED(p) for k, p in
                     {"key": 17, "rec": 22, "ok": 23, "wait": 24, "listen": 25}.items()}
         self.talking, self.talk_down, self.talk_tap_at = False, 0.0, 0.0
+        self.talkq = HookQueue(run_wait)   # talk hooks run one at a time, in order
         self.last_approve = 0.0
         self.flashing = {"key": False, "ok": False}
         self.key.when_pressed = self.key_pressed
@@ -146,7 +165,7 @@ class Deck:
     # --- talk -------------------------------------------------------------
     def talk_start(self):
         self.talking, self.talk_down = True, time.time()
-        hook("talk-start")
+        self.talkq.put("talk-start")
 
     def talk_released(self):
         if not self.talking:
@@ -154,12 +173,12 @@ class Deck:
         self.talking = False
         now = time.time()
         if now - self.talk_down >= TALK_MIN_S:
-            hook("talk-stop")
+            self.talkq.put("talk-stop")
             return
-        hook("talk-cancel")
+        self.talkq.put("talk-cancel")
         if now - self.talk_tap_at <= DOUBLE_S + TALK_MIN_S:
             self.talk_tap_at = 0.0
-            hook("repeat")
+            self.talkq.put("repeat")
         else:
             self.talk_tap_at = now
 
