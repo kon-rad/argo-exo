@@ -1,6 +1,7 @@
 import logging
 import os
 import sys
+import threading
 
 from waitress import serve
 
@@ -24,10 +25,14 @@ def build_guardian(env):
         log.info("guardian: EXO_LEDGER_WRITER_DSN unset, Guardian routes answer 503")
         return None
     from exo_guardian.service import Guardian
+    from exo_guardian.simulate import ensure_wasm
     from exo_guardian.store import PgStore
     broadcast = env.get("EXO_GUARDIAN_BROADCAST", "") == "1"
     log.info("guardian: ledger configured, %s", "BROADCAST (reports go onchain)" if broadcast else "dry run (nothing is queued)")
-    return Guardian(PgStore(dsn), broadcast=broadcast)
+    guardian = Guardian(PgStore(dsn), broadcast=broadcast)
+    # Build the workflow binary now, so the first guard request doesn't pay the ~23 s compile.
+    threading.Thread(target=ensure_wasm, name="cre-wasm-warmup", daemon=True).start()
+    return guardian
 
 
 def guardian_setup_error(exc: BaseException) -> str:

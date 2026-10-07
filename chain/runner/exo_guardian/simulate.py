@@ -11,6 +11,7 @@ import os
 import re
 import subprocess
 import tempfile
+import threading
 import time
 from pathlib import Path
 
@@ -64,15 +65,63 @@ def parse_result(stdout: str) -> dict:
     return val
 
 
+# Compiling the workflow to WASM is ~23 s of a ~28 s simulation, so it is built once and passed with --wasm. The
+# binary lives in the Guardian's own checkout (exoguard-owned) and is rebuilt when any workflow source is newer.
+WASM_SOURCES = ("main.ts", "src", "package.json", "bun.lock", "tsconfig.json")
+BUILD_TIMEOUT_S = 240
+_BUILD_LOCK = threading.Lock()
+
+
+def _newest_source(exo: Path) -> float:
+    newest = 0.0
+    for name in WASM_SOURCES:
+        p = exo / name
+        for f in ([p] if p.is_file() else p.rglob("*") if p.is_dir() else []):
+            if f.is_file() and "node_modules" not in f.parts:
+                newest = max(newest, f.stat().st_mtime)
+    return newest
+
+
+def ensure_wasm(cwd: Path = CRE_DIR, run=subprocess.run) -> Path | None:
+    """The prebuilt workflow binary, built now if missing or stale; None (simulate compiles it) when there is no
+    workflow source here or the build fails. Never raises: a failed build only costs speed."""
+    exo = Path(cwd) / "exo"
+    if not (exo / "main.ts").is_file():
+        return None
+    out = exo / "build" / "exo.wasm"
+    with _BUILD_LOCK:
+        if out.is_file() and out.stat().st_mtime >= _newest_source(exo):
+            return out
+        out.parent.mkdir(exist_ok=True)
+        tmp = out.with_name("exo.tmp.wasm")   # cre appends .wasm to any -o name not ending in it
+        try:
+            p = run(["cre", "workflow", "build", "exo", "-o", str(tmp)], cwd=str(cwd), capture_output=True,
+                    text=True, timeout=BUILD_TIMEOUT_S)
+            if p.returncode != 0 or not tmp.is_file():
+                log.warning("cre workflow build failed (exit %s); simulate will compile", p.returncode)
+                return None
+            os.replace(tmp, out)
+            return out
+        except (subprocess.TimeoutExpired, OSError) as exc:
+            log.warning("cre workflow build failed (%s); simulate will compile", type(exc).__name__)
+            return None
+        finally:
+            tmp.unlink(missing_ok=True)
+
+
 def run_simulation(payload: dict, trigger_index: int, broadcast: bool, run=subprocess.run,
                    cwd: Path = CRE_DIR) -> tuple[dict, int]:
     """(result, latency ms). Without `broadcast`, report writes are dry runs (report_tx is the zero hash)."""
+    wasm = ensure_wasm(cwd, run)
     fd, path = tempfile.mkstemp(prefix="exo-payload-", suffix=".json")
     try:
         with os.fdopen(fd, "w") as f:
             json.dump(payload, f)
         cmd = ["cre", "workflow", "simulate", "exo", "--target", "mainnet", "--non-interactive",
                "--trigger-index", str(trigger_index), "--http-payload", path]
+        if wasm is not None:
+            # relative to the workflow folder (cre resolves it there), and short: cre refuses one over 97 characters
+            cmd += ["--wasm", os.path.relpath(wasm, Path(cwd) / "exo")]
         if broadcast:
             cmd.append("--broadcast")
         t0 = time.monotonic()

@@ -1,4 +1,6 @@
 import json
+import os
+import time
 import subprocess
 from pathlib import Path
 
@@ -148,3 +150,57 @@ def test_marker_text_inside_the_result_is_not_a_marker(wrapped):
 def test_anything_else_raises(out):
     with pytest.raises(SimulationError):
         parse_result(out)
+
+
+# ── prebuilt WASM: compile once, not on every guard call (2026-10-07: ~28 s → ~5.6 s per simulation) ─────────────
+def _cre_project(tmp_path):
+    (tmp_path / "exo" / "src").mkdir(parents=True)
+    (tmp_path / "exo" / "main.ts").write_text("// workflow")
+    (tmp_path / "exo" / "src" / "guard.ts").write_text("// src")
+    return tmp_path
+
+
+def _recorder(build_rc=0):
+    calls = []
+
+    def run(cmd, **kw):
+        calls.append(cmd)
+        if cmd[:3] == ["cre", "workflow", "build"]:
+            if build_rc == 0:
+                o = cmd[cmd.index("-o") + 1]          # like cre v1.37: a name not ending in .wasm gets .wasm appended
+                Path(o if o.endswith(".wasm") else o + ".wasm").write_bytes(b"\0asm")
+            return subprocess.CompletedProcess(cmd, build_rc, "", "build failed" if build_rc else "")
+        return subprocess.CompletedProcess(cmd, 0, 'Workflow Simulation Result:\n"{\\"ok\\":true}"', "")
+    return run, calls
+
+
+def test_fresh_prebuilt_wasm_is_used_without_rebuilding(tmp_path):
+    cre = _cre_project(tmp_path)
+    wasm = cre / "exo" / "build" / "exo.wasm"
+    wasm.parent.mkdir()
+    wasm.write_bytes(b"\0asm")
+    os.utime(wasm, (time.time() + 60, time.time() + 60))
+    run, calls = _recorder()
+    run_simulation({"reason": "x"}, 1, False, run=run, cwd=cre)
+    # relative to the workflow folder, where cre resolves it (live, v1.37); cre refuses one over 97 characters
+    assert len(calls) == 1 and calls[0][calls[0].index("--wasm") + 1] == "build/exo.wasm"
+
+
+def test_missing_or_stale_wasm_is_built_once_then_used(tmp_path):
+    cre = _cre_project(tmp_path)
+    run, calls = _recorder()
+    run_simulation({"reason": "x"}, 1, False, run=run, cwd=cre)
+    assert calls[0][:4] == ["cre", "workflow", "build", "exo"] and "--wasm" in calls[1]
+    os.utime(cre / "exo" / "build" / "exo.wasm", (time.time() - 120, time.time() - 120))   # a source edited since the build
+    run_simulation({"reason": "x"}, 1, False, run=run, cwd=cre)
+    assert [c[2] for c in calls] == ["build", "simulate", "build", "simulate"]
+    run_simulation({"reason": "x"}, 1, False, run=run, cwd=cre)
+    assert [c[2] for c in calls][-1] == "simulate" and len(calls) == 5
+
+
+def test_failed_build_falls_back_to_compiling_in_simulate(tmp_path):
+    cre = _cre_project(tmp_path)
+    run, calls = _recorder(build_rc=1)
+    res, _ = run_simulation({"reason": "x"}, 1, False, run=run, cwd=cre)
+    assert res == {"ok": True} and "--wasm" not in calls[-1]
+    assert not list((cre / "exo").rglob("*.wasm"))   # no half-written binary left behind
