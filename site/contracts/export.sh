@@ -31,13 +31,19 @@ python3 - "$P" "$U" "$CHAIN" \
   "$("$CAST" call $U 'decimals()(uint8)' --rpc-url "$R")" \
   "$("$CAST" sig 'preorder(uint8,uint256)')" "$("$CAST" sig 'preorderWithPermit(uint8,uint256,uint256,uint8,bytes32,bytes32)')" \
   "$("$CAST" sig 'approve(address,uint256)')" "$("$CAST" sig 'allowance(address,address)')" "$("$CAST" sig 'nonces(address)')" \
-  "$("$CAST" keccak 'Preordered(uint256,address,uint8,uint256)')" > "$TMP" <<'PY'
+  "$("$CAST" keccak 'Preordered(uint256,address,uint8,uint256)')" \
+  "$("$CAST" sig 'price(uint8)')" "$("$CAST" sig 'paused()')" "$("$CAST" sig 'totalMinted()')" \
+  "$("$CAST" sig 'maxSupply()')" "$("$CAST" sig 'balanceOf(address)')" \
+  "$("$CAST" sig 'NotForSale(uint8)')" "$("$CAST" sig 'PriceAboveMax(uint256,uint256)')" "$("$CAST" sig 'SoldOut()')" \
+  "$("$CAST" sig 'EnforcedPause()')" > "$TMP" <<'PY'
 import json, sys
 a = sys.argv[1:]
 chain = int(a[2])
 print(json.dumps({"chainId": chain, "chainIdHex": hex(chain), "chainName": "Base", "contract": a[0], "usdc": a[1],
   "usdcName": json.loads(a[3]), "usdcVersion": json.loads(a[4]), "usdcDecimals": int(a[5]),
-  "selectors": {"preorder": a[6], "preorderWithPermit": a[7], "approve": a[8], "allowance": a[9], "nonces": a[10]},
+  "selectors": {"preorder": a[6], "preorderWithPermit": a[7], "approve": a[8], "allowance": a[9], "nonces": a[10],
+                "price": a[12], "paused": a[13], "totalMinted": a[14], "maxSupply": a[15], "balanceOf": a[16]},
+  "errors": {"NotForSale": a[17], "PriceAboveMax": a[18], "SoldOut": a[19], "EnforcedPause": a[20]},
   "preorderedTopic": a[11], "explorer": "https://basescan.org"}, indent=2))
 PY
 mv "$TMP" "$OUT"

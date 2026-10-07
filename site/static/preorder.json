@@ -12,7 +12,18 @@
     "preorderWithPermit": "0x6bb4fb15",
     "approve": "0x095ea7b3",
     "allowance": "0xdd62ed3e",
-    "nonces": "0x7ecebe00"
+    "nonces": "0x7ecebe00",
+    "price": "0xb7fafcd7",
+    "paused": "0x5c975abb",
+    "totalMinted": "0xa2309ff8",
+    "maxSupply": "0xd5abeb01",
+    "balanceOf": "0x70a08231"
+  },
+  "errors": {
+    "NotForSale": "0x02109f30",
+    "PriceAboveMax": "0x8b8675a5",
+    "SoldOut": "0x52df9fe5",
+    "EnforcedPause": "0xd93c0665"
   },
   "preorderedTopic": "0xb6fd44e81134743ff29142842b07b87d5c935df16feae05d0a5002478124438d",
   "explorer": "https://basescan.org"

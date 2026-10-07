@@ -25,6 +25,10 @@ jobs:
       - uses: foundry-rs/foundry-toolchain@v1
       - run: '[ -d chain/contracts ] && (cd chain/contracts && forge test) || echo "no chain/contracts yet"'
       - run: '[ -d site/contracts ] && (cd site/contracts && forge test) || echo "no site/contracts yet"'
+      # again with cast on PATH, so the selector and known-key signature checks run instead of skipping
+      - uses: actions/setup-node@v4
+        with: { node-version: "20" }
+      - run: node --test site/js-tests/*.test.mjs
   typescript:
     runs-on: ubuntu-latest
     steps:
@@ -34,4 +38,4 @@ jobs:
         with: { node-version: "20" }
       - run: '[ -d packages/nownodes-ts ] && (cd packages/nownodes-ts && bun install && bun test) || true'
       - run: '[ -d chain/cre/exo ] && (cd chain/cre/exo && bun install && bun test) || true'
-      - run: '[ -d site/js-tests ] && node --test site/js-tests/ || true'
+      - run: node --test site/js-tests/*.test.mjs

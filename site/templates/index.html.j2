@@ -68,5 +68,6 @@
   {{ section_head("faq") }}
   {% for item in copy.sections.faq["items"] %}<h3>{{ item.q }}</h3><p>{{ item.a }}</p>{% endfor %}
 </section>
+<script type="application/json" id="checkout-copy">{{ {"states": {"paused": copy.states.paused, "sold_out": copy.states.sold_out, "unavailable": copy.states.unavailable}, "checkout": copy.checkout, "receipt": copy.receipt} | tojson }}</script>
 <script type="module" src="/static/checkout.js"></script>
 {% endblock %}

@@ -10,5 +10,6 @@
   <button class="bookplate" type="submit">{{ copy.receipt.submit }}</button>
   <p class="error" id="claim-error" role="alert" hidden></p>
 </form>
+<script type="application/json" id="checkout-copy">{{ {"states": {"paused": copy.states.paused, "sold_out": copy.states.sold_out, "unavailable": copy.states.unavailable}, "checkout": copy.checkout, "receipt": copy.receipt} | tojson }}</script>
 <script type="module" src="/static/checkout.js"></script>
 {% endblock %}
