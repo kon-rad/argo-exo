@@ -20,15 +20,29 @@ def _read(path: Path, default: str = "") -> str:
         return default
 
 
-def _write(path: Path, text: str) -> None:
-    """Atomic write via a unique temp file in the same dir (several processes write state)."""
+_fsync = os.fsync          # module attribute so tests can record the order of fsyncs
+
+
+def _write(path: Path, text: str, durable: bool = False) -> None:
+    """Atomic write via a unique temp file in the same dir (several processes write state).
+    durable=True also survives a power cut: fsync the temp file before the rename, then fsync the directory
+    so the rename itself is on disk. Opt-in: the kiosk's frequent writes stay cheap."""
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=path.name + ".", suffix=".tmp")
     try:
         with os.fdopen(fd, "w") as f:
             f.write(text)
+            if durable:
+                f.flush()
+                _fsync(f.fileno())
         os.chmod(tmp, 0o644)      # mkstemp makes 0600; other services' users must still read it
         os.replace(tmp, path)
+        if durable:
+            dfd = os.open(path.parent, os.O_RDONLY)
+            try:
+                _fsync(dfd)
+            finally:
+                os.close(dfd)
     except BaseException:
         try:
             os.unlink(tmp)

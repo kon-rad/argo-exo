@@ -30,6 +30,12 @@ class ChordState:
         self.both_since, self.fired = None, False
         return approve
 
+    def mic_down(self, now: float, key: bool) -> bool:
+        """Mic's press callback: a tap shorter than one tick during an Approve press still cancels the approve."""
+        if self.key_is_down:
+            self.tainted = True
+        return self.poll(now, key=key, mic=True)
+
     def poll(self, now: float, key: bool, mic: bool) -> bool:
         """Call on every tick with both buttons' live state. True exactly once per 2 s two-button hold."""
         if key and mic:

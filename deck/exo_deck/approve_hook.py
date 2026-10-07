@@ -59,8 +59,8 @@ def _speak(text: str) -> None:
     tts.speak(text)
 
 
-def _save(path: Path, item: dict) -> None:
-    _write(path, json.dumps(item))
+def _save(path: Path, item: dict, durable: bool = False) -> None:
+    _write(path, json.dumps(item), durable=durable)
 
 
 def _rpc_fail(exc: RpcError, method: str) -> _Fail:
@@ -87,25 +87,38 @@ def _probe(rpc, txh: str) -> str:
 
 class _Hook:
     def __init__(self, path: Path, signer, rpc, bridge, module: str, speak: Callable[[str], None],
-                 now: Callable[[], float]):
+                 now: Callable[[], float], resume_only: bool = False):
         self.path, self.signer, self.rpc, self.bridge, self.module = path, signer, rpc, bridge, module
-        self.speak, self.now = speak, now
+        self._speak, self.now, self.resume_only = speak, now, resume_only
         self.state = path.parent.parent
+        self.after: list[Callable[[], None]] = []   # bridge reports and speech: run once the key lock is released
+
+    def speak(self, text: str) -> None:
+        self.after.append(lambda: self._speak(text))
 
     # --- outcomes -------------------------------------------------------------------------------------------
     def report(self, item: dict, **kw) -> None:
+        self.after.append(lambda pid=item["id"]: self._report_now(pid, kw))
+
+    def _report_now(self, pid: str, kw: dict) -> None:
         from .bridge_client import BridgeError
         try:
-            self.bridge.report_executed(item["id"], **kw)      # True, or False on 409 (no longer waiting)
+            self.bridge.report_executed(pid, **kw)             # True, or False on 409 (no longer waiting)
         except (BridgeError, ValueError) as exc:
-            log.warning("report for %s failed (%s); a re-run retries it", item.get("id"), type(exc).__name__)
+            log.warning("report for %s failed (%s); a re-run retries it", pid, type(exc).__name__)
             return
-        item["reported"] = True
-        _save(self.path, item)
+        with key_lock(self.state):                             # brief: just the file update
+            try:
+                cur = json.loads(self.path.read_text())
+            except (OSError, ValueError):
+                return
+            if isinstance(cur, dict) and cur.get("id") == pid and not cur.get("reported"):
+                cur["reported"] = True
+                _save(self.path, cur)
 
     def sent(self, item: dict, txh: str) -> str:
         item["sent_tx"] = txh
-        _save(self.path, item)
+        _save(self.path, item, durable=True)
         _write(self.state / "tx-sent", txh)
         log.info("sent %s for %s", txh, item["id"])
         self.report(item, tx_hash=txh)
@@ -113,14 +126,16 @@ class _Hook:
 
     def fail(self, item: dict, msg: str) -> None:
         item["failed"] = msg
-        _save(self.path, item)
+        _save(self.path, item, durable=True)
         log.info("failed %s: %s", item.get("id"), msg)
         self.report(item, error=msg)
         self.speak(f"That transaction didn't go through: {SPOKEN.get(msg, msg)}.")
         return None
 
     def unsure(self, item: dict) -> None:
-        log.warning("%s: broadcast outcome unknown; marker kept, re-run hooks/approve to resolve", item.get("id"))
+        log.warning("%s: broadcast outcome unknown; marker kept, deck-queue-sync retries it", item.get("id"))
+        if self.resume_only:
+            return None                                         # the recovery sweep stays quiet while unsure
         self.speak("I'm not sure that transaction went out. I'll keep it and won't sign it again.")
         return None
 
@@ -174,6 +189,8 @@ class _Hook:
         self.speak("The hot key is locked. Run exo-unlock, then press approve again.")
 
     def fresh(self, item: dict) -> str | None:
+        if self.resume_only:
+            return None                                         # the recovery sweep never signs
         if self.signer is None:
             return self.put_back(item)
         method = "eth_chainId"
@@ -215,7 +232,7 @@ class _Hook:
             return self.fail(item, "deck error")
         txh, raw_hex = "0x" + keccak(raw).hex(), "0x" + raw.hex()
         item["sending"] = {"tx_hash": txh, "raw": raw_hex}
-        _save(self.path, item)                                  # BEFORE the broadcast: a crash can't double-send
+        _save(self.path, item, durable=True)                    # on disk BEFORE the broadcast: no double-send
         return self.broadcast(item, raw_hex, txh)
 
     def run(self) -> str | None:
@@ -238,11 +255,48 @@ class _Hook:
 
 
 def run_hook(item_path: Path, signer, rpc, bridge, module: str, speak: Callable[[str], None],
-             now: Callable[[], float] = time.time) -> str | None:
-    """Returns the broadcast tx hash, or None (already handled, failed, or outcome unknown)."""
+             now: Callable[[], float] = time.time, resume_only: bool = False) -> str | None:
+    """Returns the broadcast tx hash, or None (already handled, failed, or outcome unknown).
+    resume_only=True (the recovery sweep) completes markers and reports but never signs."""
     item_path = Path(item_path)
-    with key_lock(item_path.parent.parent):                    # one signer at a time: no nonce races
-        return _Hook(item_path, signer, rpc, bridge, module, speak, now).run()
+    hook = _Hook(item_path, signer, rpc, bridge, module, speak, now, resume_only)
+    with key_lock(item_path.parent.parent):                    # nonce -> sign -> broadcast, one signer at a time
+        result = hook.run()
+    for fn in hook.after:                                       # the bridge POST and TTS never hold the lock
+        try:
+            fn()
+        except Exception as exc:  # noqa: BLE001
+            log.warning("after-step failed (%s)", type(exc).__name__)
+    return result
+
+
+def needs_recovery(item: dict) -> bool:
+    """A marker without an outcome, or an outcome the bridge hasn't recorded yet."""
+    if not isinstance(item, dict) or not isinstance(item.get("id"), str):
+        return False
+    if item.get("sent_tx") or item.get("failed"):
+        return not item.get("reported")
+    return item.get("sending") is not None
+
+
+def sweep(state: Path, rpc, bridge, module: str, speak: Callable[[str], None], now: Callable[[], float] = time.time,
+          last_try: dict | None = None, every_s: float = 30.0) -> list[str]:
+    """Finish what a crash or an unsure broadcast left in tx-approved/: resume markers, retry reports. Never signs.
+    Each item is retried at most every `every_s`. Returns the ids it looked at."""
+    last_try = {} if last_try is None else last_try
+    d = Path(state) / "tx-approved"
+    seen = []
+    for p in sorted(d.glob("*.json")) if d.exists() else []:
+        try:
+            item = json.loads(p.read_text())
+        except (OSError, ValueError):
+            continue
+        if not needs_recovery(item) or now() - last_try.get(p.name, float("-inf")) < every_s:
+            continue
+        last_try[p.name] = now()
+        run_hook(p, None, rpc, bridge, module, speak, now=now, resume_only=True)
+        seen.append(item["id"])
+    return seen
 
 
 def main(argv: list[str]) -> int:

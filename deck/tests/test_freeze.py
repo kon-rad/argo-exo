@@ -139,3 +139,49 @@ def test_mic_touched_during_the_press_cancels_the_approval():
 
 def test_key_up_without_key_down_does_nothing():
     assert ChordState().key_up(1.0, mic=False) is False
+
+
+def test_freeze_bids_twice_the_normal_fees(tmp_path):
+    from exo_deck.signer import build_tx
+    s = Signer()
+    run_freeze(tmp_path, s, Rpc(), Bridge(), MODULE, lambda t: None)
+    normal = build_tx(Rpc(), s.address, MODULE, bytes.fromhex("62a5af3b"))
+    (tx,) = s.signed
+    assert tx["maxPriorityFeePerGas"] >= 2 * normal["maxPriorityFeePerGas"]
+    assert tx["maxFeePerGas"] >= 2 * normal["maxFeePerGas"] and tx["nonce"] == normal["nonce"]
+
+
+def test_freeze_may_exceed_the_normal_ceiling_up_to_its_own(tmp_path):
+    from exo_deck import signer
+    class Pricey(Rpc):
+        def call(self, m, p):
+            if m == "eth_getBlockByNumber":
+                return {"baseFeePerGas": hex(100 * 10**9)}      # normal: 200 gwei (<= 300), freeze: 400 gwei
+            return super().call(m, p)
+    s = Signer()
+    assert run_freeze(tmp_path, s, Pricey(), Bridge(), MODULE, lambda t: None) is True
+    assert s.signed[0]["maxFeePerGas"] > signer.MAX_FEE_WEI
+
+    class Absurd(Rpc):
+        def call(self, m, p):
+            if m == "eth_getBlockByNumber":
+                return {"baseFeePerGas": hex(10**13)}
+            return super().call(m, p)
+    s2 = Signer()
+    assert run_freeze(tmp_path / "b", s2, Absurd(), Bridge(), MODULE, lambda t: None) is False and s2.signed == []
+
+
+def test_mic_tap_shorter_than_a_tick_cancels_the_approve():
+    c = ChordState()
+    c.key_down(0.0, mic=False)
+    c.poll(0.1, key=True, mic=False)
+    assert c.mic_down(0.12, key=True) is False                 # press callback; released before the next tick
+    c.poll(0.2, key=True, mic=False)
+    assert c.key_up(0.4, mic=False) is False
+
+
+def test_mic_down_can_complete_the_chord_timer():
+    c = ChordState(hold_s=2.0)
+    c.key_down(0.0, mic=False)
+    c.mic_down(0.5, key=True)
+    assert c.poll(2.4, key=True, mic=True) is False and c.poll(2.5, key=True, mic=True) is True

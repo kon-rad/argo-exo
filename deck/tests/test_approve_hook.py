@@ -278,3 +278,119 @@ def test_main_with_locked_key_puts_the_item_back(tmp_path, monkeypatch):
     assert approve_hook.main([str(p)]) == 1
     assert not p.exists() and (tmp_path / "tx-queue" / p.name).exists()
     assert "exo-unlock" in spoken[0]
+
+
+# ---- fix round 1 -------------------------------------------------------------------------------------------
+
+
+def test_marker_is_fsynced_before_the_send(tmp_path, monkeypatch):
+    import os
+    from exo_deck import state as st
+    events = []
+    real = os.fsync
+
+    def rec(fd):
+        events.append("fsync")
+        real(fd)
+
+    monkeypatch.setattr(st, "_fsync", rec)
+    p = item(tmp_path)
+
+    class Rec(FakeRpc):
+        def call(self, m, prm):
+            if m == "eth_sendRawTransaction":
+                events.append("send")
+                assert "sending" in json.loads(p.read_text())
+            return super().call(m, prm)
+
+    run(p, Rec())
+    i = events.index("send")
+    assert events[:i].count("fsync") >= 2                    # temp file + directory, before the broadcast
+    assert events[i + 1:].count("fsync") >= 2                # sent_tx is durable too
+
+
+def test_failed_outcome_is_durable(tmp_path, monkeypatch):
+    from exo_deck import state as st
+    calls = []
+    monkeypatch.setattr(st, "_fsync", lambda fd: calls.append(fd))
+    run(item(tmp_path, salt="0x01"), FakeRpc())
+    assert len(calls) >= 2
+
+
+def _lock_is_free(state):
+    import fcntl, os
+    fd = os.open(state / ".hot-key.lock", os.O_RDWR | os.O_CREAT)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        fcntl.flock(fd, fcntl.LOCK_UN)
+        return True
+    except BlockingIOError:
+        return False
+    finally:
+        os.close(fd)
+
+
+def test_report_and_speech_happen_after_the_key_lock_is_released(tmp_path):
+    p = item(tmp_path)
+    free = []
+
+    class B(FakeBridge):
+        def report_executed(self, pid, tx_hash=None, error=None):
+            free.append(_lock_is_free(tmp_path))
+            return super().report_executed(pid, tx_hash, error)
+
+    class Peek(FakeRpc):
+        def call(self, m, prm):
+            if m == "eth_sendRawTransaction":
+                free.append(_lock_is_free(tmp_path))          # sanity: held during the broadcast
+            return super().call(m, prm)
+
+    run(p, Peek(), B())
+    assert free == [False, True]
+    spoken_free = []
+    p2 = tmp_path / "tx-approved" / "2_x.json"
+    p2.write_text(json.dumps(dict(json.loads(p.read_text()), salt="0x01", sent_tx=None, sending=None, reported=None)))
+    run_hook(p2, FakeSigner(), FakeRpc(), FakeBridge(), MODULE, lambda s: spoken_free.append(_lock_is_free(tmp_path)),
+             now=lambda: NOW)
+    assert spoken_free == [True]
+
+
+def test_sweep_completes_a_marker_without_signing(tmp_path):
+    from exo_deck.approve_hook import sweep
+    p = item(tmp_path, sending={"tx_hash": TXH, "raw": "0x" + RAW.hex()})
+    fresh = tmp_path / "tx-approved" / "2_fresh.json"
+    fresh.write_text(json.dumps({"id": "fresh", "to": "0x" + "22" * 20, "value": "0", "data": "0x",
+                                 "salt": "0x" + "00" * 32, "chain": "ethereum"}))
+    rpc, br, spoken = FakeRpc(receipt={"status": "0x1"}), FakeBridge(), []
+    t = [NOW]
+    tried = {}
+    assert sweep(tmp_path, rpc, br, MODULE, spoken.append, now=lambda: t[0], last_try=tried) == [PID]
+    assert json.loads(p.read_text())["sent_tx"] == TXH and br.reports == [(PID, TXH, None)]
+    assert rpc.sent == [] and "sending" not in json.loads(fresh.read_text()) and spoken == []
+    assert sweep(tmp_path, rpc, br, MODULE, spoken.append, now=lambda: t[0], last_try=tried) == []   # done
+
+
+def test_sweep_retries_unsure_quietly_and_throttled(tmp_path):
+    from exo_deck.approve_hook import sweep
+
+    class Down(FakeRpc):
+        def call(self, m, prm):
+            if m == "eth_getTransactionReceipt":
+                raise RpcError("network: down")
+            return super().call(m, prm)
+
+    item(tmp_path, sending={"tx_hash": TXH, "raw": "0x" + RAW.hex()})
+    t, tried, spoken = [NOW], {}, []
+    assert sweep(tmp_path, Down(), FakeBridge(), MODULE, spoken.append, now=lambda: t[0], last_try=tried) == [PID]
+    assert sweep(tmp_path, Down(), FakeBridge(), MODULE, spoken.append, now=lambda: t[0], last_try=tried) == []
+    t[0] += 31
+    assert sweep(tmp_path, Down(), FakeBridge(), MODULE, spoken.append, now=lambda: t[0], last_try=tried) == [PID]
+    assert spoken == []
+
+
+def test_sweep_retries_an_unsent_report(tmp_path):
+    from exo_deck.approve_hook import sweep
+    p = item(tmp_path, sent_tx=TXH)
+    br = FakeBridge()
+    assert sweep(tmp_path, FakeRpc(), br, MODULE, lambda s: None, now=lambda: NOW) == [PID]
+    assert br.reports == [(PID, TXH, None)] and json.loads(p.read_text())["reported"] is True

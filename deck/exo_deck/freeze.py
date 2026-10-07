@@ -13,7 +13,7 @@ from typing import Callable
 from eth_utils import keccak
 
 from .exo_module import FROZEN, _bool
-from .signer import build_tx, freeze_calldata, key_lock
+from .signer import FREEZE_MAX_FEE_WEI, build_tx, freeze_calldata, key_lock
 from .state import _write
 
 log = logging.getLogger("hooks/freeze")
@@ -29,7 +29,9 @@ def _onchain_frozen(rpc, module: str) -> bool | None:
 
 def _send_freeze(state: Path, signer, rpc, module: str) -> str:
     with key_lock(state, wait_s=LOCK_WAIT_S):
-        raw = bytes(signer.sign(build_tx(rpc, signer.address, module, freeze_calldata())))
+        # 2x the normal bid: replaces any same-nonce execute still in the mempool
+        tx = build_tx(rpc, signer.address, module, freeze_calldata(), bid=2, max_fee_wei=FREEZE_MAX_FEE_WEI)
+        raw = bytes(signer.sign(tx))
         txh = "0x" + keccak(raw).hex()
         rpc.call("eth_sendRawTransaction", ["0x" + raw.hex()])
     return txh

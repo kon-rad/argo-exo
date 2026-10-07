@@ -3,7 +3,11 @@
 Nothing reaches tx-queue/ on the bridge's word alone. Each new item is confirmed onchain first (OnchainCheck):
 the approval hash is recomputed here from the item's own fields, and ExoModule must say approvedUntil(hash) > now
 (and no later than the item's expires_at), used(hash) == false and frozen() == false. A forged ledger row therefore
-never shows up on the key."""
+never shows up on the key.
+
+Each loop also runs the approve hook's recovery sweep (approve_hook.sweep): tx-approved/ items left with a
+`sending` marker by a crash or an unsure broadcast are resolved from the receipt, and unsent bridge reports are
+retried. The sweep has no signer and never signs."""
 from __future__ import annotations
 
 import json
@@ -113,14 +117,21 @@ def main() -> None:
 
     from exo_nownodes.rpc import Rpc
 
+    from . import tts
+    from .approve_hook import sweep
     from .bridge_client import Bridge, BridgeError
     from .config import Settings
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
     s = Settings.from_env()
     bridge = Bridge(s.bridge_url, s.bridge_token)
-    check = OnchainCheck(Rpc("ethereum"), os.environ["EXO_MODULE_ADDRESS"])
+    rpc, module = Rpc("ethereum"), os.environ["EXO_MODULE_ADDRESS"]
+    check, tried = OnchainCheck(rpc, module), {}
     while True:
+        try:
+            sweep(s.state, rpc, bridge, module, tts.speak, last_try=tried)   # crash / unsure leftovers; never signs
+        except Exception as exc:  # noqa: BLE001
+            log.warning("recovery sweep failed (%s)", type(exc).__name__)
         try:
             new = sync_once(s.state, bridge.pending_approvals(), check)
             if new:

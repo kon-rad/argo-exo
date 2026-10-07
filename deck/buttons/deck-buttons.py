@@ -148,6 +148,8 @@ class Deck:
         Gestures(self.camera, on_tap=lambda: run(BIN["capture"], "snap"),
                  on_double=lambda: run(BIN["capture"], "camera", "toggle"))
         Gestures(self.mic, on_tap=lambda: run(BIN["capture"], "mic", "toggle"))
+        mic_gesture_press = self.mic.when_pressed
+        self.mic.when_pressed = lambda: (mic_gesture_press(), self.mic_pressed())
         Gestures(self.kiosk, on_tap=lambda: run(BIN["python"], "-m", "exo_deck.navcli", "next"),
                  on_double=lambda: run(BIN["kiosk"], "toggle"))
         self.last_verdict = mtime(STATE / "verdict")
@@ -157,6 +159,13 @@ class Deck:
     def key_pressed(self):
         with self.chord_lock:
             self.chord.key_down(time.time(), self.mic.is_pressed)
+
+    def mic_pressed(self):
+        with self.chord_lock:
+            panic = self.chord.mic_down(time.time(), self.key.is_pressed)
+        if panic:
+            log.warning("panic chord: freezing")
+            hook("freeze")
 
     def key_released(self):
         with self.chord_lock:
