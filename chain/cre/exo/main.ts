@@ -19,8 +19,9 @@ import type { Hex } from "./src/lib/types";
 //        runtime.getSecrets. Works in `cre workflow simulate` without beta access.
 // true:  `handlerInTee` + TeeRuntime.getSecrets (Confidential Workflows, private beta). The guard pipeline,
 //        the keys and the policy stay inside the enclave; only the report payload crosses to the DON
-//        (runtime.usingTheDons()). Flip only once beta access is confirmed (03-guardian Task 0 Step 3).
-const USE_TEE = false;
+//        (runtime.usingTheDons()). The local simulator runs it without beta enrollment (checked 2026-10-07,
+//        CLI v1.37: "Handler requested TEE Execution", same verdicts). A DON deploy still needs the private beta.
+const USE_TEE = true;
 // ──────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 const nowSeconds = (rt: { now(): Date }) => Math.floor(rt.now().getTime() / 1000);

@@ -1,0 +1,40 @@
+$ cre workflow simulate exo --target mainnet --non-interactive --trigger-index 0 --http-payload docs/evidence/cre/payloads/4-mismatch.json
+# 2026-10-07T08:57:31Z, CRE CLI v1.37.0, dry run (no --broadcast), Confidential Workflow (handlerInTee, USE_TEE = true)
+Initializing...
+Loading settings...
+Checking RPC connectivity...
+  Reading pre-built WASM binary...
+✓ Loaded WASM binary from ev.wasm
+✓ Simulation limits enabled
+  HTTP: req=120kb resp=250kb timeout=10s | ConfHTTP: req=125kb resp=500kb timeout=1m30s | Consensus obs=25kb | ChainWrite evm_report=50kb evm_gas=10000000 solana_report=265b solana_cu=300000 | WASM binary=100mb compressed=20mb
+  Binary hash: 325387d30df20c418a9b62b5d4e391f1a54ecd032febf9bb4769623db815bfa6
+  Config hash: 6b5515111b27a10cfba0cfbe48855dd382f465100c77e9508ceecbe37f8662d1
+! Secret "NOWNODES_API_KEY" uses itself as the env var name — this is fragile and may cause confusion. Consider using a distinct env var name (e.g. "CRE_NOWNODES_API_KEY").
+! Secret "OPENROUTER_API_KEY" uses itself as the env var name — this is fragile and may cause confusion. Consider using a distinct env var name (e.g. "CRE_OPENROUTER_API_KEY").
+! Secret "POLICY_JSON" uses itself as the env var name — this is fragile and may cause confusion. Consider using a distinct env var name (e.g. "CRE_POLICY_JSON").
+✓ Loaded JSON from file: docs/evidence/cre/payloads/4-mismatch.json
+✓ Created HTTP trigger payload with 7 fields
+2026-10-07T16:57:33Z [SIMULATION] Simulator Initialized
+
+2026-10-07T16:57:33Z [SIMULATION] Running trigger trigger=http-trigger@1.0.0-alpha
+╭────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ Handler requested TEE Execution                                                                    │
+│ The simulator is not a real TEE, and is meant to debug.                                            │
+│ Do not use it for sensitive information.                                                           │
+│ During real execution, user logs for this trigger will not be visible, and will not leave the TEE. │
+│ They are presented in the simulator for debugging only.                                            │
+│                                                                                                    │
+╰────────────────────────────────────────────────────────────────────────────────────────────────────╯
+
+
+✓ Workflow Simulation Result:
+"{\"proposal_id\":\"00000000-0000-0000-0000-0000000000a4\",\"verdict\":\"refuse\",\"risk\":\"high\",\"auto_eligible\":false,\"explanation\":\"Refused: does not match what you asked for. You pay 1 USDC to mira.eth. Nothing else changes.\",\"reasons\":[\"does not match what you asked for\",\"reviewer: Recipient address mismatch: intent specifies 0x9999999999999999999999999999999999999999 but decoded call sends to 0x4a66ed02d60dc03a2fd82cfc101d0bff15725bb0, creating risk of sending funds to unintended address.\",\"reviewer: The recipient address in the decoded call (0x4a66ed02d60dc03a2fd82cfc101d0bff15725bb0) does not match the intended recipient address (0x9999999999999999999999999999999999999999).\"],\"tx_hash\":\"0xeb0733aa2ac2f49c78715d560148908210322878f826b21d68a2d1d9fd849de5\",\"expires_at\":0,\"changes\":[{\"kind\":\"erc20\",\"asset\":\"USDC\",\"token\":\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\",\"from\":\"0x28c6c06298d514db089934071355e5743bf21d60\",\"to\":\"0x4a66ed02d60dc03a2fd82cfc101d0bff15725bb0\",\"raw_amount\":\"1000000\",\"amount\":\"1\"}],\"report_tx\":\"\",\"usd_out\":null}"
+
+2026-10-07T16:57:37Z [SIMULATION] Execution finished signal received
+2026-10-07T16:57:37Z [SIMULATION] Skipping WorkflowEngineV2
+
+╭──────────────────────────────────────────────────────╮
+│ Simulation complete! Ready to deploy your workflow?  │
+│                                                      │
+│ Run cre account access to request deployment access. │
+╰──────────────────────────────────────────────────────╯

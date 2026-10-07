@@ -1,0 +1,23 @@
+{
+ "proposal_id": "00000000-0000-0000-0000-0000000000a4",
+ "source": "agent:wallet",
+ "requested_at": 1800000000,
+ "intent": {
+  "kind": "send",
+  "summary": "Send 1 USDC to mira",
+  "token": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+  "amount": "1",
+  "to": "0x9999999999999999999999999999999999999999"
+ },
+ "tx": {
+  "chain_id": 1,
+  "to": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+  "value": "0",
+  "data": "0xa9059cbb0000000000000000000000004a66ed02d60dc03a2fd82cfc101d0bff15725bb000000000000000000000000000000000000000000000000000000000000f4240",
+  "salt": "0x5be801c187e9bae8e56a78cf2c0ef2fb0d12a2d5341dda2d27ae122a71e7f4f8"
+ },
+ "from": "0x28c6c06298d514db089934071355e5743bf21d60",
+ "context": {
+  "spent_today_usd": 0
+ }
+}

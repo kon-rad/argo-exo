@@ -1,0 +1,40 @@
+$ cre workflow simulate exo --target mainnet --non-interactive --trigger-index 0 --http-payload docs/evidence/cre/payloads/2-approval-for-all.json
+# 2026-10-07T08:57:18Z, CRE CLI v1.37.0, dry run (no --broadcast), Confidential Workflow (handlerInTee, USE_TEE = true)
+Initializing...
+Loading settings...
+Checking RPC connectivity...
+  Reading pre-built WASM binary...
+✓ Loaded WASM binary from ev.wasm
+✓ Simulation limits enabled
+  HTTP: req=120kb resp=250kb timeout=10s | ConfHTTP: req=125kb resp=500kb timeout=1m30s | Consensus obs=25kb | ChainWrite evm_report=50kb evm_gas=10000000 solana_report=265b solana_cu=300000 | WASM binary=100mb compressed=20mb
+  Binary hash: 325387d30df20c418a9b62b5d4e391f1a54ecd032febf9bb4769623db815bfa6
+  Config hash: 6b5515111b27a10cfba0cfbe48855dd382f465100c77e9508ceecbe37f8662d1
+! Secret "POLICY_JSON" uses itself as the env var name — this is fragile and may cause confusion. Consider using a distinct env var name (e.g. "CRE_POLICY_JSON").
+! Secret "NOWNODES_API_KEY" uses itself as the env var name — this is fragile and may cause confusion. Consider using a distinct env var name (e.g. "CRE_NOWNODES_API_KEY").
+! Secret "OPENROUTER_API_KEY" uses itself as the env var name — this is fragile and may cause confusion. Consider using a distinct env var name (e.g. "CRE_OPENROUTER_API_KEY").
+✓ Loaded JSON from file: docs/evidence/cre/payloads/2-approval-for-all.json
+✓ Created HTTP trigger payload with 7 fields
+2026-10-07T16:57:20Z [SIMULATION] Simulator Initialized
+
+2026-10-07T16:57:20Z [SIMULATION] Running trigger trigger=http-trigger@1.0.0-alpha
+╭────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ Handler requested TEE Execution                                                                    │
+│ The simulator is not a real TEE, and is meant to debug.                                            │
+│ Do not use it for sensitive information.                                                           │
+│ During real execution, user logs for this trigger will not be visible, and will not leave the TEE. │
+│ They are presented in the simulator for debugging only.                                            │
+│                                                                                                    │
+╰────────────────────────────────────────────────────────────────────────────────────────────────────╯
+
+
+✓ Workflow Simulation Result:
+"{\"proposal_id\":\"00000000-0000-0000-0000-000000000002\",\"verdict\":\"refuse\",\"risk\":\"high\",\"auto_eligible\":false,\"explanation\":\"Refused: came from the camera, which is never trusted to move funds. Nothing changes in your wallet.\",\"reasons\":[\"came from the camera, which is never trusted to move funds\",\"reviewer: setApprovalForAll grants unlimited transfer rights to an unknown operator address from an untrusted QR code source, creating unbounded loss potential regardless of simulated changes.\",\"reviewer: The transaction grants unlimited approval to the untrusted address 0xc0ffee0000000000000000000000000000000000 for all your NFTs.\"],\"tx_hash\":\"0x1443f2c16d3a11c9aca2c862a74a4126729db0b9f23cd0ddf7f303638b859a1a\",\"expires_at\":0,\"changes\":[],\"report_tx\":\"\",\"usd_out\":null}"
+
+2026-10-07T16:57:24Z [SIMULATION] Execution finished signal received
+2026-10-07T16:57:24Z [SIMULATION] Skipping WorkflowEngineV2
+
+╭──────────────────────────────────────────────────────╮
+│ Simulation complete! Ready to deploy your workflow?  │
+│                                                      │
+│ Run cre account access to request deployment access. │
+╰──────────────────────────────────────────────────────╯

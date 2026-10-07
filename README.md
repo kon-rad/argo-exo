@@ -20,6 +20,7 @@ TODO(konrad): Exo is a wearable Raspberry Pi. Push-to-talk speaks to your own He
 | `docs/` | Architecture notes |
 
 See [docs/architecture.md](docs/architecture.md) for the data flow.
+Hackathon evidence (CRE simulation runs, NOWNodes endpoint map, live stack checks): [docs/hackathon-evidence.md](docs/hackathon-evidence.md).
 
 ## Quick start
 

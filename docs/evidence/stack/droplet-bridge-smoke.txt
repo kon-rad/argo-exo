@@ -1,0 +1,8 @@
+# exo-bridge smoke test from the Mac over Tailscale to the droplet (http://<tailnet-ip>:8765), 2026-10-07T08:54:30Z
+# Same client the deck uses (deck/exo_deck/bridge_client.py). Bridge runs as the exoguard user, bound to the tailnet IP only.
+
+GET /health -> {'ok': True}
+GET /workflows -> ['guard:simulated', 'freeze:simulated', 'diligence:planned', 'journal:planned']
+POST /talk -> 'Exo bridge smoke test OK' (2.8 s round trip to the Hermes agent)
+POST /tasks (agent=researcher) -> {'id': 't_62d109f9', 'assignee': 'researcher', 'status': 'ready'}
+GET /board (exo kanban board) -> {'done': 1, 'ready': 1}

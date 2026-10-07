@@ -1,0 +1,20 @@
+# NOWNodes live check, 2026-10-07T08:53:59Z, through packages/nownodes-py (api-key header; key redacted)
+
+## JSON-RPC: eth_chainId + eth_blockNumber
+eth.nownodes.io          chainId      1  block   26139441   1535 ms
+base.nownodes.io         chainId   8453  block   52286948   2157 ms
+arbitrum.nownodes.io     chainId  42161  block  512515048   2321 ms
+matic.nownodes.io        chainId    137  block   95105375   1802 ms
+
+## Blockbook REST: address lookup (USDC on eth/base, the zero address on arb/polygon)
+eth-blockbook.nownodes.io    address lookup ok, txs=128316445    394 ms
+base-blockbook.nownodes.io   address lookup ok, txs=315346909    924 ms
+arb-blockbook.nownodes.io    address lookup ok, txs=14704326    939 ms
+maticbook.nownodes.io        address lookup ok, txs=1530355373    996 ms
+
+## Trace API: debug_traceCall (callTracer), the Guardian's simulation method
+eth.nownodes.io          USDC totalSupply() traced: gasUsed 30759, output 49,075,663,047 USDC    946 ms
+base.nownodes.io         USDC totalSupply() traced: gasUsed 30638, output 4,388,818,031 USDC    528 ms
+
+## Receipt polling (deck-confirm, EXO_CONFIRM_MODE=poll)
+eth_getTransactionReceipt on a tx in block 26139443: status 0x1

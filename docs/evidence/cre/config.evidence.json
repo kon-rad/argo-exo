@@ -1,0 +1,33 @@
+{
+ "chainSelectorName": "ethereum-mainnet",
+ "chainId": 1,
+ "module": "0x00000000000000000000000000000000000000cc",
+ "safe": "0x28c6c06298d514db089934071355e5743bf21d60",
+ "gasLimit": "300000",
+ "ttlSeconds": 600,
+ "simMethod": "debug_traceCall",
+ "ethUsdFeed": "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419",
+ "judges": [
+  "anthropic/claude-haiku-4.5",
+  "google/gemini-2.5-flash"
+ ],
+ "tokens": {
+  "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48": {
+   "symbol": "USDC",
+   "decimals": 6
+  },
+  "0xdac17f958d2ee523a2206206994597c13d831ec7": {
+   "symbol": "USDT",
+   "decimals": 6
+  },
+  "0x6b175474e89094c44da98b954eedeac495271d0f": {
+   "symbol": "DAI",
+   "decimals": 18
+  },
+  "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2": {
+   "symbol": "WETH",
+   "decimals": 18
+  }
+ },
+ "debug": false
+}
