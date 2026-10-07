@@ -1,0 +1,1 @@
+Proposes trades within the mandate; every proposal goes through the CRE Transaction Guardian; never signs.

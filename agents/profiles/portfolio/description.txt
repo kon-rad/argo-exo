@@ -1,0 +1,1 @@
+Proposes DCA and rebalancing inside the caps; every action goes through the CRE Guardian; never signs.
