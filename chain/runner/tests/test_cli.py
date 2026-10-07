@@ -92,8 +92,12 @@ def test_guard_with_no_token_is_usage_error():
 def test_agent_profile_sets_the_source(capsys):
     b = FakeBridge()
     env = dict(ENV, EXO_GUARD_TOKEN="g" * 40, EXO_AGENT_PROFILE="wallet")
-    assert cli.main(["guard", json.dumps(REQ)], env=env, post=b) == 0
-    assert b.calls[0][1]["json"]["source"] == "agent:wallet"   # the agent can't pass itself off as "voice"
+    no_source = {k: v for k, v in REQ.items() if k != "source"}
+    assert cli.main(["guard", json.dumps(no_source)], env=env, post=b) == 0
+    assert b.calls[0][1]["json"]["source"] == "agent:wallet"
+    # an explicit source (the skill's --source camera) is kept; the bridge decides what a guard token may claim
+    assert cli.main(["guard", json.dumps(dict(REQ, source="camera"))], env=env, post=b) == 0
+    assert b.calls[1][1]["json"]["source"] == "camera"
 
 
 def test_busy_is_1(capsys):

@@ -3,7 +3,7 @@
     EXO_BRIDGE_URL=http://<tailnet ip>:8765 EXO_GUARD_TOKEN=... python -m exo_guardian.cli guard '<request json>'
 
 It POSTs the request to exo-bridge's /guard and prints the bridge's JSON. With EXO_AGENT_PROFILE set (each Hermes
-profile's env, see agents/install-profiles.sh) the request's `source` is "agent:<profile>"; the bridge accepts only
+profile's env, see agents/install-profiles.sh) a request without `source` gets "agent:<profile>"; the bridge accepts only
 agent:<profile>, camera or dashboard from the guard token, and answers 503 "guardian busy" while another guard runs. The skill never holds the ledger
 credentials or decides broadcast: those live only in the bridge's env, behind its bearer token.
 
@@ -33,7 +33,7 @@ def main(argv, env=os.environ, post=requests.post) -> int:
         print("guard: the request must be a JSON object", file=sys.stderr)
         return 2
     profile = env.get("EXO_AGENT_PROFILE", "").strip()
-    if profile:
+    if profile and "source" not in req:
         req["source"] = f"agent:{profile}"   # this profile's identity (install-profiles.sh); the bridge checks the form
     url = env.get("EXO_BRIDGE_URL", "").rstrip("/")
     token = env.get("EXO_GUARD_TOKEN", "")   # the narrow token: the bridge accepts it only for POST /guard
