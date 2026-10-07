@@ -101,3 +101,73 @@ def test_mempool_notice_is_silent(tmp_path):
     for tx in ({"txid": "0xee", "confirmations": 0, "blockHeight": -1}, {"txid": "0xee", "blockHeight": 0, "vout": [{"addresses": ["0xmod"]}]}):
         assert a.handle(tx) is None
     assert spoken == [] and not (tmp_path / "confirmations.jsonl").exists() and not (tmp_path / "frozen").exists()
+
+
+# ── poll mode: NOWNodes' Start plan has no WebSocket (403), so the deck polls the receipts of what IT sent ───────
+import os
+import time
+
+from exo_deck.confirm import ReceiptPoller
+
+
+def _sent(state, name, txid, summary, **extra):
+    d = state / "tx-approved"
+    d.mkdir(exist_ok=True)
+    p = d / name
+    p.write_text(json.dumps({"summary": summary, "sent_tx": txid, **extra}))
+    return p
+
+
+def test_poll_announces_each_mined_tx_once_from_its_receipt(tmp_path):
+    _sent(tmp_path, "1_a.json", "0xaa", "Send 1 USDC to mira.eth")
+    receipts = {"0xaa": None}                 # in the mempool first
+    spoken = []
+    a = Announcer(tmp_path, spoken.append, frozen_check=lambda: False, module="0xmod")
+    p = ReceiptPoller(a, lambda txid: receipts[txid])
+    assert p.poll_once() == [] and spoken == []
+    receipts["0xaa"] = 1
+    assert p.poll_once() == ["Confirmed: Send 1 USDC to mira.eth"]
+    assert p.poll_once() == [] and spoken == ["Confirmed: Send 1 USDC to mira.eth"]
+    assert json.loads((tmp_path / "confirmations.jsonl").read_text())["status"] == 1
+
+
+def test_poll_reverted_is_a_failure_never_confirmed(tmp_path):
+    _sent(tmp_path, "1_a.json", "0xaa", "Send 1 USDC to mira.eth", failed="reverted onchain")   # settle() went quiet for us
+    spoken = []
+    p = ReceiptPoller(Announcer(tmp_path, spoken.append, frozen_check=lambda: False, module="0xmod"), lambda txid: 0)
+    p.poll_once()
+    assert spoken == ["That payment failed: Send 1 USDC to mira.eth"]
+
+
+def test_poll_skips_failures_spoken_elsewhere_unsent_and_old_items(tmp_path):
+    _sent(tmp_path, "1_a.json", "0xaa", "dropped one", failed="dropped")          # approve_hook spoke it
+    (tmp_path / "tx-approved" / "2_b.json").write_text(json.dumps({"summary": "not sent yet"}))
+    old = _sent(tmp_path, "3_c.json", "0xcc", "from last week")
+    os.utime(old, (time.time() - 7200, time.time() - 7200))
+    asked = []
+    p = ReceiptPoller(Announcer(tmp_path, [].append, frozen_check=lambda: False, module="0xmod"),
+                      lambda txid: asked.append(txid) or 1)
+    assert p.poll_once() == [] and asked == []
+
+
+def test_poll_does_not_repeat_after_a_restart(tmp_path):
+    _sent(tmp_path, "1_a.json", "0xAA", "Send 1 USDC")
+    a = Announcer(tmp_path, [].append, frozen_check=lambda: False, module="0xmod")
+    ReceiptPoller(a, lambda txid: 1).poll_once()
+    spoken = []
+    again = ReceiptPoller(Announcer(tmp_path, spoken.append, frozen_check=lambda: False, module="0xmod"), lambda txid: 1)
+    assert again.poll_once() == [] and spoken == []
+
+
+def test_poll_rpc_trouble_waits_for_the_next_round(tmp_path):
+    _sent(tmp_path, "1_a.json", "0xaa", "Send 1 USDC")
+    calls = {"n": 0}
+
+    def receipt(txid):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("node down")
+        return 1
+    spoken = []
+    p = ReceiptPoller(Announcer(tmp_path, spoken.append, frozen_check=lambda: False, module="0xmod"), receipt)
+    assert p.poll_once() == [] and p.poll_once() == ["Confirmed: Send 1 USDC"]
