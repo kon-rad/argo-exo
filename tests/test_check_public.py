@@ -52,8 +52,8 @@ def test_lookalike_of_allowed_address_is_flagged(tmp_path):
     assert run(tmp_path, "gw 210.0.0.0\n").returncode == 1  # public-ok
 
 
-def _vendored(tmp_path, content):
-    d = tmp_path / "chain" / "contracts" / "lib" / "openzeppelin-contracts"
+def _vendored(tmp_path, content, project="chain"):
+    d = tmp_path / project / "contracts" / "lib" / "openzeppelin-contracts"
     d.mkdir(parents=True)
     (d / "SECURITY.md").write_text(content)
 
@@ -72,5 +72,26 @@ def test_same_email_outside_vendored_lib_is_flagged(tmp_path):
 
 def test_denylist_still_scans_vendored_lib(tmp_path):
     _vendored(tmp_path, "ssh secret-host\n")
+    r = run(tmp_path, "hello world\n", denylist="secret-host\n")
+    assert r.returncode == 1 and "SECURITY.md:1" in r.stdout
+
+
+def test_vendored_site_contracts_lib_email_is_skipped(tmp_path):
+    _vendored(tmp_path, "write to security" + "@openzeppelin.com\n", project="site")
+    assert run(tmp_path, "hello world\n").returncode == 0
+
+
+def test_other_contracts_lib_dirs_are_still_scanned(tmp_path):
+    for project in ("deck", "site/contracts/src"):
+        d = tmp_path / project / "contracts" / "lib"
+        d.mkdir(parents=True)
+        (d / "x.md").write_text("write to security" + "@openzeppelin.com\n")
+    r = run(tmp_path, "hello world\n")
+    assert r.returncode == 1
+    assert "deck/contracts/lib/x.md:1" in r.stdout and "site/contracts/src/contracts/lib/x.md:1" in r.stdout
+
+
+def test_denylist_still_scans_vendored_site_lib(tmp_path):
+    _vendored(tmp_path, "ssh secret-host\n", project="site")
     r = run(tmp_path, "hello world\n", denylist="secret-host\n")
     assert r.returncode == 1 and "SECURITY.md:1" in r.stdout

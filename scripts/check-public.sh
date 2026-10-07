@@ -11,7 +11,7 @@ EXCL=(--exclude-dir=.git --exclude-dir=node_modules --exclude-dir=.venv --exclud
 # Vendored upstream code (forge-std, OpenZeppelin, committed so CI needs no network) carries its maintainers'
 # contact emails in docs/package.json. The generic email/IPv4/chat-id scans skip it; the private denylist
 # still scans everything. Matches by path, not basename, so other dirs named lib/ are still scanned.
-VENDORED='(^|/)chain/contracts/lib/'
+VENDORED='(^|/)(chain|site)/contracts/lib/'
 not_vendored() { grep -vE "^[^:]*$VENDORED" || true; }
 ALLOWED='127\.0\.0\.1|0\.0\.0\.0|192\.0\.2\.[0-9]{1,3}|198\.51\.100\.[0-9]{1,3}|203\.0\.113\.[0-9]{1,3}'
 strip_allowed() {  # blank out allowed whole addresses so a real IP on the same line still trips

@@ -1,0 +1,19 @@
+{
+  "chainId": 8453,
+  "chainIdHex": "0x2105",
+  "chainName": "Base",
+  "contract": "0x0000000000000000000000000000000000000000",
+  "usdc": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+  "usdcName": "USD Coin",
+  "usdcVersion": "2",
+  "usdcDecimals": 6,
+  "selectors": {
+    "preorder": "0x0002af4b",
+    "preorderWithPermit": "0x6bb4fb15",
+    "approve": "0x095ea7b3",
+    "allowance": "0xdd62ed3e",
+    "nonces": "0x7ecebe00"
+  },
+  "preorderedTopic": "0xb6fd44e81134743ff29142842b07b87d5c935df16feae05d0a5002478124438d",
+  "explorer": "https://basescan.org"
+}
