@@ -375,10 +375,51 @@ contract ExoPreorderTest is Test {
         assertEq(p.tierName(1), "The Apparatus");
         assertEq(p.description(), "");
         // ordinary text, apostrophes and well-formed UTF-8 are fine
-        p.setTierName(1, string.concat(unicode"Founders' Edition · — é ", string(hex"f09f9a80")));
-        p.setDescription("A plain sentence, with (punctuation): 1-2; ok?");
+        p.setTierName(1, string.concat(unicode"Ed. · — é ", string(hex"f09f9a80")));
+        p.setDescription(string.concat(unicode"Founders' Edition · — é ", string(hex"f09f9a80"), " (1-2; ok?)"));
         vm.stopPrank();
-        assertEq(p.tierName(1), string.concat(unicode"Founders' Edition · — é ", string(hex"f09f9a80")));
+        assertEq(p.tierName(1), string.concat(unicode"Ed. · — é ", string(hex"f09f9a80")));
+    }
+
+    /// U+FFFE/U+FFFF are illegal in XML and U+FDD0..U+FDEF are noncharacters: refused in both setters.
+    function test_xml_illegal_and_noncharacters_rejected() public {
+        bytes[6] memory bad = [
+            bytes(hex"efbfbe"), hex"efbfbf",                    // U+FFFE, U+FFFF
+            hex"efb790", hex"efb7af", hex"efb79f",              // U+FDD0, U+FDEF, U+FDDF
+            hex"41efbfbf42"                                     // embedded mid-string
+        ];
+        vm.startPrank(owner);
+        for (uint256 i = 0; i < bad.length; i++) {
+            vm.expectRevert(ExoPreorder.UnsafeString.selector);
+            p.setTierName(1, string(bad[i]));
+            vm.expectRevert(ExoPreorder.UnsafeString.selector);
+            p.setDescription(string(bad[i]));
+        }
+        // neighbours of the refused ranges are ordinary characters
+        bytes[4] memory ok = [bytes(hex"efbfbd"), hex"efb78f", hex"efb7b0", hex"efbfbc"];   // U+FFFD U+FDCF U+FDF0 U+FFFC
+        for (uint256 i = 0; i < ok.length; i++) p.setTierName(1, string(ok[i]));
+        p.setTierName(1, unicode"Édition");
+        vm.stopPrank();
+        assertEq(p.tierName(1), unicode"Édition");
+    }
+
+    function test_tier_name_length_cap() public {
+        string memory n24 = "ABCDEFGHIJKLMNOPQRSTUVWX";
+        string memory n25 = "ABCDEFGHIJKLMNOPQRSTUVWXY";
+        assertEq(bytes(n24).length, 24);
+        vm.startPrank(owner);
+        p.setTierName(1, n24);
+        assertEq(p.tierName(1), n24);
+        vm.expectRevert(abi.encodeWithSelector(ExoPreorder.TierNameTooLong.selector, 25, 24));
+        p.setTierName(1, n25);
+        // the cap counts bytes: 12 two-byte characters fit, 13 do not
+        p.setTierName(1, unicode"ÉÉÉÉÉÉÉÉÉÉÉÉ");
+        vm.expectRevert(abi.encodeWithSelector(ExoPreorder.TierNameTooLong.selector, 26, 24));
+        p.setTierName(1, unicode"ÉÉÉÉÉÉÉÉÉÉÉÉÉ");
+        // the description has no cap (it only lives in the JSON)
+        p.setDescription(n25);
+        vm.stopPrank();
+        assertEq(p.tierName(1), unicode"ÉÉÉÉÉÉÉÉÉÉÉÉ");
     }
 
     // ---- owner --------------------------------------------------------------

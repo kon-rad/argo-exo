@@ -47,6 +47,10 @@ contract ExoPreorder is ERC721, Ownable2Step, Pausable {
     error UnsafeString();
     error BelowMinted();
     error RenounceDisabled();
+    error TierNameTooLong(uint256 length, uint256 max);
+
+    /// Longest tier name, in bytes, that fits the plate's tier line inside its border.
+    uint256 public constant MAX_TIER_NAME_BYTES = 24;
 
     constructor(address usdc_, address treasury_, address owner_, uint256 maxSupply_)
         ERC721("Argo Exo Pre-order", "EXO") Ownable(owner_)
@@ -88,7 +92,12 @@ contract ExoPreorder is ERC721, Ownable2Step, Pausable {
     // ---- owner --------------------------------------------------------------
 
     function setPrice(uint8 tier, uint256 p) external onlyOwner { price[tier] = p; emit PriceSet(tier, p); }
-    function setTierName(uint8 tier, string calldata n) external onlyOwner { _safe(n); tierName[tier] = n; emit TierNameSet(tier, n); }
+    function setTierName(uint8 tier, string calldata n) external onlyOwner {
+        if (bytes(n).length > MAX_TIER_NAME_BYTES) revert TierNameTooLong(bytes(n).length, MAX_TIER_NAME_BYTES);
+        _safe(n);
+        tierName[tier] = n;
+        emit TierNameSet(tier, n);
+    }
     function setDescription(string calldata d) external onlyOwner { _safe(d); description = d; emit DescriptionSet(d); }
     function setTreasury(address t) external onlyOwner { if (t == address(0)) revert ZeroAddress(); treasury = t; emit TreasurySet(t); }
     function setMaxSupply(uint256 n) external onlyOwner { if (n < totalMinted) revert BelowMinted(); maxSupply = n; emit MaxSupplySet(n); }
@@ -159,6 +168,8 @@ contract ExoPreorder is ERC721, Ownable2Step, Pausable {
     /// @dev Owner strings land raw inside JSON strings and SVG text, so refuse anything that could break either:
     ///      `"` `\` `<` `>` `&`, ASCII control characters and DEL, and any byte sequence that is not well-formed
     ///      UTF-8 (overlongs, surrogates, truncated or stray continuation bytes, code points above U+10FFFF).
+    ///      Also refuses U+FFFE, U+FFFF (not legal XML characters, so they would break svg() for XML parsers) and
+    ///      the noncharacters U+FDD0..U+FDEF.
     function _safe(string calldata v) internal pure {
         bytes calldata b = bytes(v);
         uint256 i;
@@ -186,6 +197,11 @@ contract ExoPreorder is ERC721, Ownable2Step, Pausable {
             for (uint256 k = 1; k <= n; k++) {
                 uint8 d = uint8(b[i + k]);
                 if (k == 1 ? (d < lo || d > hi) : (d < 0x80 || d > 0xBF)) revert UnsafeString();
+            }
+            if (c == 0xEF) {
+                uint8 b1 = uint8(b[i + 1]);
+                uint8 b2 = uint8(b[i + 2]);
+                if ((b1 == 0xBF && b2 >= 0xBE) || (b1 == 0xB7 && b2 >= 0x90 && b2 <= 0xAF)) revert UnsafeString();
             }
             i += n + 1;
         }
