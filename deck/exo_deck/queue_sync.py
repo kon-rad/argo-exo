@@ -6,7 +6,9 @@ the approval hash is recomputed here from the item's own fields, and ExoModule m
 never shows up on the key.
 
 Each loop also runs the approve hook's recovery sweep (approve_hook.sweep): tx-approved/ items left with a
-`sending` marker by a crash or an unsure broadcast are resolved from the receipt, and unsent bridge reports are
+`sending` marker by a crash or an unsure broadcast are resolved from the receipt; broadcast items (`sent_tx`) are
+settled from theirs, so the bridge hears executed(tx_hash) only for status 1, failed("reverted onchain") for
+status 0, and failed("dropped") for a tx the node never saw by the approval's expiry; unsent bridge reports are
 retried. The sweep has no signer and never signs."""
 from __future__ import annotations
 

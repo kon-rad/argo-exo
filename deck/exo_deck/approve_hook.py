@@ -5,8 +5,12 @@ Idempotent and crash-safe. The item file is the record:
                                node for the receipt / the tx, and if the node has never seen it, rebroadcasts
                                the identical signed bytes (same nonce, same hash: it can land at most once).
   sent_tx  "0x…"               the broadcast tx hash (also written to state/tx-sent for the key LED, and read by
-                               deck-confirm for "Confirmed: <summary>"). A re-run does nothing but retry the report.
-  failed   "<fixed message>"   a definite failure; a re-run does nothing but retry the report.
+                               deck-confirm for "Confirmed: <summary>"). Broadcast is NOT executed: nothing is
+                               reported yet. deck-queue-sync's sweep settles it from the receipt (settle()).
+  settled  "executed"          the receipt says status 1; reported to the bridge as executed(tx_hash).
+  failed   "<fixed message>"   a definite failure (before signing, a rejected broadcast, a receipt with status 0
+                               "reverted onchain", or "dropped": unknown to the node after the approval expired);
+                               reported as failed(error). A re-run does nothing but retry the report.
   reported true                exo-bridge recorded the outcome (or answered 409: it was no longer waiting).
 
 Right before signing it recomputes the approval hash from the item and re-reads ExoModule: approvedUntil(h) must
@@ -43,9 +47,11 @@ SPOKEN = {
     "fee too high": "gas is too expensive right now",
     "broadcast rejected": "the node rejected it",
     "reverted onchain": "it reverted onchain",
+    "dropped": "it never made it onchain",
     "deck error": "something went wrong on the deck",
 }
 AMBIGUOUS = ("already known", "known transaction", "nonce too low")
+DROP_GRACE_S = 120      # unknown to the node this long after the approval expired: it can never land, call it dropped
 
 
 class _Fail(Exception):
@@ -117,19 +123,50 @@ class _Hook:
                 _save(self.path, cur)
 
     def sent(self, item: dict, txh: str) -> str:
+        """Broadcast (or seen by the node). Not an outcome: the bridge hears nothing until settle() reads the receipt."""
         item["sent_tx"] = txh
         _save(self.path, item, durable=True)
         _write(self.state / "tx-sent", txh)
         log.info("sent %s for %s", txh, item["id"])
+        return txh
+
+    def executed(self, item: dict, txh: str) -> str:
+        """A receipt with status 1: the one outcome reported as executed(tx_hash)."""
+        item["sent_tx"], item["settled"] = txh, "executed"
+        _save(self.path, item, durable=True)
+        log.info("executed %s for %s", txh, item["id"])
         self.report(item, tx_hash=txh)
         return txh
 
-    def fail(self, item: dict, msg: str) -> None:
+    def fail(self, item: dict, msg: str, quiet: bool = False) -> None:
         item["failed"] = msg
         _save(self.path, item, durable=True)
         log.info("failed %s: %s", item.get("id"), msg)
         self.report(item, error=msg)
-        self.speak(f"That transaction didn't go through: {SPOKEN.get(msg, msg)}.")
+        if not quiet:
+            self.speak(f"That transaction didn't go through: {SPOKEN.get(msg, msg)}.")
+        return None
+
+    def settle(self, item: dict) -> str | None:
+        """The sweep's job for a broadcast item: read its receipt. status 1 → executed(tx_hash); status 0 → failed
+        ("reverted onchain", spoken by deck-confirm when it sees the mined tx, so quiet here); unknown to the node
+        past the approval's expiry → failed ("dropped", e.g. replaced by the freeze), spoken here since nothing is
+        mined for deck-confirm to announce. In the mempool, or the node unsure: wait for the next sweep."""
+        txh = item["sent_tx"]
+        try:
+            seen = _probe(self.rpc, txh)
+        except (RpcError, ValueError):
+            return None
+        if seen == "ok":
+            return self.executed(item, txh)
+        if seen == "reverted":
+            return self.fail(item, "reverted onchain", quiet=True)
+        exp = item.get("expires_at")
+        if seen == "unknown" and isinstance(exp, (int, float)) and not isinstance(exp, bool) \
+                and self.now() > exp + DROP_GRACE_S:
+            self.fail(item, "dropped", quiet=True)
+            summary = str(item.get("summary") or "").strip()[:120]
+            self.speak(f"That payment failed: {summary or 'a transaction'}. It never made it onchain.")
         return None
 
     def unsure(self, item: dict) -> None:
@@ -151,7 +188,10 @@ class _Hook:
             seen = _probe(self.rpc, txh)
         except (RpcError, ValueError):
             seen = None
-        if seen in ("ok", "pending"):
+        if seen == "ok":
+            self.sent(item, txh)
+            return self.executed(item, txh)
+        if seen == "pending":
             return self.sent(item, txh)
         if seen == "reverted":
             return self.fail(item, "reverted onchain")
@@ -173,7 +213,10 @@ class _Hook:
             seen = _probe(self.rpc, txh)
         except (RpcError, ValueError):
             return self.unsure(item)
-        if seen in ("ok", "pending"):
+        if seen == "ok":
+            self.sent(item, txh)
+            return self.executed(item, txh)
+        if seen == "pending":
             return self.sent(item, txh)
         if seen == "reverted":
             return self.fail(item, "reverted onchain")
@@ -244,11 +287,16 @@ class _Hook:
         if not isinstance(item, dict) or not isinstance(item.get("id"), str):
             log.error("malformed item %s", self.path.name)
             return None
-        if item.get("sent_tx") or item.get("failed"):
+        if item.get("failed"):
             if not item.get("reported"):
-                kw = {"tx_hash": item["sent_tx"]} if item.get("sent_tx") else {"error": item["failed"]}
-                self.report(item, **kw)
+                self.report(item, error=item["failed"])
             return None                                         # already decided: never broadcast twice
+        if item.get("sent_tx"):
+            if item.get("settled") == "executed":
+                if not item.get("reported"):
+                    self.report(item, tx_hash=item["sent_tx"])
+                return None
+            return self.settle(item) if self.resume_only else None   # never broadcast twice; the sweep settles it
         if item.get("sending") is not None:
             return self.resume(item)
         return self.fresh(item)
@@ -271,17 +319,21 @@ def run_hook(item_path: Path, signer, rpc, bridge, module: str, speak: Callable[
 
 
 def needs_recovery(item: dict) -> bool:
-    """A marker without an outcome, or an outcome the bridge hasn't recorded yet."""
+    """A marker without an outcome, a broadcast tx not yet settled from its receipt, or an outcome the bridge
+    hasn't recorded yet."""
     if not isinstance(item, dict) or not isinstance(item.get("id"), str):
         return False
-    if item.get("sent_tx") or item.get("failed"):
+    if item.get("failed"):
         return not item.get("reported")
+    if item.get("sent_tx"):
+        return item.get("settled") != "executed" or not item.get("reported")
     return item.get("sending") is not None
 
 
 def sweep(state: Path, rpc, bridge, module: str, speak: Callable[[str], None], now: Callable[[], float] = time.time,
           last_try: dict | None = None, every_s: float = 30.0) -> list[str]:
-    """Finish what a crash or an unsure broadcast left in tx-approved/: resume markers, retry reports. Never signs.
+    """Finish what a crash or an unsure broadcast left in tx-approved/: resume markers, settle broadcast txs from
+    their receipts (executed / failed / dropped), retry reports. Never signs.
     Each item is retried at most every `every_s`. Returns the ids it looked at."""
     last_try = {} if last_try is None else last_try
     d = Path(state) / "tx-approved"

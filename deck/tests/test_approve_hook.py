@@ -86,8 +86,8 @@ def test_hook_signs_sends_records(tmp_path):
     p, rpc, br, signer = item(tmp_path), FakeRpc(), FakeBridge(), FakeSigner()
     assert run(p, rpc, br, signer) == TXH
     it = json.loads(p.read_text())
-    assert it["sent_tx"] == TXH and it["reported"] is True and (tmp_path / "tx-sent").read_text() == TXH
-    assert br.reports == [(PID, TXH, None)] and rpc.sent == ["0x" + RAW.hex()]
+    assert it["sent_tx"] == TXH and "reported" not in it and "settled" not in it and (tmp_path / "tx-sent").read_text() == TXH
+    assert br.reports == [] and rpc.sent == ["0x" + RAW.hex()]     # broadcast is not executed: the sweep settles it
     (tx,) = signer.signed
     assert tx["to"].lower() == MODULE and tx["value"] == 0     # the Safe pays `value`, never the hot key
     assert tx["data"] == execute_calldata("0x" + "22" * 20, 7, bytes.fromhex("a9059cbb"), bytes.fromhex("00" * 31 + "aa"))
@@ -97,7 +97,7 @@ def test_hook_is_idempotent(tmp_path):
     p, rpc, br, signer = item(tmp_path), FakeRpc(), FakeBridge(), FakeSigner()
     run(p, rpc, br, signer)
     assert run(p, rpc, br, signer) is None
-    assert len(rpc.sent) == 1 and len(signer.signed) == 1 and len(br.reports) == 1
+    assert len(rpc.sent) == 1 and len(signer.signed) == 1 and br.reports == []
 
 
 def test_marker_is_written_before_broadcast(tmp_path):
@@ -249,13 +249,16 @@ def test_rpc_down_before_signing_fails_closed(tmp_path):
     assert br.reports == [(PID, None, "rpc unavailable")]
 
 
-def test_bridge_down_after_send_keeps_sent_tx_and_retries_report(tmp_path):
+def test_bridge_down_after_settling_keeps_the_outcome_and_retries_report(tmp_path):
+    from exo_deck.approve_hook import sweep
     p, rpc = item(tmp_path), FakeRpc()
-    assert run(p, rpc, FakeBridge(fail=True)) == TXH
+    assert run(p, rpc, FakeBridge()) == TXH
+    rpc.receipt = {"status": "0x1"}
+    sweep(tmp_path, rpc, FakeBridge(fail=True), MODULE, lambda s: None, now=lambda: NOW)
     it = json.loads(p.read_text())
-    assert it["sent_tx"] == TXH and it.get("reported") is not True
+    assert it["settled"] == "executed" and it.get("reported") is not True
     br = FakeBridge()
-    assert run(p, rpc, br) is None
+    assert run(p, rpc, br) is None                                # the hook itself retries a settled report too
     assert br.reports == [(PID, TXH, None)] and len(rpc.sent) == 1 and json.loads(p.read_text())["reported"] is True
 
 
@@ -346,7 +349,9 @@ def test_report_and_speech_happen_after_the_key_lock_is_released(tmp_path):
             return super().call(m, prm)
 
     run(p, Peek(), B())
-    assert free == [False, True]
+    assert free == [False]                          # a broadcast reports nothing
+    run_hook(p, None, Peek(receipt={"status": "0x1"}), B(), MODULE, lambda s: None, now=lambda: NOW, resume_only=True)
+    assert free == [False, True]                    # the settle report runs after the lock is released
     spoken_free = []
     p2 = tmp_path / "tx-approved" / "2_x.json"
     p2.write_text(json.dumps(dict(json.loads(p.read_text()), salt="0x01", sent_tx=None, sending=None, reported=None)))
@@ -390,7 +395,71 @@ def test_sweep_retries_unsure_quietly_and_throttled(tmp_path):
 
 def test_sweep_retries_an_unsent_report(tmp_path):
     from exo_deck.approve_hook import sweep
-    p = item(tmp_path, sent_tx=TXH)
+    p = item(tmp_path, sent_tx=TXH, settled="executed")
     br = FakeBridge()
     assert sweep(tmp_path, FakeRpc(), br, MODULE, lambda s: None, now=lambda: NOW) == [PID]
     assert br.reports == [(PID, TXH, None)] and json.loads(p.read_text())["reported"] is True
+
+
+# ---- settling a broadcast tx from its receipt (I2) -----------------------------------------------------------
+
+
+def _settle(tmp_path, rpc, now=NOW, br=None):
+    from exo_deck.approve_hook import sweep
+    br, spoken = br or FakeBridge(), []
+    sweep(tmp_path, rpc, br, MODULE, spoken.append, now=lambda: now)
+    return br, spoken
+
+
+def test_settle_status_1_reports_executed(tmp_path):
+    p = item(tmp_path, sent_tx=TXH)
+    br, spoken = _settle(tmp_path, FakeRpc(receipt={"status": "0x1"}))
+    it = json.loads(p.read_text())
+    assert br.reports == [(PID, TXH, None)] and it["settled"] == "executed" and it["reported"] is True and spoken == []
+    assert not approve_hook.needs_recovery(it)
+
+
+def test_settle_status_0_reports_failed_and_marks_it_failed(tmp_path):
+    p = item(tmp_path, sent_tx=TXH)
+    br, spoken = _settle(tmp_path, FakeRpc(receipt={"status": "0x0"}))
+    it = json.loads(p.read_text())
+    assert br.reports == [(PID, None, "reverted onchain")] and it["failed"] == "reverted onchain" and it["reported"] is True
+    assert "settled" not in it and spoken == []            # deck-confirm announces the mined failure
+    assert not approve_hook.needs_recovery(it)
+
+
+def test_settle_waits_while_pending_or_unknown_before_expiry(tmp_path):
+    p = item(tmp_path, sent_tx=TXH)
+    for rpc in (FakeRpc(known={"hash": TXH}), FakeRpc(), FakeRpc(known={"hash": TXH}), ):
+        br, spoken = _settle(tmp_path, rpc, now=NOW + 300 + approve_hook.DROP_GRACE_S)   # at the grace edge: wait
+        assert br.reports == [] and spoken == []
+    assert approve_hook.needs_recovery(json.loads(p.read_text()))
+    # in the mempool long past expiry is still pending, not dropped
+    br, _ = _settle(tmp_path, FakeRpc(known={"hash": TXH}), now=NOW + 10_000)
+    assert br.reports == []
+
+
+def test_settle_dropped_after_expiry_reports_failed_and_speaks(tmp_path):
+    p = item(tmp_path, sent_tx=TXH)
+    br, spoken = _settle(tmp_path, FakeRpc(), now=NOW + 300 + approve_hook.DROP_GRACE_S + 1)
+    it = json.loads(p.read_text())
+    assert br.reports == [(PID, None, "dropped")] and it["failed"] == "dropped"
+    assert spoken == ["That payment failed: Send 20 USDC. It never made it onchain."]
+    assert not any(s.startswith("Confirmed") for s in spoken)
+
+
+def test_settle_rpc_trouble_waits(tmp_path):
+    class Down(FakeRpc):
+        def call(self, m, prm):
+            if m == "eth_getTransactionReceipt":
+                raise RpcError("network: down")
+            return super().call(m, prm)
+    p = item(tmp_path, sent_tx=TXH)
+    br, spoken = _settle(tmp_path, Down(), now=NOW + 10_000)
+    assert br.reports == [] and spoken == [] and "failed" not in json.loads(p.read_text())
+
+
+def test_the_key_hook_never_settles_or_rebroadcasts_a_sent_item(tmp_path):
+    p = item(tmp_path, sent_tx=TXH)
+    rpc, br = FakeRpc(receipt={"status": "0x1"}), FakeBridge()
+    assert run(p, rpc, br) is None and br.reports == [] and rpc.sent == []
