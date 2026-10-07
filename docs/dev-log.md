@@ -49,10 +49,14 @@ Anvil fork of Base at block 52277557, real USDC, no real money. Passed: permit r
 | Unlimited-approval evasion | rules | 2^96-2 slipped under a magnitude threshold | Any non-zero approval to a spender not in the address book is a violation |
 | **Mempool said "Confirmed"** | NOWNodes WS | Notification for a mempool tx was announced as confirmed, then txid dedup swallowed the real confirmation | Silent on mempool; only mined txs are announced |
 | **Proxy exposed to the browser** | NOWNodes proxy | No Host/Origin check: any local web page could spend quota or broadcast | Host/Origin checks, `application/json` required, query string stripped, unit hardening |
-| **Daily cap race** | `guardian-run` | Concurrent guards read `spent_today` together | `pg_advisory_xact_lock` over the whole guard (threading lock in memory store) |
+| **Daily cap race** | `guardian-run` | Concurrent guards read `spent_today` together | One advisory lock over the whole guard, try-acquired: a second guard gets 503 "guardian busy" (threading lock in memory store) |
 | **Hermes held the writer DSN** | skill | Skill could forge `waiting_key` rows | Hermes never gets a DSN; CLI calls bridge `/guard` over HTTP |
 | **Guard token** | bridge | Any agent could read the full bridge token (opens `/freeze`, `/executed`, `/talk`) | Second narrow `EXO_GUARD_TOKEN` valid only for `POST /guard` |
-| Agents claiming "voice" | skill | An LLM cannot prove the wearer spoke | Skill sends `agent:<profile>`; `--source` accepts only `camera` or `dashboard` |
+| Agents claiming "voice" | skill, bridge | An LLM cannot prove the wearer spoke | Skill sends `agent:<profile>`; the bridge accepts only `agent:<profile>`, `camera` or `dashboard` from the guard token |
+| **Agents shared the Guardian's Unix user** (final review C1) | droplet | exo-bridge ran as `hermes` from the checkout the skills linked to: an agent could read the bridge token, writer DSN and simulator key, or edit the Guardian | `exoguard` user, own checkout `/srv/exo-guard/argo-exo` (750), env files 600 |
+| **Executed at broadcast** (final review I2) | approve hook | A reverted or dropped execute was recorded executed and spoken "Confirmed" | Reported only from the receipt by the sweep; status 0 spoken as a failure |
+| **Freeze queued behind the execute** (final review I1) | signer | The freeze took the `pending` nonce, n+1 behind an in-flight execute | `latest` nonce, 2x bid, fee clamped at the freeze ceiling |
+| **Key approved a row the wearer couldn't see** (final review I4) | kiosk | On page 2 the panel showed items 5+ but the key approved item 0; headline was the agent's words | The key's item is pinned first on every page; Guardian explanation is the headline |
 | Marker not fsynced | signer | Power loss before broadcast could re-sign | fsync temp file and directory before broadcast |
 | **Wallet freeze** | signer | Freeze could lose a same-nonce race to an in-flight execute | Freeze always bids at least 2x tip and the normal maxFee |
 | Approve while starting panic hold | buttons | Approve+Mic chord would send a tx | Approve fires on key release and is cancelled if Mic was touched |
@@ -119,10 +123,10 @@ Live checks that did run: STT/TTS (2026-10-06, Deepgram and Gemini STT, Aura TTS
 
 - **Talk queue (needs a decision).** Talk-stop holds the hook queue for the whole STT + bridge + TTS turn, so a Talk press during a reply is delayed or truncated. Left as is on purpose; options are a second worker for talk-start or interrupt-on-press.
 - `deck-kiosk` toggle script is not in the vault (working copy on the Pi since 2026-10-04); the installer warns if it is missing, a fresh Pi lacks the toggle.
-- `allow_unlimited_approvals` now gates any approval to an unknown spender; rename before the maintainer writes his policy.
-- Bridge should force `agent:*` on guard-token requests (today only the skill enforces it); `install-profiles.sh` does not set `EXO_AGENT_PROFILE`, so every request logs as `agent:default`. Fix before deploy.
-- CLI timeout (270 s) is shorter than the bridge worst case (300 s lock + 240 s sim): a retry can queue a duplicate approval.
-- Daily cap is a UTC calendar window (up to 2x across midnight); unpriced outflows to a known recipient skip caps; approvals survive freeze/unfreeze (bounded by the 1 h TTL).
+- Policy key renamed to `allow_unknown_spender_approvals` (2026-10-07); the old key is refused with an error naming the new one. `docs/guardian.md` still shows the old key (that file was another session's uncommitted work; update it when it is committed).
+- Done 2026-10-07: the bridge forces `agent:<profile>` / `camera` / `dashboard` on guard-token requests, and `install-profiles.sh` sets `EXO_AGENT_PROFILE` in each profile's `.env`.
+- CLI timeout (270 s) vs the bridge: the lock is no longer waited on (503 "guardian busy"), so the worst case is one 240 s simulation; a retry after a client timeout can still queue a duplicate approval.
+- Daily cap is a UTC calendar window (up to 2x across midnight); unpriced outflows to a known recipient skip caps; queued approvals no longer survive a freeze on the deck (moved to `tx-expired/`), but the onchain approvals stay live until their TTL (at most 1 h).
 - `setTierName` renames the Tier trait on already-sold receipts; `markRefunded` burns but does not refund USDC; smart-contract wallets can buy but cannot sign a shipping claim (ecrecover, no EIP-1271).
 - Unknown function selectors refuse, so swaps, NFT buys and votes are blocked until `decode.ts` learns more selectors.
 
