@@ -1,0 +1,37 @@
+[Unit]
+Description=Exo pre-sale API (sale state + shipping claims)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=exosite
+Group=exosite
+# Secrets and per-deploy values (root:exosite 640, written by hand): EXO_PREORDER, EXO_PREORDER_FROM_BLOCK,
+# NOWNODES_API_KEY. Values there override the defaults below.
+Environment=EXO_SITE_CONTENT=/srv/exo-site/content
+Environment=EXO_PREORDER_JSON=/srv/exo-site/dist/static/preorder.json
+Environment=EXO_CLAIMS_DB=/var/lib/exo-presale/claims.db
+Environment=EXO_NOWNODES_USAGE=/var/lib/exo-presale/.cache/usage.json
+EnvironmentFile=/etc/exo-presale/env
+WorkingDirectory=/srv/exo-site/api
+Environment=PYTHONPATH=/srv/exo-site/api:/srv/exo-site/packages/nownodes-py
+ExecStart=/srv/exo-site/venv/bin/python -m exo_presale
+Restart=on-failure
+RestartSec=2
+MemoryMax=120M
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/exo-presale /var/lib/exo-presale/.cache
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictSUIDSGID=true
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target

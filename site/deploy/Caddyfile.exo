@@ -1,0 +1,26 @@
+# Argo Exo pre-sale site. Installed as /etc/caddy/Caddyfile.exo and pulled into the droplet's main Caddyfile by one
+# `import /etc/caddy/Caddyfile.exo` line (site/deploy/install.sh adds it once; it never rewrites the main file).
+# No access log: the sale should not keep a record of who looked at it.
+exo.myargoquest.com {
+	encode zstd gzip
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		Content-Security-Policy "default-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; script-src 'self'; connect-src 'self'"
+		-Server
+	}
+	handle /api/* {
+		# The sale API listens on loopback only; Caddy appends the client address to X-Forwarded-For and the API
+		# trusts only that rightmost hop.
+		reverse_proxy 127.0.0.1:5310
+	}
+	handle {
+		root * /srv/exo-site/dist
+		# Module scripts (wallet.mjs, purchase.mjs) are refused by browsers under any type but JavaScript; don't
+		# depend on the host's mime table for it.
+		@mjs path *.mjs
+		header @mjs Content-Type "text/javascript; charset=utf-8"
+		file_server
+	}
+}
