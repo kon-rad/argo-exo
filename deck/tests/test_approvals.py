@@ -116,21 +116,39 @@ def test_auto_tick_only_releases_eligible(tmp_path):
     assert ap.on_tick_auto(tmp_path, NOW, 0.0) is None                   # nothing else eligible
 
 
-def test_explanation_is_truncated_in_panel(tmp_path):
-    q(tmp_path, "001", explanation="x" * 1000)
-    assert len(ap.panel(tmp_path, NOW, 0)["pending"][0]["explanation"]) == 120
+def test_explanation_is_capped_generously_in_panel(tmp_path):
+    q(tmp_path, "001", explanation="x" * 1000, summary="y" * 1000)
+    row = ap.panel(tmp_path, NOW, 0)["pending"][0]
+    assert len(row["explanation"]) == ap.EXPLANATION_CAP == 240 and len(row["summary"]) == ap.SUMMARY_CAP
 
 
 def test_panel_shape(tmp_path):
     for i in range(9):
-        q(tmp_path, f"{i:03d}_t")
+        q(tmp_path, f"{i:03d}_t", explanation=f"guardian {i}", summary=f"agent {i}")
     (tmp_path / "tx-approved").mkdir()
     (tmp_path / "tx-approved" / "000_done.json").write_text(json.dumps({"summary": "done"}))
     p = ap.panel(tmp_path, NOW, 0)
     assert p["pending_total"] == 9 and len(p["pending"]) == 5 and p["pending_more"] == 4 and p["mode"] == "manual"
     assert p["approved"][0]["summary"] == "done" and p["auto_request"] is False
+    assert p["labels"] == {"key": "KEY →", "agent_says": "agent says"}
+    assert [r["key"] for r in p["pending"]] == [True, False, False, False, False]
+    assert [r["explanation"] for r in p["pending"]] == [f"guardian {i}" for i in range(5)]
     p2 = ap.panel(tmp_path, NOW, 1)
-    assert len(p2["pending"]) == 4 and p2["pending_more"] == 0      # page 2
+    assert p2["page"] == 1 and len(p2["pending"]) == 5 and p2["pending_more"] == 0      # page 2: key + items 5-8
+    assert p2["pending"][0]["id"] == "000_t" and p2["pending"][0]["key"] is True
+    assert [r["id"] for r in p2["pending"][1:]] == [f"{i:03d}_t" for i in range(5, 9)]
+    assert ap.panel(tmp_path, NOW, 9)["page"] == 1                                       # clamped
+
+
+def test_the_pinned_key_row_is_what_the_key_approves_on_every_page(tmp_path):
+    for i in range(9):
+        q(tmp_path, f"{i:03d}_t")
+    for page in (0, 1):
+        pinned = ap.panel(tmp_path, NOW, page)["pending"][0]
+        assert pinned["key"] is True and ap.next_manual(ap.pending(tmp_path, NOW))["id"] == pinned["id"]
+    action, dest = ap.on_key(tmp_path, NOW, 0.0)
+    assert action == "approved" and dest.name == "000_t.json"
+    assert ap.panel(tmp_path, NOW, 1)["pending"][0]["id"] == "001_t"     # the next one is pinned now
 
 
 def test_panel_auto_request_goes_stale(tmp_path):

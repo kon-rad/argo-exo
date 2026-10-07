@@ -39,15 +39,20 @@ export const RENDER = {
         + (j.more ? `<p class="warn tight">more calls, say "more"</p>` : ''));
   },
   approvals: (j) => {
-    const row = (t) => `<li><span class="clamp">${esc(t.summary)}<br><span class="muted">${esc(t.explanation || '')}</span></span>
+    // The first row is ALWAYS the item the key approves (pinned on every page); "more" pages the rest below it.
+    // Headline = the Guardian's explanation (what the key signs); the agent's own summary is the muted second line.
+    const L = j.labels || {};
+    const row = (t) => `<li class="${t.key ? 'key' : ''}">${t.key ? `<span class="keymark">${esc(L.key)}</span>` : ''}<span class="txt">
+      <span class="${t.key ? 'clamp2' : 'clamp'}">${esc(t.explanation || '(no Guardian explanation)')}</span>
+      <span class="clamp muted">${esc(L.agent_says)}: ${esc(t.summary)}</span></span>
       <span class="tag ${t.risk === 'low' ? 'ok' : t.risk === 'high' ? 'bad' : 'warn'}">${esc(t.risk || '?')}${t.auto_eligible === true ? ' · auto' : ''}</span></li>`;
     const sent = j.approved.slice(0, Math.max(0, Math.min(3, 5 - j.pending.length - (j.pending_more ? 1 : 0))));   // pending rows are two lines: 5 row budget
     return `<h1>Approvals · <span class="${j.mode === 'auto' ? 'warn' : 'ok'}">${j.mode === 'auto' ? 'AUTO (low-risk only)' : 'MANUAL'}</span></h1>`
       + (j.auto_request ? `<p class="warn big">Press the approve key to turn on auto-approve</p>` : '')
-      + `<p class="muted">${esc(j.pending_total)} pending · the key approves the top one · say "auto approve on/off"</p>`
-      + `<ul class="rows tight">${j.pending.map(row).join('') || '<li class="muted">Nothing waiting</li>'}</ul>`
-      + (j.pending_more ? `<p class="warn">+${esc(j.pending_more)} more — say "more"</p>` : '')
-      + (sent.length ? `<ul class="rows tight">${sent.map((t) => `<li><span>${esc(t.summary)}</span><span class="ok">sent</span></li>`).join('')}</ul>` : '');
+      + `<p class="muted tight">${esc(j.pending_total)} pending · the key approves the top one · say "auto approve on/off"</p>`
+      + `<ul class="rows tight appr">${j.pending.map(row).join('') || '<li class="muted">Nothing waiting</li>'}</ul>`
+      + (j.pending_more ? `<p class="warn tight">+${esc(j.pending_more)} more — say "more"</p>` : '')
+      + (sent.length ? `<ul class="rows tight">${sent.map((t) => `<li><span class="clamp">${esc(t.summary)}</span><span class="ok">sent</span></li>`).join('')}</ul>` : '');
   },
   body: (j) => {
     if (!j.last) return `<h1>Body</h1><p class="bad">${esc(j.sync_error || 'No ring data')}</p>`;

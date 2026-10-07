@@ -11,8 +11,12 @@ from pathlib import Path
 from .state import _read, _write
 
 PAGE = 7              # rows for plain lists
-PENDING_PAGE = 5      # two-line pending rows that fit the 900 px safe area
+PENDING_PAGE = 5      # two-line pending rows that fit the 900 px safe area: the key's row + 4 more per page
 AUTO_WINDOW_S = 5.0
+EXPLANATION_CAP = 240     # the Guardian's explanation is the headline: up to two lines on the key's row
+SUMMARY_CAP = 120         # the agent's own words, one muted line
+# Copy slot: the panel's fixed labels. Konrad writes the wording; the code only places it.
+COPY = {"key": "KEY →", "agent_says": "agent says"}
 
 
 def mode(state: Path) -> str:
@@ -158,13 +162,23 @@ def recent_approved(state: Path, n: int = PAGE) -> list[dict]:
     return [_load(p) for p in sorted(d.glob("*.json"), reverse=True)[:n]] if d.exists() else []
 
 
+def _row(item: dict, key: bool) -> dict:
+    return dict(item, key=key, explanation=str(item.get("explanation") or "")[:EXPLANATION_CAP],
+                summary=str(item.get("summary") or "")[:SUMMARY_CAP])
+
+
 def panel(state: Path, now: float, page: int) -> dict:
+    """What the kiosk shows. The item the key approves (items[0], the same one on_key releases) is pinned as the
+    first row on every page with key=True; "more" pages through the rest below it, PENDING_PAGE - 1 at a time.
+    Each row's headline is the Guardian's explanation; the agent-written summary is a secondary line."""
     items = pending(state, now)
-    page = min(page, max(0, (len(items) - 1) // PENDING_PAGE))   # list shrank: clamp to the last page
+    rest, per = items[1:], PENDING_PAGE - 1
+    page = max(0, min(page, (len(rest) - 1) // per if rest else 0))   # list shrank: clamp to the last page
+    shown = rest[page * per:(page + 1) * per]
     asked = _asked_at(state)
-    return {"mode": mode(state), "pending_total": len(items),
-            "pending_more": max(0, len(items) - (page + 1) * PENDING_PAGE),
-            "pending": [dict(i, explanation=str(i.get("explanation") or "")[:120])
-                        for i in items[page * PENDING_PAGE:(page + 1) * PENDING_PAGE]],
+    return {"mode": mode(state), "pending_total": len(items), "page": page,
+            "pending_more": max(0, len(rest) - (page + 1) * per),
+            "pending": ([_row(items[0], True)] if items else []) + [_row(i, False) for i in shown],
+            "labels": dict(COPY),
             "approved": recent_approved(state),
             "auto_request": asked is not None and 0 <= now - asked <= AUTO_WINDOW_S}
