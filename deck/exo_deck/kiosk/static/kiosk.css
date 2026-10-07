@@ -25,6 +25,11 @@ h1 { font: 500 48px var(--head); margin: 0 0 16px; color: var(--accent); }
 .rows li { display: flex; justify-content: space-between; gap: 24px; padding: 12px 16px; margin-bottom: 10px;
            background: var(--bg); border: 3px solid var(--edge); border-radius: 12px; }
 .rows.tight li { padding: 6px 16px; margin-bottom: 6px; line-height: 1.2; }
+.rows.dense li { padding: 2px 16px; margin-bottom: 4px; line-height: 1.15; }
+.hd { display: flex; align-items: baseline; gap: 24px; min-width: 0; }
+.hd h1 { flex: none; }
+.hd p, .hd .chips { margin: 0 0 16px; min-width: 0; }
+.chips { white-space: nowrap; }
 .tag { white-space: nowrap; flex: none; }
 .clamp { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }   /* one line each, 7 rows fit 900 px */
 .big { font-size: 44px; font-weight: bold; }

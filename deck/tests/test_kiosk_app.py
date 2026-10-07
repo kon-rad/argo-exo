@@ -104,7 +104,7 @@ def test_media_file_refuses_non_media_extensions(tmp_path):
     assert c.get("/api/media/thumb/photos/x.html").status_code == 404
 
 
-def test_build_providers_wires_agents_and_wallets(tmp_path, monkeypatch):
+def test_build_providers_wires_agents_wallets_and_ledger(tmp_path, monkeypatch):
     import sys
     from pathlib import Path
     from exo_deck.config import Settings
@@ -112,6 +112,7 @@ def test_build_providers_wires_agents_and_wallets(tmp_path, monkeypatch):
     monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[2] / "packages/nownodes-py"))
     monkeypatch.setenv("EXO_WALLETS_FILE", str(tmp_path / "none.json"))
     p = build_providers(Settings.from_env({"DECK_ROOT": str(tmp_path)}))
-    assert {"agents", "wallets"} <= set(p)
+    assert {"agents", "wallets", "transactions", "cre"} <= set(p)
     assert p["agents"](0) == {"online": False, "cols": {}, "counts": {}}      # no bridge url: offline, not a crash
     assert p["wallets"](0)["wallets"] == []
+    assert p["transactions"](0) == {"error": "Ledger unreachable"} and p["cre"](0) == {"error": "Ledger unreachable"}

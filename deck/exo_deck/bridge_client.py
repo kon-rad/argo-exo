@@ -20,7 +20,7 @@ class Bridge:
         self.url, self.post, self.get = url.rstrip("/"), post, get
         self.headers = {"Authorization": f"Bearer {token}"}
 
-    def _check(self, r, key: str):
+    def _check(self, r, key: str | None = None):
         if r.status_code not in (200, 201):
             try:
                 msg = r.json().get("error", "")
@@ -28,7 +28,12 @@ class Bridge:
                 msg = ""
             raise BridgeError(f"HTTP {r.status_code} {msg}".strip())
         try:
-            return r.json()[key]
+            body = r.json()
+            if key is None:
+                if not isinstance(body, dict):
+                    raise TypeError("body is not an object")
+                return body
+            return body[key]
         except (KeyError, TypeError, ValueError) as exc:
             raise BridgeError(f"bad response body: {exc!r}") from exc
 
@@ -75,3 +80,23 @@ class Bridge:
         """The CRE freeze record. Slow (a workflow simulation), so a long read timeout; connect fails fast."""
         ok = self._call(self.post, "/freeze", "ok", json={"reason": reason}, timeout=(5, 300))
         return {"ok": ok is True}
+
+    # --- ledger and CRE reads for the kiosk (read-only bridge routes; 503 body "ledger not connected") --------
+    def _read(self, path: str, params: dict | None, list_key: str | None) -> dict:
+        try:
+            r = self.get(f"{self.url}{path}", headers=self.headers, **({"params": params} if params else {}), timeout=(5, 10))
+        except requests.RequestException as exc:
+            raise BridgeError(str(exc)) from exc
+        body = self._check(r)
+        if list_key is not None and not isinstance(body.get(list_key), list):
+            raise BridgeError(f"bad response body: {list_key} is not a list")
+        return body
+
+    def transactions(self, page: int) -> dict:
+        return self._read("/ledger/transactions", {"limit": 7, "offset": page * 7}, "rows")
+
+    def cre_calls(self, page: int) -> dict:
+        return self._read("/ledger/cre-calls", {"limit": 7, "offset": page * 7}, "rows")
+
+    def workflows(self) -> dict:
+        return self._read("/cre/workflows", None, "handlers")

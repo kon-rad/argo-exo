@@ -4,6 +4,7 @@ import ipaddress
 from dataclasses import dataclass
 from typing import Mapping
 
+DEFAULT_MANIFEST = "/home/hermes/argo-exo/chain/cre/workflow-manifest.json"
 DEFAULT_AGENTS = "librarian,trader,portfolio,wallet,builder,researcher"
 
 
@@ -20,6 +21,8 @@ class Config:
     api_server_url: str
     api_server_key: str
     guard_token: str = ""   # optional narrow token: accepted ONLY for POST /guard
+    ledger_dsn: str = ""    # EXO_LEDGER_DSN: the read-only exo_reader role; empty = /ledger/* answer 503
+    cre_manifest: str = DEFAULT_MANIFEST
 
     @classmethod
     def from_env(cls, env: Mapping[str, str]) -> "Config":
@@ -49,4 +52,5 @@ class Config:
             hermes_bin=env.get("HERMES_BIN", "hermes"),
             api_server_url=env.get("API_SERVER_URL", "http://127.0.0.1:8642").rstrip("/"),
             api_server_key=key, guard_token=guard_token,
+            ledger_dsn=env.get("EXO_LEDGER_DSN", ""), cre_manifest=env.get("EXO_CRE_MANIFEST", DEFAULT_MANIFEST),
         )

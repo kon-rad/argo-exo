@@ -8,6 +8,8 @@ from .app import create_app
 from .config import Config
 from .guardian_routes import guardian_blueprint
 from .kanban import Kanban
+from .ledger import Ledger
+from .ledger_routes import ledger_blueprint
 from .talk import Talker
 
 log = logging.getLogger("exo-bridge")
@@ -40,8 +42,15 @@ def main() -> int:
     except (ImportError, ValueError, OSError, KeyError) as exc:
         print(f"exo-bridge: guardian setup failed ({type(exc).__name__}); is chain/runner on PYTHONPATH?", file=sys.stderr)
         return 2
+    try:
+        ledger = Ledger(cfg.ledger_dsn) if cfg.ledger_dsn else None   # psycopg is imported here: fail at startup, not on first read
+    except ImportError:
+        print("exo-bridge: EXO_LEDGER_DSN is set but psycopg is not installed", file=sys.stderr)
+        return 2
+    if ledger is None:
+        log.info("ledger: EXO_LEDGER_DSN unset, /ledger/* answer 503")
     app = create_app(cfg, Kanban(cfg.hermes_bin, cfg.board), Talker(cfg.api_server_url, cfg.api_server_key),
-                     blueprints=(guardian_blueprint(guardian),))
+                     blueprints=(guardian_blueprint(guardian), ledger_blueprint(ledger, cfg.cre_manifest)))
     serve(app, host=cfg.host, port=cfg.port, threads=4)
     return 0
 

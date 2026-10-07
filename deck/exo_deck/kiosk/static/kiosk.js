@@ -21,6 +21,23 @@ export const RENDER = {
      <span class="tag big">${esc(w.native)}</span></li>`).join('') || '<li class="muted">No wallets configured</li>'}</ul>`
     + (j.more ? `<p class="warn tight">+${esc(j.more)} more — say "more"</p>` : '')
     + (j.errors.length ? `<p class="bad tight clamp">${j.errors.map(esc).join(' · ')}</p>` : '') + `<p class="muted tight">updated ${esc(j.age_s)}s ago</p>`,
+  transactions: (j) => {
+    const cls = { executed: 'ok', refused: 'bad', failed: 'bad', waiting_key: 'warn', simulated: 'muted', proposed: 'muted' };
+    const label = (k) => esc(String(k).replace('_', ' '));
+    return `<div class="hd"><h1>Transactions</h1><p class="muted clamp">${Object.entries(j.counts).map(([k, v]) => `${label(k)} ${esc(v)}`).join(' · ') || 'none yet'}${j.more ? ` · +${esc(j.more)} more` : ''}</p></div>
+      <ul class="rows dense">${j.rows.map((t) => `<li><span class="clamp">${esc(t.summary)}<br><span class="muted">${esc(t.chain)} · ${t.created_at ? ago(t.created_at) : '–'}${t.reason ? ' · ' + esc(t.reason) : ''}</span></span>
+      <span class="tag ${cls[t.status] || 'muted'}">${label(t.status)}</span></li>`).join('') || '<li class="muted">No transactions yet</li>'}</ul>`;
+  },
+  cre: (j) => {
+    const hc = (h) => (h.status === 'deployed' ? 'ok' : h.status === 'simulated' ? 'warn' : 'muted');
+    const short = { simulated: 'sim', planned: 'plan', deployed: 'live' };
+    return `<div class="hd"><h1>CRE</h1><p class="chips">${j.handlers.map((h) =>
+      `<span class="chip ${hc(h)}">${esc(h.handler)} · ${esc(short[h.status] || h.status)}</span>`).join(' ')}</p></div>`
+      + (j.calls_error ? `<p class="bad">${esc(j.calls_error)}</p>` : `<ul class="rows dense">${j.calls.map((c) =>
+        `<li><span class="clamp"><b>${esc(c.handler)}</b> ${esc(c.reason)}<br><span class="muted">${c.created_at ? ago(c.created_at) : '–'} · ${c.latency_ms == null ? '?' : esc(Math.round(c.latency_ms))} ms</span></span>
+        <span class="tag ${c.verdict === 'approve' ? 'ok' : c.verdict === 'refuse' ? 'bad' : 'warn'}">${esc(c.verdict)}</span></li>`).join('') || '<li class="muted">No calls yet</li>'}</ul>`
+        + (j.more ? `<p class="warn tight">more calls, say "more"</p>` : ''));
+  },
   approvals: (j) => {
     const row = (t) => `<li><span class="clamp">${esc(t.summary)}<br><span class="muted">${esc(t.explanation || '')}</span></span>
       <span class="tag ${t.risk === 'low' ? 'ok' : t.risk === 'high' ? 'bad' : 'warn'}">${esc(t.risk || '?')}${t.auto_eligible === true ? ' · auto' : ''}</span></li>`;

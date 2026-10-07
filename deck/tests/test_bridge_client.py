@@ -89,3 +89,42 @@ def test_freeze_posts_reason():
 
     assert Bridge("http://b", "t", post=post).freeze("panic")["ok"] is True
     assert seen["url"] == "http://b/freeze" and seen["json"] == {"reason": "panic"} and seen["timeout"]
+
+
+def test_ledger_reads_page_through_offset():
+    seen = {}
+
+    def get(url, **kw):
+        seen.update(url=url, **kw)
+        return Resp(200, {"rows": [], "counts": {}})
+
+    Bridge("http://b", "t", get=get).transactions(2)
+    assert seen["url"] == "http://b/ledger/transactions" and seen["params"] == {"limit": 7, "offset": 14}
+    assert seen["headers"]["Authorization"] == "Bearer t" and seen["timeout"] == (5, 10)
+    Bridge("http://b", "t", get=get).cre_calls(1)
+    assert seen["url"] == "http://b/ledger/cre-calls" and seen["params"] == {"limit": 7, "offset": 7}
+
+
+def test_workflows_has_no_paging_params():
+    seen = {}
+
+    def get(url, **kw):
+        seen.update(url=url, **kw)
+        return Resp(200, {"handlers": [{"handler": "guard"}]})
+
+    assert Bridge("http://b", "t", get=get).workflows() == {"handlers": [{"handler": "guard"}]}
+    assert seen["url"] == "http://b/cre/workflows" and not seen.get("params")
+
+
+def test_ledger_503_is_bridge_error():
+    with pytest.raises(BridgeError, match="ledger not connected"):
+        Bridge("http://b", "t", get=lambda u, **k: Resp(503, {"error": "ledger not connected"})).workflows()
+
+
+def test_ledger_network_and_bad_body_are_bridge_errors():
+    with pytest.raises(BridgeError):
+        Bridge("http://b", "t", get=lambda u, **k: (_ for _ in ()).throw(requests.ConnectTimeout())).transactions(0)
+    with pytest.raises(BridgeError, match="bad response"):
+        Bridge("http://b", "t", get=lambda u, **k: Resp(200, ["not", "a", "dict"])).transactions(0)
+    with pytest.raises(BridgeError):
+        Bridge("http://b", "t", get=lambda u, **k: Resp(200, {"rows": 1})).cre_calls(0)    # rows must be a list
