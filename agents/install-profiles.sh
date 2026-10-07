@@ -57,24 +57,26 @@ for dir in */; do
   echo "profile $name ok"
 done
 
-# Link the exo-wallet skill (agents propose transactions only through the Guardian) into the money agents and the
-# default profile. A symlink to this checkout, so a git pull updates it. Existing profiles are linked too: linking
+# Link skills into the profiles that use them. exo-wallet (agents propose transactions only through the Guardian) goes
+# into the money agents and the default profile; nownodes-chain (read-only balances and history) goes into the wallet
+# and default profiles. Symlinks to this checkout, so a git pull updates them. Existing profiles are linked too: linking
 # never touches SOUL.md. A real directory already at the link path is left alone. Never starts a gateway.
-skill_src="$AGENTS_DIR/skills/exo-wallet"
-link_skill() {  # $1 = skills directory to link into
-  local dest="$1/exo-wallet"
-  mkdir -p "$1"
+link_skill() {  # $1 = skill name, $2 = skills directory to link into
+  local dest="$2/$1"
+  mkdir -p "$2"
   if [[ -e "$dest" && ! -L "$dest" ]]; then
-    echo "skill exo-wallet: $dest exists and is not a symlink; left untouched"
+    echo "skill $1: $dest exists and is not a symlink; left untouched"
     return
   fi
-  ln -sfn "$skill_src" "$dest"
-  echo "skill exo-wallet linked: $dest"
+  ln -sfn "$AGENTS_DIR/skills/$1" "$dest"
+  echo "skill $1 linked: $dest"
 }
 for name in trader portfolio wallet; do
-  [[ -d "$HOME_DIR/profiles/$name" ]] && link_skill "$HOME_DIR/profiles/$name/skills"
+  [[ -d "$HOME_DIR/profiles/$name" ]] && link_skill exo-wallet "$HOME_DIR/profiles/$name/skills"
 done
-link_skill "$HOME_DIR/skills"   # the default profile
+link_skill exo-wallet "$HOME_DIR/skills"   # the default profile
+[[ -d "$HOME_DIR/profiles/wallet" ]] && link_skill nownodes-chain "$HOME_DIR/profiles/wallet/skills"
+link_skill nownodes-chain "$HOME_DIR/skills"
 
 boards="$(hermes kanban boards list 2>/dev/null || true)"
 if ! grep -Eq '(^|[[:space:]])exo([[:space:]]|$)' <<<"$boards"; then

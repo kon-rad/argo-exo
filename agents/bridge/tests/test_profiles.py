@@ -108,3 +108,12 @@ def test_install_links_wallet_skill_without_touching_gateways(tmp_path):
     again = subprocess.run(["bash", str(AGENTS / "install-profiles.sh")], capture_output=True, text=True,
                            env=_install_env)  # idempotent re-run over existing links
     assert again.returncode == 0, again.stderr
+
+
+def test_install_links_nownodes_chain_into_wallet_and_default_only(tmp_path):
+    r, home, calls = _run_install(tmp_path)
+    assert r.returncode == 0, r.stderr
+    for d in (home / "profiles" / "wallet" / "skills", home / "skills"):
+        assert (d / "nownodes-chain").is_symlink() and (d / "nownodes-chain" / "chain.py").is_file()
+    for name in ("trader", "portfolio"):
+        assert not (home / "profiles" / name / "skills" / "nownodes-chain").exists()
