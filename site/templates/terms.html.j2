@@ -1,0 +1,31 @@
+{% extends "base.html.j2" %}
+{% block title %}{{ copy.title }} · Terms of the pre-order{% endblock %}
+{% block body %}
+<header class="terms-head">
+  <a href="/"><div class="emblem-mount"><img src="/static/img/argo-emblem.png" alt="Argo, back to the pre-order" width="120" height="150"></div></a>
+  <hr class="rule-double">
+  <h1>Terms of the <span class="nowrap">Pre-order</span></h1>
+  <hr class="rule-double">
+</header>
+
+<section id="refund" aria-labelledby="refund-title">
+  <h2 id="refund-title"><span class="numeral">§ I.</span><span class="heading">Refunds</span></h2>
+  <p class="dropcap">{{ copy.terms.refund }}</p>
+</section>
+<section id="payment" aria-labelledby="payment-title">
+  <h2 id="payment-title"><span class="numeral">§ II.</span><span class="heading">Payment</span></h2>
+  <p>{{ copy.terms.payment }}</p>
+  <dl class="facts">
+    <dt>Network</dt><dd>Base (chain ID 8453)</dd>
+    {% if preorder %}<dt>Contract</dt><dd><a href="{{ preorder.explorer }}/address/{{ preorder.contract }}"><code>{{ preorder.contract }}</code></a></dd>{% endif %}
+    <dt>Receipt</dt><dd>{{ copy.terms.receipt }}</dd>
+    <dt>Price</dt><dd>{{ copy.terms.price }}</dd>
+  </dl>
+</section>
+<section id="shipping" aria-labelledby="shipping-title">
+  <h2 id="shipping-title"><span class="numeral">§ III.</span><span class="heading">Shipping</span></h2>
+  <p>{{ copy.terms.shipping }}</p>
+  <h3>Shipping countries</h3>
+  <ul>{% for c in copy.terms.countries %}<li>{{ c }}</li>{% endfor %}</ul>
+</section>
+{% endblock %}

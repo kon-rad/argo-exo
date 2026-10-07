@@ -1,0 +1,72 @@
+{% extends "base.html.j2" %}
+{% macro section_head(key) %}{% set s = copy.sections[key] %}<h2 id="{{ key }}-title"><span class="numeral">§ {{ s.numeral }}.</span><span class="heading">{{ s.heading }}</span></h2>{% endmacro %}
+{% block body %}
+<header class="titlepage">
+  <div class="emblem-mount"><img src="/static/img/argo-emblem.png" alt="Argo" width="120" height="150"></div>
+  <hr class="rule-double">
+  <p class="kicker">{{ copy.hero.kicker }}</p>
+  <h1>{{ copy.title }}</h1>
+  <p class="headline">{{ copy.hero.headline }}</p>
+  <p class="lede">{{ copy.hero.lede }}</p>
+  <hr class="rule-double">
+  <a class="bookplate" href="#preorder">{{ copy.hero.cta }}</a>
+</header>
+
+<nav class="toc" aria-labelledby="toc-title">
+  <h2 id="toc-title">{{ copy.contents_heading }}</h2>
+  <ol class="contents">
+    {% for key in ["features", "kit", "preorder", "faq"] %}{% set s = copy.sections[key] %}
+    <li><span class="num">§ {{ s.numeral }}</span><a class="name" href="#{{ key }}">{{ s.heading }}</a></li>
+    {% endfor %}
+  </ol>
+</nav>
+
+<hr class="rule-hair">
+<section id="features" aria-labelledby="features-title">
+  {{ section_head("features") }}
+  <p class="dropcap">{{ copy.sections.features.intro }}</p>
+  <div class="figures">
+    {% for f in features %}
+    <figure id="fig-{{ f.fig }}" class="with-margin">
+      <div class="plate-frame"><img src="/static/img/{{ f.img | default('plates/' ~ f.id ~ '.svg') }}" alt="{{ f.alt }}" width="400" height="300" loading="lazy"></div>
+      <figcaption><span class="fig">Fig. {{ f.fig }}. {{ f.name }}.</span>
+        <p class="blurb">{{ f.blurb }}</p>
+        <span class="margin-note">cf. §{{ f.section }}</span></figcaption>
+    </figure>
+    {% endfor %}
+  </div>
+</section>
+
+<hr class="rule-hair">
+<section id="kit" aria-labelledby="kit-title">
+  {{ section_head("kit") }}
+  <p class="dropcap">{{ copy.sections.kit.intro }}</p>
+  {% for t in tiers %}
+  <article class="plate" data-tier="{{ t.tier }}" aria-labelledby="plate-{{ t.tier }}">
+    <h3 id="plate-{{ t.tier }}"><span class="plate-no">Plate {{ t.plate }}.</span>{{ t.name }}</h3>
+    <p class="price" data-price-for="{{ t.tier }}">{{ copy.states.opening_soon }}</p>
+    <table>
+      <tbody>{% for item in t.includes %}<tr><th scope="row">{{ loop.index }}.</th><td>{{ item }}</td></tr>{% endfor %}</tbody>
+    </table>
+    <button class="bookplate buy" type="button" data-buy="{{ t.tier }}" disabled>{{ copy.hero.cta }}</button>
+  </article>
+  {% endfor %}
+</section>
+
+<hr class="rule-hair">
+<section id="preorder" aria-labelledby="preorder-title">
+  {{ section_head("preorder") }}
+  <p class="dropcap">{{ copy.sections.preorder.intro }}</p>
+  <p class="edition" id="edition"></p>
+  <p class="status-line" id="checkout-status" role="status"></p>
+  <p class="error" id="checkout-error" role="alert" hidden></p>
+  <p class="agree"><input type="checkbox" id="agree"><label for="agree">{{ copy.sections.preorder.agree }}</label> <a href="/terms.html">Terms of the pre-order</a></p>
+</section>
+
+<hr class="rule-hair">
+<section id="faq" aria-labelledby="faq-title">
+  {{ section_head("faq") }}
+  {% for item in copy.sections.faq["items"] %}<h3>{{ item.q }}</h3><p>{{ item.a }}</p>{% endfor %}
+</section>
+<script type="module" src="/static/checkout.js"></script>
+{% endblock %}

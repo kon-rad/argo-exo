@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300" width="400" height="300" role="img" aria-hidden="true">
+<!-- Placeholder plate (wearable). Konrad replaces with the final engraved plate. -->
+<defs>
+<pattern id="h" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="4" stroke="#1A140D" stroke-width="0.7"/></pattern>
+<pattern id="x" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="4" stroke="#1A140D" stroke-width="0.6"/><line x1="0" y1="0" x2="4" y2="0" stroke="#1A140D" stroke-width="0.6"/></pattern>
+<pattern id="v" width="3" height="3" patternUnits="userSpaceOnUse"><line x1="0" y1="0" x2="0" y2="3" stroke="#1A140D" stroke-width="0.6"/></pattern>
+</defs>
+<g fill="none" stroke="#1A140D" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+<rect x="14" y="14" width="372" height="272" stroke-width="1.2"/>
+<rect x="20" y="20" width="360" height="260" stroke-width="0.6"/>
+<line x1="150" y1="262" x2="250" y2="262" stroke-width="0.8"/>
+<ellipse cx="200" cy="222" rx="90" ry="6" fill="url(#h)" stroke="none"/>
+<path d="M70 150 C70 100 110 92 150 112 M250 112 C290 92 330 100 330 150" stroke-width="1.2"/>
+<path d="M76 152 C78 108 112 102 150 120 M250 120 C288 102 322 108 324 152" stroke-width="0.6"/>
+<rect x="140" y="104" width="120" height="96" rx="10"/>
+<path d="M260 114 l14 -8 v88 l-14 10" fill="url(#h)"/>
+<path d="M140 104 l14 -8 h120 l-14 8" fill="url(#v)"/>
+<rect x="156" y="120" width="88" height="54" rx="4" stroke-width="1"/>
+<circle cx="200" cy="188" r="5"/>
+</g></svg>

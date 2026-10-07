@@ -5,9 +5,12 @@
   "sections": {
     "features": {"numeral": "I", "heading": "TODO(konrad)", "intro": "TODO(konrad)"},
     "kit": {"numeral": "II", "heading": "TODO(konrad)", "intro": "TODO(konrad)"},
-    "preorder": {"numeral": "III", "heading": "TODO(konrad)", "intro": "TODO(konrad)"},
+    "preorder": {"numeral": "III", "heading": "TODO(konrad)", "intro": "TODO(konrad)", "agree": "TODO(konrad)"},
     "faq": {"numeral": "IV", "heading": "TODO(konrad)", "items": [{"q": "TODO(konrad)", "a": "TODO(konrad)"}]}
   },
-  "terms": {"refund": "TODO(konrad)", "payment": "TODO(konrad)", "shipping": "TODO(konrad)", "countries": ["TODO(konrad)"]},
+  "states": {"opening_soon": "Subscriptions open shortly", "reading_receipt": "Reading the receipt…"},
+  "receipt": {"claim_intro": "TODO(konrad)", "submit": "Sign and save"},
+  "terms": {"refund": "TODO(konrad)", "payment": "TODO(konrad)", "shipping": "TODO(konrad)",
+            "receipt": "TODO(konrad)", "price": "TODO(konrad)", "countries": ["TODO(konrad)"]},
   "colophon": "TODO(konrad)"
 }

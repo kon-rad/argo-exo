@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300" width="400" height="300" role="img" aria-hidden="true">
+<!-- Placeholder plate (dashboard). Konrad replaces with the final engraved plate. -->
+<defs>
+<pattern id="h" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="4" stroke="#1A140D" stroke-width="0.7"/></pattern>
+<pattern id="x" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="4" stroke="#1A140D" stroke-width="0.6"/><line x1="0" y1="0" x2="4" y2="0" stroke="#1A140D" stroke-width="0.6"/></pattern>
+<pattern id="v" width="3" height="3" patternUnits="userSpaceOnUse"><line x1="0" y1="0" x2="0" y2="3" stroke="#1A140D" stroke-width="0.6"/></pattern>
+</defs>
+<g fill="none" stroke="#1A140D" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+<rect x="14" y="14" width="372" height="272" stroke-width="1.2"/>
+<rect x="20" y="20" width="360" height="260" stroke-width="0.6"/>
+<line x1="150" y1="262" x2="250" y2="262" stroke-width="0.8"/>
+<rect x="76" y="80" width="248" height="156" rx="6"/><rect x="70" y="74" width="260" height="168" rx="8" stroke-width="0.6"/><rect x="88" y="96" width="52" height="128" stroke-width="0.9"/><rect x="94" y="104" width="40" height="18" stroke-width="0.6"/><rect x="94" y="128" width="40" height="18" stroke-width="0.6"/><rect x="94" y="152" width="40" height="18" stroke-width="0.6"/><rect x="148" y="96" width="52" height="128" stroke-width="0.9"/><rect x="154" y="104" width="40" height="18" stroke-width="0.6"/><rect x="154" y="128" width="40" height="18" stroke-width="0.6"/><rect x="154" y="152" width="40" height="18" stroke-width="0.6"/><rect x="154" y="176" width="40" height="18" stroke-width="0.6"/><rect x="208" y="96" width="52" height="128" stroke-width="0.9"/><rect x="214" y="104" width="40" height="18" stroke-width="0.6"/><rect x="214" y="128" width="40" height="18" stroke-width="0.6"/><rect x="268" y="96" width="52" height="128" stroke-width="0.9"/><rect x="274" y="104" width="40" height="18" stroke-width="0.6"/><rect x="274" y="128" width="40" height="18" stroke-width="0.6"/><rect x="274" y="152" width="40" height="18" stroke-width="0.6"/><path d="M330 90 l10 6 v150 l-10 -4" fill="url(#h)"/>
+</g></svg>
