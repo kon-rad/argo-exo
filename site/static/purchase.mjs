@@ -116,20 +116,29 @@ async function permitCalldata(eth, cfg, from, tier, price, now) {
   }
 }
 
+/** The account's next nonce including pending txs, or null when the wallet can't say. */
+async function pendingNonce(eth, from) {
+  try { return w.uintResult(await eth('eth_getTransactionCount', [from, 'pending'])); } catch { return null; }
+}
+
 /** Send the purchase transaction. `remember` gets a 'sending' record before the wallet prompt (a reload while the
- *  prompt is open must not lose track of it) and the hash as soon as there is one. */
+ *  prompt is open must not lose track of it), carrying the account's pending nonce at that moment, and the hash as
+ *  soon as there is one. */
 async function sendPurchase(eth, cfg, remember, base, tx) {
   await requireBase(eth, cfg);
-  remember({ ...base, stage: 'sending' });
+  const n = await pendingNonce(eth, base.from);
+  const rec = { ...base, nonce: n === null ? null : n.toString() };
+  remember({ ...rec, stage: 'sending' });
+  const unknown = { from: base.from, fromBlock: base.fromBlock, nonce: rec.nonce };
   let hash;
   try {
-    hash = await eth('eth_sendTransaction', [tx]);
+    hash = await eth('eth_sendTransaction', [{ ...tx, chainId: cfg.chainIdHex }]);
   } catch (e) {
     if (isRejection(e)) { remember(null); throw new CheckoutError('cancelled', {}, e); }
-    throw new CheckoutError('send_unknown', { from: base.from, fromBlock: base.fromBlock }, e);   // it may have gone out
+    throw new CheckoutError('send_unknown', unknown, e);   // it may have gone out
   }
-  if (!HASH_RE.test(String(hash))) throw new CheckoutError('send_unknown', { from: base.from, fromBlock: base.fromBlock });
-  remember({ ...base, stage: 'preorder', hash });
+  if (!HASH_RE.test(String(hash))) throw new CheckoutError('send_unknown', unknown);
+  remember({ ...rec, stage: 'preorder', hash });
   return hash;
 }
 
@@ -171,7 +180,7 @@ export async function purchase({ eth, cfg, tier, shownPrice, from, now = Date.no
     await requireBase(eth, cfg);
     let hash;
     try {
-      hash = await eth('eth_sendTransaction', [{ from, to: cfg.usdc, data: w.approveData(S.approve, cfg.contract, price) }]);
+      hash = await eth('eth_sendTransaction', [{ from, to: cfg.usdc, data: w.approveData(S.approve, cfg.contract, price), chainId: cfg.chainIdHex }]);
     } catch (e) {
       throw new CheckoutError(isRejection(e) ? 'cancelled' : 'wallet_error', {}, e);
     }
@@ -238,6 +247,27 @@ export async function watchPurchase({ eth, cfg, hash, from, fromBlock, sleep = d
     if (i >= maxPolls) throw new CheckoutError('unconfirmed');
     onPoll(i);
     await sleep(interval);
+  }
+}
+
+/**
+ * The wallet errored on the send without giving a hash, so it may still have gone out. Look for this buyer's
+ * Preordered log for `maxPolls`; then, if the account's pending nonce has moved past `nonce` (recorded right before
+ * the wallet prompt), a transaction did go out: call `onStill` and keep watching. Rejects `unconfirmed` only when
+ * the nonce is known not to have moved. An unreadable nonce counts as "may have moved".
+ */
+export async function watchUnknown({ eth, cfg, from, fromBlock, nonce, sleep = defaultSleep, maxPolls = 48, onStill = () => {}, interval = 2500 }) {
+  const recorded = typeof nonce === 'string' && /^\d+$/.test(nonce) ? BigInt(nonce) : null;
+  for (;;) {
+    try {
+      return await watchPurchase({ eth, cfg, hash: null, from, fromBlock, sleep, maxPolls, interval });
+    } catch (e) {
+      if (!(e instanceof CheckoutError) || e.kind !== 'unconfirmed' || recorded === null) throw e;
+      const now = await pendingNonce(eth, from);
+      if (now !== null && now <= recorded) throw e;          // nothing left this account: safe to re-enable
+      onStill();
+      await sleep(interval);
+    }
   }
 }
 

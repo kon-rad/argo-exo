@@ -41,7 +41,9 @@ test('permit typed data and signature split', () => {
   assert.deepEqual(w.splitSig(sig), { r: '0x' + 'aa'.repeat(32), s: '0x' + 'bb'.repeat(32), v: 27 });
   assert.equal(w.splitSig('0x' + 'aa'.repeat(32) + 'bb'.repeat(32) + '00').v, 27);   // some wallets return 0/1
   assert.equal(w.splitSig('0x' + 'aa'.repeat(32) + 'bb'.repeat(32) + '01').v, 28);
-  assert.throws(() => w.splitSig('0x' + 'aa'.repeat(64)));                                // EIP-2098 compact: refuse
+  assert.throws(() => w.splitSig('0x' + 'aa'.repeat(63)));                                // neither 64 nor 65 bytes
+  assert.throws(() => w.splitSig('0x' + 'aa'.repeat(66)));
+  assert.throws(() => w.splitSig('0x' + 'zz'.repeat(64)));
   assert.throws(() => w.splitSig('0x' + 'aa'.repeat(32) + 'bb'.repeat(32) + '05'));       // nonsense v
 });
 
@@ -144,4 +146,27 @@ test('revert decoding names the sale errors', () => {
   for (const e of [{ data }, { data: { data } }, { error: { data } }, { data: { originalError: { data } } }, { cause: { data } }])
     assert.equal(w.revertData(e), data);
   assert.equal(w.revertData({ message: 'network down' }), null);
+});
+
+// Full/compact pairs signed by cast with anvil key #0 (a public test key). EIP-2098: compact = r || (yParity << 255 | s).
+const FULL_V27 = '0x0ed5a8ce8ccfaa1f8f0ecbe262100614bca1e5395c80eb72f8d6e369eb3ee53e'
+  + '6886258c1b24977b62ad13141ff8be455d1d797ea952b27c98c98bcc6ef89f391b';   // the pinned claim signature
+const COMPACT_V27 = FULL_V27.slice(0, 130);                                   // yParity 0: s unchanged
+const FULL_V28 = '0x10b9add03a39483243283b98384e4370890092c04e73354b8b7b6a61cb229a07'
+  + '16123750d75a5e3d62b0a8b798fb32d77b8095e442e8a4f68380c8ce6e4120941c';     // cast wallet sign "exo c"
+const COMPACT_V28 = '0x10b9add03a39483243283b98384e4370890092c04e73354b8b7b6a61cb229a07'
+  + '96123750d75a5e3d62b0a8b798fb32d77b8095e442e8a4f68380c8ce6e412094';       // top bit of s set
+
+test('splitSig expands EIP-2098 compact signatures to the same r, s, v as the full form', () => {
+  assert.deepEqual(w.splitSig(COMPACT_V27), w.splitSig(FULL_V27));
+  assert.deepEqual(w.splitSig(COMPACT_V28), w.splitSig(FULL_V28));
+  assert.equal(w.splitSig(COMPACT_V28).v, 28);
+  assert.equal(w.splitSig(COMPACT_V28).s, '0x16123750d75a5e3d62b0a8b798fb32d77b8095e442e8a4f68380c8ce6e412094');
+});
+
+test('the expanded compact signature verifies for the signer', { skip: !CAST && 'cast not installed' }, () => {
+  const { r, s, v } = w.splitSig(COMPACT_V28);
+  const full = r + s.slice(2) + v.toString(16);
+  assert.equal(full, FULL_V28);
+  cast('wallet', 'verify', '--address', '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266', 'exo c', full);   // throws if not
 });

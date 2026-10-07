@@ -2,7 +2,7 @@
 // wires it to the DOM. Every string shown comes from content/copy.json (embedded as #checkout-copy) or from the
 // chain, and goes in with textContent, never parsed as HTML.
 import * as w from './wallet.mjs';
-import { CheckoutError, ensureBase, isRejection, purchase, waitApproval, watchPurchase } from './purchase.mjs';
+import { CheckoutError, ensureBase, isRejection, purchase, waitApproval, watchPurchase, watchUnknown } from './purchase.mjs';
 
 const $ = (id) => document.getElementById(id);
 const PENDING_KEY = 'exo-preorder-pending';
@@ -88,10 +88,10 @@ async function follow({ hash, from, fromBlock }) {
 }
 
 /** The wallet errored on the send without a hash: it may still have gone out, so look for it before re-enabling. */
-async function followUnknown(from, fromBlock) {
+async function followUnknown(from, fromBlock, nonce) {
   status(C('confirming'));
   try {
-    toReceipt(await watchPurchase({ eth, cfg: CFG, hash: null, from, fromBlock, maxPolls: 48 }));
+    toReceipt(await watchUnknown({ eth, cfg: CFG, from, fromBlock, nonce, onStill: () => status(C('still_waiting')) }));
   } catch (e) {
     remember(null); status(''); fail(messageFor(e)); setBusy(false);
   }
@@ -117,7 +117,7 @@ async function buy(tier) {
   } catch (e) {
     if (e instanceof CheckoutError && e.kind === 'send_unknown') {
       release = false;
-      await followUnknown(e.from, e.fromBlock);
+      await followUnknown(e.from, e.fromBlock, e.nonce);
       return;
     }
     if (e instanceof CheckoutError && e.kind === 'price_changed' && typeof e.price === 'bigint') {
@@ -147,7 +147,7 @@ async function resume(p) {
     return;
   }
   if (p.stage === 'preorder' && HASH_RE.test(p.hash || '')) return follow(p);
-  if (p.stage === 'sending') return followUnknown(p.from, p.fromBlock);
+  if (p.stage === 'sending') return followUnknown(p.from, p.fromBlock, p.nonce);
   if (p.stage === 'approve' && HASH_RE.test(p.hash || '') && /^\d+$/.test(p.price || '')) {
     try {
       await waitApproval({ eth, cfg: CFG, hash: p.hash, from: p.from, price: BigInt(p.price) });

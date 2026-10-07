@@ -74,6 +74,7 @@ test('EOA: one-click permit for the live price, no approve', async () => {
   const tx = wl.s.sent[0];
   assert.equal(tx.to, CFG.contract);
   assert.equal(tx.from, BUYER);
+  assert.equal(tx.chainId, '0x2105');                                      // the wallet itself refuses another chain
   const deadline = BigInt(1_700_000_000 + 1800);
   assert.equal(tx.data, w.preorderWithPermitData(S.preorderWithPermit, 1, PRICE, deadline, w.splitSig(SIG)));
   const td = JSON.parse(wl.calls.find((c) => c.method === 'eth_signTypedData_v4').params[1]);
@@ -97,6 +98,7 @@ test('wallet with code (EIP-7702 delegation) goes straight to approve exact pric
   assert.equal(wl.s.sent[0].data, w.approveData(S.approve, CFG.contract, PRICE));        // exact, never unlimited
   assert.equal(wl.s.sent[1].to, CFG.contract);
   assert.equal(wl.s.sent[1].data, w.preorderData(S.preorder, 1, PRICE));
+  assert.deepEqual(wl.s.sent.map((t) => t.chainId), ['0x2105', '0x2105']);   // approve and preorder both carry it
 });
 
 test('any code at all, or an unreadable answer, counts as a contract wallet', async () => {
@@ -184,7 +186,11 @@ test('buyer rejects the send: cancelled, the pending record is cleared', async (
 test('a send error that is not a rejection may have gone out: send_unknown keeps the pending record', async () => {
   const saved = [];
   const wl = wallet({ send: Object.assign(new Error('timeout'), { code: -32603 }) });
-  await assert.rejects(buy(wl, { remember: (r) => saved.push(r) }), (e) => e.kind === 'send_unknown' && e.fromBlock === '0x101' && e.from === BUYER);
+  wl.s.txCount = 12n;
+  await assert.rejects(buy(wl, { remember: (r) => saved.push(r) }), (e) => e.kind === 'send_unknown' && e.fromBlock === '0x101' && e.from === BUYER && e.nonce === '12');
+  assert.equal(saved.at(-1).nonce, '12');
+  const q = wl.calls.find((c) => c.method === 'eth_getTransactionCount');
+  assert.deepEqual(q.params, [BUYER, 'pending']);
   assert.equal(saved.at(-1).stage, 'sending');
 });
 
@@ -210,6 +216,8 @@ test('the pending record is written before each wait, with the hash', async () =
   assert.equal(saved[3].from, BUYER);
   assert.equal(saved[3].contract, CFG.contract);
   assert.equal(saved[3].price, String(PRICE));
+  assert.equal(saved[2].nonce, '0');                                        // pending nonce right before the prompt
+  assert.equal(saved[3].nonce, '0');
 });
 
 test('ensureBase switches, adds Base when unknown, and verifies', async () => {
@@ -294,4 +302,30 @@ test('isRejection recognises the usual wallet shapes', () => {
   assert.ok(p.isRejection({ code: 'ACTION_REJECTED' }));
   assert.ok(p.isRejection({ code: -32603, message: 'User rejected the request.' }));
   assert.ok(!p.isRejection({ code: -32603, message: 'internal error' }));
+});
+
+test('watchUnknown: nonce unchanged after the timeout -> unconfirmed, safe to re-enable', async () => {
+  const wl = wallet({ txCount: 12n });
+  let still = 0;
+  await rejects(p.watchUnknown({ eth: wl.eth, cfg: CFG, from: BUYER, fromBlock: '0x101', nonce: '12', sleep: noSleep, maxPolls: 3, onStill: () => still++ }), 'unconfirmed');
+  assert.equal(still, 0);
+  assert.deepEqual(wl.calls.filter((c) => c.method === 'eth_getTransactionCount').map((c) => c.params), [[BUYER, 'pending']]);
+  assert.ok(!wl.methods().includes('eth_sendTransaction'));
+});
+
+test('watchUnknown: nonce advanced -> a tx went out, keep watching until the Preordered log shows', async () => {
+  const wl = wallet({ txCount: 13n });
+  let logsCalls = 0, still = 0;
+  wl.s.on = { eth_getLogs: () => (++logsCalls >= 8 ? [preorderedLog(77n)] : []) };
+  const r = await p.watchUnknown({ eth: wl.eth, cfg: CFG, from: BUYER, fromBlock: '0x101', nonce: '12', sleep: noSleep, maxPolls: 3, onStill: () => still++ });
+  assert.equal(r.device, 77n);
+  assert.ok(still >= 2, 'showed "still confirming" instead of re-enabling');
+});
+
+test('watchUnknown: an unreadable nonce counts as "may have gone out"; no recorded nonce keeps the old timeout', async () => {
+  const wl = wallet();
+  let n = 0;
+  wl.s.on = { eth_getTransactionCount: () => { throw new Error('rpc down'); }, eth_getLogs: () => (++n >= 5 ? [preorderedLog(3n)] : []) };
+  assert.equal((await p.watchUnknown({ eth: wl.eth, cfg: CFG, from: BUYER, fromBlock: '0x101', nonce: '12', sleep: noSleep, maxPolls: 3 })).device, 3n);
+  await rejects(p.watchUnknown({ eth: wallet().eth, cfg: CFG, from: BUYER, fromBlock: '0x101', nonce: null, sleep: noSleep, maxPolls: 2 }), 'unconfirmed');
 });

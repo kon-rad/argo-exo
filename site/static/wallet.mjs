@@ -44,10 +44,16 @@ export function permitTypedData({ name, version, chainId, verifyingContract, own
   };
 }
 
-/** 65-byte r||s||v only. v of 0/1 is normalised to 27/28; anything else (or a 64-byte compact sig) throws. */
+/** 65-byte r||s||v (v of 0/1 normalised to 27/28), or a 64-byte EIP-2098 compact r||yParityAndS expanded to the
+ *  same; anything else throws. */
 export function splitSig(sig) {
   if (typeof sig !== 'string') throw new Error('bad signature');
   const h = sig.startsWith('0x') ? sig.slice(2) : sig;
+  if (/^[0-9a-fA-F]{128}$/.test(h)) {
+    const vs = BigInt('0x' + h.slice(64));
+    const yParity = vs >> 255n;
+    return { r: '0x' + h.slice(0, 64).toLowerCase(), s: '0x' + word(vs & ((1n << 255n) - 1n)), v: 27 + Number(yParity) };
+  }
   if (!/^[0-9a-fA-F]{130}$/.test(h)) throw new Error('bad signature');
   let v = parseInt(h.slice(128, 130), 16);
   if (v < 27) v += 27;
