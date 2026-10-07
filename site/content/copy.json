@@ -12,5 +12,13 @@
   "receipt": {"claim_intro": "TODO(konrad)", "submit": "Sign and save"},
   "terms": {"refund": "TODO(konrad)", "payment": "TODO(konrad)", "shipping": "TODO(konrad)",
             "receipt": "TODO(konrad)", "price": "TODO(konrad)", "countries": ["TODO(konrad)"]},
+  "labels": {
+    "skip": "Skip to the text", "footer_nav": "Colophon", "terms_link": "Terms of the pre-order",
+    "source_link": "Source", "argo_link": "Argo", "emblem_alt": "Argo", "terms_emblem_alt": "Argo, back to the pre-order",
+    "receipt_title": "Receipt", "claim_number": "No.", "name": "Name", "email": "Email", "country": "Shipping country",
+    "terms_title": "Terms of the Pre-order", "refunds": "Refunds", "payment": "Payment", "shipping": "Shipping",
+    "shipping_countries": "Shipping countries", "network": "Network", "chain_id": "chain ID",
+    "contract": "Contract", "receipt": "Receipt", "price": "Price"
+  },
   "colophon": "TODO(konrad)"
 }

@@ -5,7 +5,7 @@
    sets the drop cap in --accentDeep on paper (3.5:1) and --accent in the evening;
    --on-accent is the ink on an accent-filled button; --paper is the emblem's mount,
    light in both schemes because the plated emblem only ever sits on paper. */
-@import url('https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400;1,6..72,500&display=swap');
+/* Newsreader is loaded by a <link> in base.html.j2 (Google Fonts). */
 
 :root {
   --bg: #F4F0E9; --surface: #FFFDFA; --text: #2B2722; --text2: #7C7468;
@@ -151,7 +151,8 @@ input:not([type="checkbox"]), select { display: block; width: 100%; margin-top: 
 .receipt-card p { margin-left: auto; margin-right: auto; }
 .receipt-card code { word-break: break-all; font-size: 15px; }
 .status-line { font-style: italic; color: var(--muted); }
-.status-paid { color: var(--accent); font-variant: small-caps; letter-spacing: 0.1em; }
+.status-paid { color: var(--text); font-variant: small-caps; letter-spacing: 0.1em;
+  border-left: 3px solid var(--accent); padding-left: 10px; } /* ink text, accent only as the marker rule */
 .error { color: var(--danger); font-weight: 600; font-size: 19px; } /* bold 19px counts as large text: --danger holds 3:1 on paper */
 
 /* terms */

@@ -2,7 +2,7 @@
 {% macro section_head(key) %}{% set s = copy.sections[key] %}<h2 id="{{ key }}-title"><span class="numeral">§ {{ s.numeral }}.</span><span class="heading">{{ s.heading }}</span></h2>{% endmacro %}
 {% block body %}
 <header class="titlepage">
-  <div class="emblem-mount"><img src="/static/img/argo-emblem.png" alt="Argo" width="120" height="150"></div>
+  <div class="emblem-mount"><img src="/static/img/argo-emblem.png" alt="{{ copy.labels.emblem_alt }}" width="120" height="150"></div>
   <hr class="rule-double">
   <p class="kicker">{{ copy.hero.kicker }}</p>
   <h1>{{ copy.title }}</h1>
@@ -60,7 +60,7 @@
   <p class="edition" id="edition"></p>
   <p class="status-line" id="checkout-status" role="status"></p>
   <p class="error" id="checkout-error" role="alert" hidden></p>
-  <p class="agree"><input type="checkbox" id="agree"><label for="agree">{{ copy.sections.preorder.agree }}</label> <a href="/terms.html">Terms of the pre-order</a></p>
+  <p class="agree"><input type="checkbox" id="agree"><label for="agree">{{ copy.sections.preorder.agree }}</label> <a href="/terms.html">{{ copy.labels.terms_link }}</a></p>
 </section>
 
 <hr class="rule-hair">
