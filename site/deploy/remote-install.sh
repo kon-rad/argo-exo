@@ -42,6 +42,28 @@ fi
 if grep -q '^[[:space:]]*\(export[[:space:]]\+\)\?EXO_BASE_RPC_URL' "$ENVF"; then
   die "$ENVF sets EXO_BASE_RPC_URL (the local-fork override); remove it"
 fi
+# The page (dist/static/preorder.json, baked in at build time) and the API (EXO_PREORDER) must name the same
+# contract, or buyers would pay one contract while the API reads and verifies another. Read literally, like systemd.
+env_preorder() {
+  sed -n 's/^[[:space:]]*\(export[[:space:]]\{1,\}\)\{0,1\}EXO_PREORDER=//p' "$1" | tail -1 \
+    | sed 's/[[:space:]]*#.*$//; s/^[[:space:]]*//; s/[[:space:]]*$//; s/^"\(.*\)"$/\1/; s/^'"'"'\(.*\)'"'"'$/\1/'
+}
+page_preorder() {
+  python3 -c 'import json,sys; print(str(json.load(open(sys.argv[1])).get("contract") or ""))' "$1"
+}
+norm_addr() {  # lowercase; empty and the zero address both mean "not deployed"
+  local a; a=$(printf '%s' "$1" | tr 'A-F' 'a-f')
+  [[ "$a" == "0x0000000000000000000000000000000000000000" ]] && a=""
+  printf '%s' "$a"
+}
+PAGE_JSON="$SRC/dist/static/preorder.json"
+[[ -f "$PAGE_JSON" ]] || die "stage is missing dist/static/preorder.json"
+ENV_C=$(norm_addr "$(env_preorder "$ENVF")")
+PAGE_C=$(norm_addr "$(page_preorder "$PAGE_JSON")") || die "dist/static/preorder.json is not readable JSON"
+if [[ "$ENV_C" != "$PAGE_C" ]]; then
+  die "EXO_PREORDER in $ENVF (${ENV_C:-unset}) does not match the page's contract in dist/static/preorder.json (${PAGE_C:-unset}); rebuild the site or fix the env, then rerun"
+fi
+say "   contract: ${PAGE_C:-not deployed (opening soon)} (env and page agree)"
 if ! grep -q '^[[:space:]]*NOWNODES_API_KEY=..*' "$ENVF"; then
   say "   warning: NOWNODES_API_KEY is empty; /api/sale will answer 503 once a contract is set"
 fi

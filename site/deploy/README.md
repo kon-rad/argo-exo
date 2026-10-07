@@ -67,6 +67,10 @@ sudoedit /etc/exo-presale/env
 #   NOWNODES_API_KEY=<key>
 ```
 
+`remote-install.sh` stops before installing anything if `EXO_PREORDER` here and the `contract` baked into the
+build's `dist/static/preorder.json` differ (empty and the zero address both count as "not deployed"): rebuild after
+`export.sh`, or fix the env, so the page and the API name the same contract.
+
 Then, from this repo:
 
 ```bash

@@ -135,3 +135,46 @@ def test_prune_backups_keeps_newest_three_and_survives_no_match(tmp_path):
     r = subprocess.run(["bash", "-c", script], capture_output=True, text=True)
     assert r.stdout.strip() == "survived", r.stderr
     assert sorted(p.name for p in tmp_path.iterdir()) == [f"Caddyfile.bak-exo-{i}" for i in (2, 3, 4)]
+
+
+def _contract_check(tmp_path, env_text, contract):
+    """Runs remote-install.sh's EXO_PREORDER vs dist/static/preorder.json check on its own."""
+    start = REMOTE.index("# The page (dist/static/preorder.json")
+    end = REMOTE.index('say "   contract:')
+    block = REMOTE[start:end]
+    (tmp_path / "dist" / "static").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "dist" / "static" / "preorder.json").write_text('{"chainId": 8453, "contract": "%s"}' % contract)
+    (tmp_path / "env").write_text(env_text)
+    script = ("set -euo pipefail\nsay() { printf '%s\\n' \"$*\"; }\ndie() { printf 'STOP: %s\\n' \"$*\" >&2; exit 1; }\n"
+              f'SRC="{tmp_path}"\nENVF="{tmp_path}/env"\n{block}\necho agree\n')
+    return subprocess.run(["bash", "-c", script], capture_output=True, text=True)
+
+
+ZERO = "0x" + "0" * 40
+C1 = "0x" + "ab" * 20
+
+
+@pytest.mark.parametrize("env_text,contract", [
+    ("EXO_PREORDER=\nNOWNODES_API_KEY=k\n", ZERO),                       # not deployed on either side
+    ("NOWNODES_API_KEY=k\n", ZERO),                                      # unset = not deployed
+    (f"EXO_PREORDER={C1.upper().replace('0X', '0x')}\n", C1),             # case-insensitive
+    (f'export EXO_PREORDER="{C1}"  # live\n', C1),
+    (f"EXO_PREORDER={ZERO}\nEXO_PREORDER={C1}\n", C1),                   # the last line wins, as systemd reads it
+])
+def test_remote_install_contract_check_agrees(tmp_path, env_text, contract):
+    r = _contract_check(tmp_path, env_text, contract)
+    assert r.returncode == 0 and r.stdout.strip().endswith("agree"), r.stderr
+
+
+@pytest.mark.parametrize("env_text,contract", [
+    (f"EXO_PREORDER={C1}\n", ZERO),                                       # env live, page says opening soon
+    ("EXO_PREORDER=\n", C1),                                              # page live, API not pointed at it
+    (f"EXO_PREORDER={C1}\n", "0x" + "cd" * 20),                           # two different contracts
+])
+def test_remote_install_refuses_a_contract_mismatch(tmp_path, env_text, contract):
+    r = _contract_check(tmp_path, env_text, contract)
+    assert r.returncode == 1 and "does not match" in r.stderr and "agree" not in r.stdout
+
+
+def test_remote_install_runs_the_contract_check_before_installing():
+    assert REMOTE.index("does not match the page's contract") < REMOTE.index('say "3. files')
