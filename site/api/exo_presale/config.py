@@ -9,6 +9,29 @@ ADDR_RE = re.compile(r"^0x[0-9a-fA-F]{40}$")
 ZERO = "0x" + "00" * 20
 
 
+ENV_KEY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def read_env_file(path) -> dict:
+    """KEY=VALUE lines of a systemd-style EnvironmentFile, read literally: no shell, no expansion of $ or backticks.
+    Blank lines and # comments are skipped, an `export ` prefix is allowed, one pair of matching surrounding quotes
+    is removed, and lines without a valid KEY= are ignored."""
+    out = {}
+    for line in Path(path).read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith(("#", ";")) or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip().removeprefix("export ").strip()
+        if not ENV_KEY_RE.match(key):
+            continue
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in "'\"":
+            value = value[1:-1]
+        out[key] = value
+    return out
+
+
 def _loopback(host: str) -> bool:
     if host == "localhost":
         return True

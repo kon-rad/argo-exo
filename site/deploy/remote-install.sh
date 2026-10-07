@@ -16,6 +16,9 @@ UNIT=exo-presale-api
 PKGS=(flask==3.1.3 waitress==3.0.2 requests==2.34.2 eth-account==0.14.0 eth-utils==6.0.0)
 TS=$(date +%Y%m%d%H%M%S)
 
+prune_backups() {  # keep the newest 3 of "$1"*
+  ls -1t "$1"* 2>/dev/null | tail -n +4 | while IFS= read -r old; do rm -f -- "$old"; done || true
+}
 say() { printf '[exo] %s\n' "$*"; }
 die() { printf '[exo] STOP: %s\n' "$*" >&2; exit 1; }
 [[ $EUID -eq 0 ]] || die "run as root (install.sh uses sudo)"
@@ -71,11 +74,11 @@ install -m 644 -o root -g root "$SRC/deploy/$UNIT.service" "/etc/systemd/system/
 cat > /usr/local/bin/exo-presale-admin <<'WRAP'
 #!/bin/sh
 # Usage: sudo -u exosite exo-presale-admin summary|export     (export prints names/emails: redirect to a 600 file)
-set -a; . /etc/exo-presale/env; set +a
+# The env file is parsed by Python as literal KEY=VALUE lines (never shell-sourced), like systemd does.
 umask 077
 export EXO_CLAIMS_DB=/var/lib/exo-presale/claims.db EXO_NOWNODES_USAGE=/var/lib/exo-presale/.cache/usage.json
 export PYTHONPATH=/srv/exo-site/api:/srv/exo-site/packages/nownodes-py
-cd /srv/exo-site/api && exec /srv/exo-site/venv/bin/python -m exo_presale.admin "$@"
+cd /srv/exo-site/api && exec /srv/exo-site/venv/bin/python -m exo_presale.admin --env-file /etc/exo-presale/env "$@"
 WRAP
 chmod 755 /usr/local/bin/exo-presale-admin
 systemctl daemon-reload
@@ -89,6 +92,7 @@ if grep -qxF "$IMPORT_LINE" "$MAIN"; then say "   import line already present"; 
   say "   appended '$IMPORT_LINE' (backup $MAIN.bak-exo-$TS)"
 fi
 VLOG=$(mktemp)
+trap 'rm -f "$VLOG"' EXIT
 if ! caddy validate --config "$MAIN" --adapter caddyfile >"$VLOG" 2>&1; then
   cp -p "$MAIN.bak-exo-$TS" "$MAIN"
   if [[ -f "$BLOCK.bak-$TS" ]]; then cp -p "$BLOCK.bak-$TS" "$BLOCK"; else rm -f "$BLOCK"; fi
@@ -101,8 +105,9 @@ if ! systemctl reload caddy; then
   if [[ -d /var/log/caddy ]]; then chown -R caddy:caddy /var/log/caddy; fi
   systemctl reload caddy
 fi
-rm -f "$VLOG"
 if cmp -s "$MAIN" "$MAIN.bak-exo-$TS"; then rm -f "$MAIN.bak-exo-$TS"; fi     # keep a backup only when it changed
+prune_backups "$MAIN.bak-exo-"
+prune_backups "$BLOCK.bak-"
 
 say "8. $UNIT"
 systemctl enable "$UNIT" >/dev/null 2>&1

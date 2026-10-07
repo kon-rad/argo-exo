@@ -57,7 +57,8 @@ def test_loopback_override_accepted_and_never_sends_the_key(url):
 @pytest.mark.parametrize("url", ["https://mainnet.base.org", "http://localhost:8546", "http://127.0.0.1",
                                  "https://127.0.0.1:8546", "http://127.0.0.1.evil.example:80", "http://u:p@127.0.0.1:8546",
                                  "http://192.0.2.3:8546", "http://[::1]:8546", "http://0.0.0.0:8546", " http://127.0.0.1:8546",
-                                 "http://127.0.0.1:8546?x=https://evil", "http://127.0.0.1:0"])  # public-ok
+                                 "http://127.0.0.1:8546?x=https://evil", "http://127.0.0.1:0", "http://127.0.0.1:8546\n",
+                                 "http://127.0.0.1:8546/\n"])  # public-ok
 def test_override_refuses_anything_but_http_loopback_v4(url):
     with pytest.raises(SystemExit):
         base_rpc({"EXO_BASE_RPC_URL": url})

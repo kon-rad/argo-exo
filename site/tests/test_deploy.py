@@ -29,6 +29,10 @@ def test_caddy_block_shape():
     assert "reverse_proxy 127.0.0.1:5310" in CADDY and "root * /srv/exo-site/dist" in CADDY
     assert "script-src 'self'" in CADDY and "unsafe-inline" not in CADDY
     assert "X-Content-Type-Options nosniff" in CADDY
+    assert "frame-ancestors 'none'" in CADDY and "base-uri 'none'" in CADDY and "form-action 'self'" in CADDY
+    api = CADDY[CADDY.index("handle /api/* {"):CADDY.index("\thandle {")]
+    assert re.search(r"request_body\s*\{\s*max_size 8KB\s*\}", api)
+    assert api.index("request_body") < api.index("reverse_proxy")
     assert not re.search(r"^\s*log\b", CADDY, re.M)            # no access log of visitors
     assert set(IPV4.findall(CADDY)) == {"127.0.0.1"}
 
@@ -51,6 +55,19 @@ def test_remote_install_never_overwrites_main_caddyfile():
     v, r = REMOTE.index('caddy validate --config "$MAIN"'), REMOTE.index("systemctl reload caddy")
     assert v < r                                                # validate before any reload
     assert "chown -R caddy:caddy /var/log/caddy" in REMOTE     # the root-owned log gotcha
+
+
+def test_remote_install_prunes_backups_and_validate_log():
+    assert "tail -n +4" in REMOTE and REMOTE.count("prune_backups") >= 3
+    assert "trap 'rm -f \"$VLOG\"' EXIT" in REMOTE
+    v = REMOTE.index("VLOG=$(mktemp)")
+    assert REMOTE.index("trap 'rm -f \"$VLOG\"' EXIT") < REMOTE.index('caddy validate --config "$MAIN"') and v < REMOTE.index("trap 'rm -f")
+
+
+def test_admin_wrapper_does_not_source_the_env_file():
+    wrap = REMOTE[REMOTE.index("<<'WRAP'"):REMOTE.index("\nWRAP\n")]
+    assert ". /etc/exo-presale/env" not in wrap and "source " not in wrap and "set -a" not in wrap
+    assert "--env-file /etc/exo-presale/env" in wrap
 
 
 def test_remote_install_state_dir_and_env():
@@ -107,3 +124,14 @@ def test_install_stages_the_right_tree_with_ssh_stubbed(tmp_path):
         assert must in staged, must
     assert not any("__pycache__" in p or "/tests" in p or p.endswith("rehearse-fork.sh") for p in staged)
     assert not list(tmp_path.glob("exo-site-stage.*"))           # local staging dir removed
+
+
+def test_prune_backups_keeps_newest_three_and_survives_no_match(tmp_path):
+    fn = REMOTE[REMOTE.index("prune_backups() {"):REMOTE.index("\n}\n", REMOTE.index("prune_backups() {")) + 3]
+    for i in range(5):
+        p = tmp_path / f"Caddyfile.bak-exo-{i}"
+        p.write_text("x"); os.utime(p, (1000 + i, 1000 + i))
+    script = f'set -euo pipefail\n{fn}\nprune_backups "{tmp_path}/Caddyfile.bak-exo-"\nprune_backups "{tmp_path}/none-"\necho survived\n'
+    r = subprocess.run(["bash", "-c", script], capture_output=True, text=True)
+    assert r.stdout.strip() == "survived", r.stderr
+    assert sorted(p.name for p in tmp_path.iterdir()) == [f"Caddyfile.bak-exo-{i}" for i in (2, 3, 4)]

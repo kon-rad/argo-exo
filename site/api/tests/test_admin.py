@@ -117,3 +117,32 @@ def test_main_refuses_missing_config(tmp_path):
         main(["summary"], env={"EXO_CLAIMS_DB": str(tmp_path / "c.db")}, rpc=ChainRpc([], {}))
     with pytest.raises(SystemExit):
         main(["bogus"], env={}, rpc=ChainRpc([], {}))
+
+
+def test_fetch_logs_drops_reorged_out_logs():
+    class R:
+        def call(self, method, params):
+            return [log(1, 1, 1, tx="0xkeep"), {**log(2, 1, 1, tx="0xgone"), "removed": True}, {**log(3, 1, 1, tx="0xk2"), "removed": False}]
+    assert [l["transactionHash"] for l in fetch_logs(R(), "0x" + "aa" * 20, 1, 1)] == ["0xkeep", "0xk2"]
+
+
+def test_env_file_read_literally(tmp_path, capsys):
+    from exo_presale.config import read_env_file
+    f = tmp_path / "env"
+    f.write_text("# comment\n\nEXO_PREORDER=0x" + "aa" * 20 + "\nNOWNODES_API_KEY=a$b `c` $(touch pwned) d\n"
+                 "export EXO_X='q v'\nQUOTED=\"x y\"\nbad line\n1BAD=x\nEXO_PREORDER_FROM_BLOCK = 10\n")
+    env = read_env_file(f)
+    assert env["EXO_PREORDER"] == "0x" + "aa" * 20
+    assert env["NOWNODES_API_KEY"] == "a$b `c` $(touch pwned) d"
+    assert env["EXO_X"] == "q v" and env["QUOTED"] == "x y" and env["EXO_PREORDER_FROM_BLOCK"] == "10"
+    assert "1BAD" not in env and "bad line" not in env
+    assert not (tmp_path / "pwned").exists()
+
+
+def test_main_env_file_flag(tmp_path, capsys):
+    _store(tmp_path)
+    f = tmp_path / "env"
+    f.write_text(f"EXO_PREORDER=0x{'aa' * 20}\nEXO_PREORDER_FROM_BLOCK=10\nEXO_CLAIMS_DB={tmp_path / 'c.db'}\n")
+    rpc = ChainRpc([(11, log(1, 1, 1_000_000, tx="0xa"))], {1: BUYER})
+    assert main(["--env-file", str(f), "summary"], env={}, rpc=rpc) == 0
+    assert capsys.readouterr().out.strip() == "minted 1 · revenue 1.00 USDC · shipping claimed 1 (0 stale)"

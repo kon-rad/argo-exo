@@ -21,7 +21,7 @@ class LocalRpc:
     """Minimal JSON-RPC client for a loopback anvil fork. No key, no retries."""
 
     def __init__(self, url: str, post: Callable = requests.post, timeout: float = 30):
-        m = LOCAL_RE.match(url or "")
+        m = LOCAL_RE.fullmatch(url) if isinstance(url, str) else None   # fullmatch: "$" would allow a trailing \n
         if not m or not 1 <= int(m.group(1)) <= 65535:
             raise SystemExit("EXO_BASE_RPC_URL must be http://127.0.0.1:<port> (a local fork); refusing " + repr(url))
         self.chain, self.url, self.post, self.timeout = "base", url, post, timeout

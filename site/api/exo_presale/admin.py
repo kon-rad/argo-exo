@@ -41,7 +41,7 @@ def fetch_logs(rpc, contract, start, end, step=5000):
     out = []
     for a in range(start, end + 1, step):
         out += rpc.call("eth_getLogs", [{"address": contract, "topics": [TOPIC], "fromBlock": hex(a), "toBlock": hex(min(a + step - 1, end))}])
-    return out
+    return [l for l in out if not l.get("removed")]          # removed: true = reorged out, not a sale
 
 
 def csv_cell(v):
@@ -80,9 +80,16 @@ def summarize(rows, exported, units=None) -> str:
 
 def main(argv, env=os.environ, rpc=None, out=None):
     out = out or sys.stdout
+    argv = list(argv)
+    if argv[:1] == ["--env-file"]:
+        if len(argv) < 2:
+            raise SystemExit("--env-file needs a path")
+        from .config import read_env_file
+        env = {**env, **read_env_file(argv[1])}        # file wins, as with systemd's EnvironmentFile
+        argv = argv[2:]
     cmd = argv[0] if argv else ""
     if cmd not in ("summary", "export"):
-        raise SystemExit("usage: python -m exo_presale.admin summary|export")
+        raise SystemExit("usage: python -m exo_presale.admin [--env-file PATH] summary|export")
     from .chain import Sale
     from .claims import ClaimStore
     from .rpc import base_rpc

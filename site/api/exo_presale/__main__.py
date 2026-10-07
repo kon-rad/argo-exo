@@ -10,6 +10,7 @@ from .claims import ClaimStore
 from .rpc import base_rpc
 
 STATE_TIMEOUT_S = 4
+MAX_BODY_BYTES = 8192   # waitress refuses bigger bodies before buffering them (Flask then caps at 4 KB)
 
 
 def main() -> None:
@@ -20,7 +21,7 @@ def main() -> None:
     sale = Sale(base_rpc(os.environ, usage=True), c["contract"], c["tiers"],
                 state_rpc=base_rpc(os.environ, timeout=STATE_TIMEOUT_S, usage=True))
     app = create_app(sale, ClaimStore(c["db"]), c["countries"], c["rate"])
-    serve(app, host=c["host"], port=c["port"], threads=4)
+    serve(app, host=c["host"], port=c["port"], threads=4, max_request_body_size=MAX_BODY_BYTES)
 
 
 if __name__ == "__main__":
