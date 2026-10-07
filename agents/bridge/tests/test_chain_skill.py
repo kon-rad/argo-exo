@@ -82,3 +82,68 @@ def test_main_balance_ok(capsys):
     factory = lambda cmd, limit: (lambda c, a: {"balance": "1500000000000000000"})
     assert chain.main(["balance", ME, "--chains", "base"], fetch_factory=factory) == 0
     assert capsys.readouterr().out.strip() == "base: 1.5 ETH"
+
+
+def _wallets(tmp_path, monkeypatch, data=None, raw=None):
+    import json
+    f = tmp_path / "wallets.json"
+    f.write_text(raw if raw is not None else json.dumps(data))
+    monkeypatch.setenv("EXO_WALLETS_FILE", str(f))
+
+
+def _factory(resp):
+    seen = []
+    def factory(cmd, limit):
+        def f(c, a):
+            seen.append((c, a)); return resp
+        return f
+    factory.seen = seen
+    return factory
+
+
+def test_example_file_is_valid_and_placeholder(monkeypatch):
+    ex = Path(chain.__file__).parent / "wallets.example.json"
+    w = chain.load_wallets(ex)
+    assert set(w) == {"agent-safe", "deck-gas", "cold-watch"}
+    assert all(a.startswith("0x000000000000000000000000000000000000000") for m in w.values() for a in m.values())
+
+
+def test_balance_all_wallets_and_label(tmp_path, monkeypatch, capsys):
+    a1, a2 = "0x" + "1" * 40, "0x" + "2" * 40
+    _wallets(tmp_path, monkeypatch, {"safe": {"base": a1, "polygon": a1}, "gas": {"base": a2}})
+    fac = _factory({"balance": "1000000000000000000"})
+    assert chain.main(["balance"], fetch_factory=fac) == 0
+    assert capsys.readouterr().out.splitlines() == ["safe, base: 1 ETH", "safe, polygon: 1 POL", "gas, base: 1 ETH"]
+    assert chain.main(["balance", "gas"], fetch_factory=fac) == 0 and fac.seen[-1] == ("base", a2)
+    assert chain.main(["history", "safe", "--chain", "base"], fetch_factory=fac) == 0
+    assert chain.main(["history", "gas", "--chain", "polygon"], fetch_factory=fac) == 2
+    assert chain.main(["balance", "nobody"], fetch_factory=fac) == 2
+
+
+def test_missing_or_bad_wallets_file(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("EXO_WALLETS_FILE", str(tmp_path / "none.json"))
+    assert chain.main(["balance"], fetch_factory=_factory({})) == 2
+    assert capsys.readouterr().out.strip() == chain.NO_WALLETS
+    for bad in ({"x": {"base": "0xnope"}}, {"x": {"mars": "0x" + "1" * 40}}, [1], {"x": []}):
+        _wallets(tmp_path, monkeypatch, bad)
+        assert chain.main(["balance"], fetch_factory=_factory({})) == 2
+        assert "0xnope" not in capsys.readouterr().out
+    _wallets(tmp_path, monkeypatch, raw="{not json")
+    assert chain.main(["balance"], fetch_factory=_factory({})) == 2
+
+
+def test_address_still_works_without_wallets_file(monkeypatch, tmp_path, capsys):
+    monkeypatch.setenv("EXO_WALLETS_FILE", str(tmp_path / "none.json"))
+    assert chain.main(["balance", ME, "--chains", "base"], fetch_factory=_factory({"balance": "5"})) == 0
+
+
+@pytest.mark.parametrize("resp", [{}, {"balance": None}, {"balance": "abc"}, {"balance": "-1"}])
+def test_bad_native_balance_is_unavailable(resp):
+    assert chain.balance_lines(ME, ["base"], lambda c, a: resp) == ["base: unavailable"]
+
+
+def test_history_tolerates_junk_and_flags_unknown_amount():
+    resp = {"transactions": ["junk", None, {"blockTime": 1800000000, "value": "oops", "tokenTransfers": [
+        "x", {"symbol": "USDC", "decimals": 6, "value": "bad", "from": ME, "to": "0xyou"}]}]}
+    out = chain.history_lines(ME, "base", 5, lambda c, a: resp)
+    assert out == ["sent an unknown amount of USDC to 0xyou on 2027-01-15"]
