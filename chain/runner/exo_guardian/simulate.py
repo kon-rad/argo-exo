@@ -72,7 +72,7 @@ def run_simulation(payload: dict, trigger_index: int, broadcast: bool, run=subpr
         with os.fdopen(fd, "w") as f:
             json.dump(payload, f)
         cmd = ["cre", "workflow", "simulate", "exo", "--target", "mainnet", "--non-interactive",
-               "--trigger-index", str(trigger_index), "--http-payload", "@" + path]
+               "--trigger-index", str(trigger_index), "--http-payload", path]
         if broadcast:
             cmd.append("--broadcast")
         t0 = time.monotonic()

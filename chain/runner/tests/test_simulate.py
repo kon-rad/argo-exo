@@ -51,7 +51,7 @@ def test_run_builds_the_cli_call(tmp_path):
 
     def run(cmd, **kw):
         seen["cmd"], seen["kw"] = cmd, kw
-        path = Path(cmd[cmd.index("--http-payload") + 1].lstrip("@"))
+        path = Path(cmd[cmd.index("--http-payload") + 1])
         seen["payload"] = json.loads(path.read_text())
         seen["path"] = path
         return subprocess.CompletedProcess(cmd, 0, "Workflow Simulation Result:\n" + json.dumps(RESULT), "")
@@ -62,7 +62,8 @@ def test_run_builds_the_cli_call(tmp_path):
     assert c[:4] == ["cre", "workflow", "simulate", "exo"] and "--broadcast" in c
     assert c[c.index("--trigger-index") + 1] == "0" and "--non-interactive" in c
     assert c[c.index("--target") + 1] == "mainnet"
-    assert c[c.index("--http-payload") + 1].startswith("@")
+    # cre v1.37 takes a bare file path; "@path" is parsed as inline JSON and fails (seen live 2026-10-07)
+    assert c[c.index("--http-payload") + 1].endswith(".json") and not c[c.index("--http-payload") + 1].startswith("@")
     assert seen["payload"] == {"proposal_id": "p1"} and not seen["path"].exists()  # temp file removed
     assert seen["kw"]["cwd"] == str(tmp_path) and seen["kw"]["timeout"] > 0
 
@@ -90,7 +91,7 @@ def test_timeout_raises_and_cleans_up(tmp_path):
     paths = []
 
     def run(cmd, **kw):
-        paths.append(Path(cmd[cmd.index("--http-payload") + 1].lstrip("@")))
+        paths.append(Path(cmd[cmd.index("--http-payload") + 1]))
         raise subprocess.TimeoutExpired(cmd, 1)
     with pytest.raises(SimulationError) as e:
         run_simulation({}, 0, False, run=run, cwd=tmp_path)

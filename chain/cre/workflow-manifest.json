@@ -1,4 +1,4 @@
-[{"handler":"guard","trigger":"http","priority":"Must","status":"planned"},
- {"handler":"freeze","trigger":"http","priority":"Should","status":"planned"},
+[{"handler":"guard","trigger":"http","priority":"Must","status":"simulated"},
+ {"handler":"freeze","trigger":"http","priority":"Should","status":"simulated"},
  {"handler":"diligence","trigger":"http","priority":"Could","status":"planned"},
  {"handler":"journal","trigger":"evm_log","priority":"Could","status":"planned"}]

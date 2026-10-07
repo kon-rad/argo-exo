@@ -105,13 +105,16 @@ def test_nownodes_forward_sends_api_key_and_redacts(monkeypatch):
         def read(self): return b'{"echo":"secret-key-123"}'
 
     def fake_open(req, timeout):
-        captured.update(url=req.full_url, key=req.get_header("Api-key"), timeout=timeout)
+        captured.update(url=req.full_url, key=req.get_header("Api-key"), timeout=timeout,
+                        ua=req.get_header("User-agent"))
         return Resp()
 
     monkeypatch.setattr(np.urllib.request, "urlopen", fake_open)
     status, out = np.nownodes_forward("polygon", b"{}")
     assert captured["url"] == "https://matic.nownodes.io" and captured["key"] == "secret-key-123"
     assert captured["timeout"] and b"secret-key-123" not in out
+    # Cloudflare in front of NOWNodes answers urllib's default "Python-urllib/x.y" with "error code: 1010".
+    assert captured["ua"] and not captured["ua"].startswith("Python-urllib")
 
 
 def test_nownodes_forward_missing_key(monkeypatch):

@@ -19,6 +19,7 @@ LOOPBACK = {"127.0.0.1", "::1", "localhost"}
 HOST_NAMES = {"127.0.0.1", "localhost", "[::1]"}
 MAX_BODY = 1_000_000
 UPSTREAM_TIMEOUT = 30
+USER_AGENT = "argo-exo-nownodes-proxy/1"   # Cloudflare refuses urllib's default "Python-urllib/x.y" (error 1010)
 
 
 def _err(message: str) -> bytes:
@@ -30,7 +31,8 @@ def nownodes_forward(chain: str, body: bytes) -> tuple[int, bytes]:
     if not key:
         return 503, _err("NOWNODES_API_KEY is not set")
     req = urllib.request.Request(f"https://{hosts.RPC[chain]}", data=body, method="POST",
-                                 headers={"api-key": key, "Content-Type": "application/json"})
+                                 headers={"api-key": key, "Content-Type": "application/json",
+                                          "User-Agent": USER_AGENT})
     try:
         with urllib.request.urlopen(req, timeout=UPSTREAM_TIMEOUT) as r:
             status, out = r.status, r.read()

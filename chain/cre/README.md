@@ -71,8 +71,8 @@ Run from `chain/cre`:
 
 ```bash
 mkdir -p evidence
-cre workflow simulate exo --target mainnet --non-interactive --trigger-index 0 --http-payload @exo/payloads/send-usdc.json | tee evidence/guard-send-usdc.txt
-cre workflow simulate exo --target mainnet --non-interactive --trigger-index 0 --http-payload @exo/payloads/approval-for-all.json | tee evidence/guard-approval-for-all.txt
+cre workflow simulate exo --target mainnet --non-interactive --trigger-index 0 --http-payload exo/payloads/send-usdc.json | tee evidence/guard-send-usdc.txt
+cre workflow simulate exo --target mainnet --non-interactive --trigger-index 0 --http-payload exo/payloads/approval-for-all.json | tee evidence/guard-approval-for-all.txt
 cre workflow simulate exo --target mainnet --non-interactive --trigger-index 1 --http-payload '{"reason":"simulation test"}' | tee evidence/freeze.txt
 ```
 
