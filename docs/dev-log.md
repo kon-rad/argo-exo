@@ -12,7 +12,7 @@
 1. **All code in sections 01-07 is written, reviewed and unit-tested. Almost nothing has run live.** No droplet install, no Pi install of the new kiosk, no `cre` simulation, no mainnet deploy, no pre-sale contract on Base. The one end-to-end rehearsal is the pre-sale purchase flow on an anvil fork of Base. **Most likely to change the plan:** the CRE workflow has never been through `cre workflow simulate`, so the Guardian's marker parsing and the SDK wiring are unproven until the maintainer installs the CLI.
 2. **Review caught real fund-loss bugs that tests did not.** The worst: a zero-value self-call through `ExoModule` could take over the Safe; `demoReporter == 0` plus a permissionless mock forwarder let anyone approve a transaction; a plan typo hid every `setApprovalForAll` on chain. All fixed with tests; see section 2.
 3. **Money paths fail closed by default.** Broadcast is off (`EXO_GUARDIAN_BROADCAST=1` to enable), unknown selectors refuse, approvals to unknown spenders refuse, approve fires on key release, the bridge token never reaches Hermes.
-4. **Nine pending go-aheads from the maintainer gate going live**, listed in section 5. The pre-sale page is deliberately unshippable until he fills the `TODO(konrad)` copy slots.
+4. **Twelve pending items from the maintainer gate going live**, listed in section 5. The pre-sale page is deliberately unshippable until he fills the `TODO(konrad)` copy slots.
 5. **Gates are green today (2026-10-07):** 749 pytest, 46 node, 42 + 27 forge, 111 + 6 bun, `check-public` clean, gitleaks clean over 81 commits.
 
 ---
@@ -108,6 +108,8 @@ Live checks that did run: STT/TTS (2026-10-06, Deepgram and Gemini STT, Aura TTS
 | 8 | DNS record for the pre-sale host, then `remote-install.sh` (confirm `python3-venv` on droplet) | Site live |
 | 9 | Task 9 mainnet checklist (below) | Real money |
 | 10 | Talk-queue decision (section 6) | UX of talk during a reply |
+| 11 | README prose and LICENSE: the maintainer's call (structure ours, words theirs) | Going public with final wording |
+| 12 | Other session's uncommitted deck/firmware/hardware/docs work in the same checkout: commit or merge it before the next deck deploy | Deck deploy |
 
 **Task 9 mainnet checklist (accumulated):** forwarder to the real KeystoneForwarder before identity, identity before clearing `demoReporter`, never `setForwarderAddress(0)`; dedicated simulator key; owner is the cold-key EOA and unfreeze comes from it; `authorizedKeys` on both HTTP triggers before any deploy; plain-handler mode refuses on a multi-node DON, so TEE mode is needed; verify the ETH/USD feed address and decimals; verify `parse_result`'s marker regex against the first real simulate output; flip the manifest to "simulated" after that run; confirm judge models; set `EXO_GUARDIAN_BROADCAST=1` only at go-live.
 
