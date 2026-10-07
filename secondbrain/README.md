@@ -4,7 +4,7 @@ A starter second brain: a plain-markdown PARA vault plus the house rules an agen
 
 ## Use it
 
-Copy `vault-template/` to wherever you keep notes and open it in any markdown editor (Obsidian works well). `AGENTS.md` at the vault root tells an agent where files go and how to write them. The agents in `agents/` file into the vault using those rules.
+Copy `vault-template/` to wherever you keep notes and open it in any markdown editor (Obsidian works well). `AGENTS.md` at the vault root tells an agent where files go and how to write them. The agents in the repo's top-level `agents/` folder file into the vault using those rules.
 
 ## Layout
 
