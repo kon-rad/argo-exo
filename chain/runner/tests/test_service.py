@@ -335,19 +335,39 @@ class CapSim(Sim):
 
 
 def test_concurrent_guards_cannot_both_spend_the_cap(store):
+    """Two guards at once: the second never runs alongside the first. It is either refused busy at once (the lock
+    is never waited on) or, if the first already finished, refused by the cap. Never two approvals."""
     import threading
+    from exo_guardian.store import GuardianBusy
     stores = [store, _second_store(store)]
     results = []
 
     def run(s):
-        results.append(guardian(s, CapSim(cap=30, usd=20)).guard(REQ))
+        try:
+            results.append(guardian(s, CapSim(cap=30, usd=20)).guard(REQ)["verdict"])
+        except GuardianBusy:
+            results.append("busy")
     threads = [threading.Thread(target=run, args=(s,)) for s in stores]
     for t in threads:
         t.start()
     for t in threads:
         t.join()
-    assert sorted(r["verdict"] for r in results) == ["approve", "refuse"]
+    assert sorted(results) in (["approve", "busy"], ["approve", "refuse"])
     assert len(guardian(store, Sim()).pending()) == 1
+
+
+def test_a_held_guard_lock_is_busy_at_once_and_records_nothing(store):
+    import time
+    from exo_guardian.store import GuardianBusy
+    sim = Sim()
+    other = _second_store(store)
+    with other.guard_lock():
+        t0 = time.monotonic()
+        with pytest.raises(GuardianBusy):
+            guardian(store, sim).guard(REQ)
+        assert time.monotonic() - t0 < 2
+    assert sim.calls == []
+    assert guardian(store, sim).guard(REQ)["verdict"] == "approve"   # free again
 
 
 @pytest.mark.parametrize("patch", [

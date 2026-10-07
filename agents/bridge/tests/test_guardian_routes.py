@@ -154,7 +154,7 @@ def _guard_client(g=None):
 
 def test_guard_token_opens_guard_only():
     cl, narrow = _guard_client(), {"Authorization": f"Bearer {GUARD_TOKEN}"}
-    assert cl.post("/guard", json={"tx": {}, "from": "0x1"}, headers=narrow).status_code == 200
+    assert cl.post("/guard", json={"tx": {}, "from": "0x1", "source": "agent:wallet"}, headers=narrow).status_code == 200
     assert cl.post("/freeze", json={}, headers=narrow).status_code == 401
     assert cl.post(f"/approvals/{PID}/executed", json={}, headers=narrow).status_code == 401
     assert cl.get("/approvals/pending", headers=narrow).status_code == 401
@@ -180,3 +180,65 @@ def test_guard_token_is_optional_and_validated():
     for bad in ("short", TOKEN):
         with pytest.raises(ValueError):
             Config.from_env(dict(ENV, EXO_GUARD_TOKEN=bad))
+
+
+GTOKEN = "g" * 40
+GAUTH = {"Authorization": f"Bearer {GTOKEN}"}
+
+
+def gc(g):
+    return create_app(Config.from_env(dict(ENV, EXO_GUARD_TOKEN=GTOKEN)), None, None,
+                      blueprints=(guardian_blueprint(g),)).test_client()
+
+
+@pytest.mark.parametrize("source", ["agent:wallet", "agent:trader-2", "agent:" + "a" * 32, "camera", "dashboard"])
+def test_guard_token_may_claim_agent_camera_or_dashboard(source):
+    g = FakeGuardian()
+    r = gc(g).post("/guard", json={"tx": {}, "source": source}, headers=GAUTH)
+    assert r.status_code == 200 and g.calls == [("guard", {"tx": {}, "source": source})]
+
+
+@pytest.mark.parametrize("source", [None, "", "voice", "agent", "agent:", "agent:Wallet", "agent:" + "a" * 33,
+                                    "agent:wallet ", "agent:wallet\n", "agent:a/b", "camera2", 7, ["camera"]])
+def test_guard_token_cannot_claim_voice_or_anything_else(source):
+    g = FakeGuardian()
+    body = {"tx": {}} if source is None else {"tx": {}, "source": source}
+    r = gc(g).post("/guard", json=body, headers=GAUTH)
+    assert r.status_code == 400 and g.calls == []
+
+
+def test_full_token_may_send_voice():
+    g = FakeGuardian()
+    assert gc(g).post("/guard", json={"tx": {}, "source": "voice"}, headers=AUTH).status_code == 200
+
+
+def test_guard_token_still_cannot_reach_the_deck_routes():
+    g = FakeGuardian()
+    cl = gc(g)
+    assert cl.get("/approvals/pending", headers=GAUTH).status_code == 401
+    assert cl.post("/freeze", json={}, headers=GAUTH).status_code == 401
+    assert cl.post(f"/approvals/{PID}/executed", json={"tx_hash": SENT}, headers=GAUTH).status_code == 401
+
+
+def test_busy_guardian_answers_503_at_once():
+    class Busy(RuntimeError):
+        busy = True
+    g = FakeGuardian(raises=Busy("another guard is running"))
+    r = c(g).post("/guard", json={"tx": {}}, headers=AUTH)
+    assert r.status_code == 503 and r.json == {"error": "guardian busy"}
+
+
+def test_busy_end_to_end_with_the_real_lock():
+    """The real Guardian on a MemoryStore whose lock is held: 503 straight away, nothing recorded."""
+    import time
+    from exo_guardian.service import Guardian
+    from exo_guardian.store import MemoryStore
+    store = MemoryStore()
+    guardian = Guardian(store, simulate=lambda *a: ({}, 0), module="0x" + "1" * 40, chain_id=1)
+    req = {"tx": {"to": "0x" + "2" * 40, "value": "0", "data": "0x", "chain_id": 1}, "from": "0x" + "3" * 40,
+           "intent": {"kind": "send", "summary": "x"}, "source": "agent:wallet"}
+    with store.guard_lock():
+        t0 = time.monotonic()
+        r = gc(guardian).post("/guard", json=req, headers=GAUTH)
+        assert time.monotonic() - t0 < 2
+    assert r.status_code == 503 and r.json == {"error": "guardian busy"} and store.proposals == {}

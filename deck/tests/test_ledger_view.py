@@ -89,3 +89,7 @@ def test_counts_must_be_an_object():
 
 def test_cre_workflows_failure_is_a_panel_error():
     assert lv.cre_panel(B(exc=BridgeError("HTTP 503 ledger not connected")), 0) == {"error": "Ledger not connected"}
+
+
+def test_missing_manifest_has_its_own_message():
+    assert lv.cre_panel(B(exc=BridgeError("HTTP 503 workflow manifest missing")), 0) == {"error": "Workflow manifest missing"}

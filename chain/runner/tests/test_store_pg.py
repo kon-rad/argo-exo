@@ -66,3 +66,18 @@ def test_store_refuses_to_queue_an_unbroadcast_approval(pg_reset):
     assert s.get_status(pid) == "proposed" and s.pending(1_800_000_000) == []
     with _conn(ADMIN) as c:   # nothing half-written
         assert c.execute("SELECT count(*) AS n FROM verdicts").fetchone()["n"] == 0
+
+
+def test_guard_lock_never_waits(pg_reset):
+    """A second guard while one holds the advisory lock fails at once (the bridge answers 503 "guardian busy")."""
+    import time
+    from exo_guardian.store import GuardianBusy, PgStore
+    a, b = PgStore(WRITER), PgStore(WRITER)
+    with a.guard_lock():
+        t0 = time.monotonic()
+        with pytest.raises(GuardianBusy):
+            with b.guard_lock():
+                pass
+        assert time.monotonic() - t0 < 5
+    with b.guard_lock():   # released: the next one gets it
+        pass

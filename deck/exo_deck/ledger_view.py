@@ -9,10 +9,12 @@ from .chain_view import clean
 
 PAGE = 7
 STATUSES = ("proposed", "refused", "simulated", "waiting_key", "executed", "failed")   # 00-architecture §4.6
-NOT_CONNECTED, UNREACHABLE = "Ledger not connected", "Ledger unreachable"
+NOT_CONNECTED, UNREACHABLE, NO_MANIFEST = "Ledger not connected", "Ledger unreachable", "Workflow manifest missing"
 
 
 def _err(exc: BridgeError) -> str:
+    if "workflow manifest missing" in str(exc):
+        return NO_MANIFEST
     return NOT_CONNECTED if "ledger not connected" in str(exc) else UNREACHABLE      # fixed strings: no URLs, no body text
 
 

@@ -6,7 +6,7 @@ import logging
 import time
 from functools import wraps
 
-from flask import Flask, jsonify, request
+from flask import Flask, g, jsonify, request
 
 from .config import Config
 from .kanban import KanbanError
@@ -41,9 +41,12 @@ def create_app(cfg: Config, kanban, talker, blueprints=()) -> Flask:
     def _gate():
         got = request.headers.get("Authorization", "").encode()
         ok = hmac.compare_digest(got, expected)
-        # The narrow guard token (the only one agents hold) opens POST /guard and nothing else.
-        if guard_expected is not None and request.method == "POST" and request.path == "/guard":
-            ok = hmac.compare_digest(got, guard_expected) or ok
+        g.auth = "full" if ok else None
+        # The narrow guard token (the only one agents hold) opens POST /guard and nothing else. The route checks
+        # g.auth == "guard" to hold such a caller to the agent sources (no "voice").
+        if not ok and guard_expected is not None and request.method == "POST" and request.path == "/guard":
+            if hmac.compare_digest(got, guard_expected):
+                ok, g.auth = True, "guard"
         if not ok:
             return jsonify(error="unauthorized"), 401
         return None

@@ -16,7 +16,12 @@ STATUSES = ("proposed", "refused", "simulated", "waiting_key", "executed", "fail
 REAL_TX = re.compile(r"0x(?!0{64}\Z)[0-9a-f]{64}")
 DAY = 86_400
 GUARD_LOCK_KEY = 0x45584F4755415244   # "EXOGUARD": the one advisory lock every guard call holds
-GUARD_LOCK_TIMEOUT_S = 300            # longer than one simulation (240 s); a stuck holder fails the next guard
+
+
+class GuardianBusy(RuntimeError):
+    """Another guard holds the lock. The bridge answers 503 "guardian busy" at once rather than queueing the caller
+    (each queued guard would hold a waitress thread for up to a whole simulation)."""
+    busy = True
 
 
 def is_real_tx(h) -> bool:
@@ -41,7 +46,7 @@ def _day_start(now: float) -> int:
 
 
 class Store(Protocol):
-    def guard_lock(self) -> Iterator[None]: ...   # a context manager: one guard at a time, across processes
+    def guard_lock(self) -> Iterator[None]: ...   # a context manager: one guard at a time, across processes; never waits (GuardianBusy)
     def insert_proposal(self, p: dict) -> None: ...
     def record_verdict(self, pid: str, result: dict, latency_ms: int, status: str) -> None: ...
     def record_call(self, handler: str, verdict: str, reason: str, latency_ms: int, pid: str | None = None) -> None: ...
@@ -68,8 +73,8 @@ class MemoryStore:
 
     @contextmanager
     def guard_lock(self):
-        if not self._guard.acquire(timeout=GUARD_LOCK_TIMEOUT_S):
-            raise RuntimeError("timed out waiting for the guard lock")
+        if not self._guard.acquire(blocking=False):
+            raise GuardianBusy("another guard is running")
         try:
             yield
         finally:
@@ -150,12 +155,12 @@ class PgStore:
     @contextmanager
     def guard_lock(self):
         """A session-level advisory lock on its own connection, held for the whole guard call (spent_today read →
-        simulation → verdict). Serialises guards across bridge threads and the CLI's processes; if this process dies,
-        Postgres drops the connection and the lock with it."""
+        simulation → verdict). Serialises guards across bridge threads and processes; if this process dies, Postgres
+        drops the connection and the lock with it. Never waits: a held lock raises GuardianBusy at once."""
         import psycopg
         with psycopg.connect(self.dsn, autocommit=True) as c:
-            c.execute(f"SET lock_timeout = '{GUARD_LOCK_TIMEOUT_S}s'")
-            c.execute("SELECT pg_advisory_lock(%s)", (GUARD_LOCK_KEY,))
+            if not c.execute("SELECT pg_try_advisory_lock(%s)", (GUARD_LOCK_KEY,)).fetchone()[0]:   # tuple rows here
+                raise GuardianBusy("another guard is running")
             try:
                 yield
             finally:

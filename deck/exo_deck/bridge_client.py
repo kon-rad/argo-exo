@@ -81,7 +81,7 @@ class Bridge:
         ok = self._call(self.post, "/freeze", "ok", json={"reason": reason}, timeout=(5, 300))
         return {"ok": ok is True}
 
-    # --- ledger and CRE reads for the kiosk (read-only bridge routes; 503 body "ledger not connected") --------
+    # --- ledger and CRE reads for the kiosk (read-only bridge routes; 503 "ledger not connected" / "workflow manifest missing")
     def _read(self, path: str, params: dict | None, list_key: str | None) -> dict:
         try:
             r = self.get(f"{self.url}{path}", headers=self.headers, **({"params": params} if params else {}), timeout=(5, 10))

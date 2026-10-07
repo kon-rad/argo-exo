@@ -61,9 +61,11 @@ def test_transactions_and_calls(tmp_path):
 
 def test_not_connected_is_503(tmp_path):
     cl = c(tmp_path, None, mpath=str(tmp_path / "missing.json"))
-    for path in ("/ledger/transactions", "/ledger/cre-calls", "/cre/workflows"):
+    for path in ("/ledger/transactions", "/ledger/cre-calls"):
         r = cl.get(path, headers=AUTH)
         assert r.status_code == 503 and r.json == {"error": "ledger not connected"}
+    r = cl.get("/cre/workflows", headers=AUTH)
+    assert r.status_code == 503 and r.json == {"error": "workflow manifest missing"}
 
 
 def test_workflows_from_manifest(tmp_path):
@@ -81,7 +83,13 @@ def test_workflows_work_without_a_ledger_and_the_real_manifest_is_served():
 def test_bad_manifest_is_503(tmp_path, bad):
     p = tmp_path / "m.json"
     p.write_text(bad if isinstance(bad, str) else json.dumps(bad))
-    assert c(tmp_path, None, mpath=str(p)).get("/cre/workflows", headers=AUTH).status_code == 503
+    r = c(tmp_path, None, mpath=str(p)).get("/cre/workflows", headers=AUTH)
+    assert r.status_code == 503 and r.json == {"error": "workflow manifest missing"}   # its own message, not the ledger's
+
+
+def test_missing_manifest_says_so(tmp_path):
+    r = c(tmp_path, None, mpath=str(tmp_path / "nope.json")).get("/cre/workflows", headers=AUTH)
+    assert r.status_code == 503 and r.json == {"error": "workflow manifest missing"}
 
 
 def test_manifest_fields_are_whitelisted_and_capped(tmp_path):

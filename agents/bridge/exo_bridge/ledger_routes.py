@@ -13,6 +13,7 @@ from flask import Blueprint, jsonify, request
 
 log = logging.getLogger("exo-bridge")
 NOT_CONNECTED = "ledger not connected"
+NO_MANIFEST = "workflow manifest missing"
 MAX_LIMIT, MAX_OFFSET, DEFAULT_LIMIT = 50, 100_000, 7
 TEXT_CAP = 300     # summaries and reasons come from agent-built intents: never trust their size
 MANIFEST_FIELDS = ("handler", "trigger", "priority", "status")
@@ -78,7 +79,7 @@ def ledger_blueprint(ledger, manifest_path: str) -> Blueprint:
     def workflows():
         handlers = load_manifest(manifest_path)
         if handlers is None:
-            return jsonify(error=NOT_CONNECTED), 503
+            return jsonify(error=NO_MANIFEST), 503
         return jsonify(handlers=handlers)
 
     return bp

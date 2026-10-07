@@ -33,3 +33,25 @@ def test_agents_default_is_exact():
 @pytest.mark.parametrize("host", ["127.0.0.1", "100.64.0.5", "fd7a:115c:a1e0::1"], ids=["loopback", "v4", "v6"])  # public-ok
 def test_allows_loopback_and_real_addresses(host):
     assert Config.from_env(dict(BASE, EXO_BRIDGE_HOST=host)).host == host
+
+
+def test_guardian_setup_error_names_the_missing_module():
+    from exo_bridge.__main__ import guardian_setup_error
+    e = ModuleNotFoundError("No module named 'eth_abi'", name="eth_abi")
+    assert guardian_setup_error(e) == ("guardian setup failed: ModuleNotFoundError: cannot import eth_abi "
+                                       "(install agents/bridge/requirements.txt into the bridge venv)")
+    e = ModuleNotFoundError("No module named 'exo_guardian'", name="exo_guardian")
+    assert "cannot import exo_guardian (is chain/runner on PYTHONPATH?)" in guardian_setup_error(e)
+    assert guardian_setup_error(ValueError("postgres://u:secret@h/db")) == "guardian setup failed: ValueError"   # public-ok
+
+
+def test_bridge_requirements_cover_the_guardian_imports():
+    """exo_guardian runs inside the bridge venv: every third-party module it imports must be pinned there."""
+    import re
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[3]
+    reqs = (root / "agents/bridge/requirements.txt").read_text().lower()
+    pinned = {re.split(r"[=<>\[]", ln)[0].strip().replace("_", "-") for ln in reqs.splitlines() if ln.strip() and not ln.startswith("#")}
+    assert all("==" in ln for ln in reqs.splitlines() if ln.strip() and not ln.startswith("#"))
+    for mod in ("eth-abi", "eth-utils", "requests", "psycopg"):
+        assert mod in pinned, mod

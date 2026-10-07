@@ -8,11 +8,18 @@ Error bodies are fixed strings: exception text (DSNs, simulator output) never le
 from __future__ import annotations
 
 import logging
+import re
 from functools import wraps
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, g, jsonify, request
 
 log = logging.getLogger("exo-bridge")
+# Sources a guard-token caller (an agent) may claim. "voice" and anything else need the full bridge token (the deck).
+GUARD_TOKEN_SOURCE = re.compile(r"agent:[a-z0-9-]{1,32}|camera|dashboard")
+
+
+def guard_source_ok(source) -> bool:
+    return isinstance(source, str) and GUARD_TOKEN_SOURCE.fullmatch(source) is not None
 
 
 def guardian_blueprint(guardian) -> Blueprint:
@@ -38,12 +45,17 @@ def guardian_blueprint(guardian) -> Blueprint:
         b = body()
         if b is None or not isinstance(b.get("tx"), dict):
             return jsonify(error="tx required"), 400
+        if g.get("auth") == "guard" and not guard_source_ok(b.get("source")):
+            log.info("guard: guard-token caller sent a source it may not use")
+            return jsonify(error="source must be agent:<profile>, camera or dashboard"), 400
         try:
             result = guardian.guard(b)
         except ValueError as exc:
             log.info("guard: invalid request (%s)", exc)
             return jsonify(error="invalid guard request"), 400
         except Exception as exc:  # noqa: BLE001
+            if getattr(exc, "busy", False):   # exo_guardian.store.GuardianBusy: the lock is held, never queue
+                return jsonify(error="guardian busy"), 503
             log.warning("guard failed: %s", type(exc).__name__)
             return jsonify(error="guardian unavailable"), 502
         if result.get("unavailable"):

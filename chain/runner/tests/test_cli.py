@@ -87,3 +87,16 @@ def test_guard_falls_back_to_the_full_token_with_a_warning(capsys):
 
 def test_guard_with_no_token_is_usage_error():
     assert cli.main(["guard", json.dumps(REQ)], env={"EXO_BRIDGE_URL": "http://x"}, post=FakeBridge()) == 2
+
+
+def test_agent_profile_sets_the_source(capsys):
+    b = FakeBridge()
+    env = dict(ENV, EXO_GUARD_TOKEN="g" * 40, EXO_AGENT_PROFILE="wallet")
+    assert cli.main(["guard", json.dumps(REQ)], env=env, post=b) == 0
+    assert b.calls[0][1]["json"]["source"] == "agent:wallet"   # the agent can't pass itself off as "voice"
+
+
+def test_busy_is_1(capsys):
+    b = FakeBridge(status=503, body={"error": "guardian busy"})
+    assert cli.main(["guard", json.dumps(REQ)], env=ENV, post=b) == 1
+    assert json.loads(capsys.readouterr().out) == {"error": "guardian busy"}

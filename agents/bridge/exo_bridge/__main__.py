@@ -30,6 +30,18 @@ def build_guardian(env):
     return Guardian(PgStore(dsn), broadcast=broadcast)
 
 
+def guardian_setup_error(exc: BaseException) -> str:
+    """The startup failure, named precisely: for an import error, the module that is missing (exo_guardian when
+    chain/runner isn't on PYTHONPATH; eth_abi, eth_utils or psycopg when the venv lacks a dependency). Other
+    errors print their type only (their text may quote the DSN or config)."""
+    if isinstance(exc, ImportError):
+        missing = getattr(exc, "name", None) or "?"
+        hint = "is chain/runner on PYTHONPATH?" if missing.split(".")[0] == "exo_guardian" else \
+            "install agents/bridge/requirements.txt into the bridge venv"
+        return f"guardian setup failed: {type(exc).__name__}: cannot import {missing} ({hint})"
+    return f"guardian setup failed: {type(exc).__name__}"
+
+
 def main() -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
     try:
@@ -40,7 +52,7 @@ def main() -> int:
     try:
         guardian = build_guardian(os.environ)
     except (ImportError, ValueError, OSError, KeyError) as exc:
-        print(f"exo-bridge: guardian setup failed ({type(exc).__name__}); is chain/runner on PYTHONPATH?", file=sys.stderr)
+        print(f"exo-bridge: {guardian_setup_error(exc)}", file=sys.stderr)
         return 2
     try:
         ledger = Ledger(cfg.ledger_dsn) if cfg.ledger_dsn else None   # psycopg is imported here: fail at startup, not on first read
