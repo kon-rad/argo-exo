@@ -91,3 +91,16 @@ def test_build_tx_rejects_malformed_numbers():
         build_tx(R(eth_getTransactionCount=None), "0x" + "aa" * 20, "0x" + "bb" * 20, b"")
     with pytest.raises(ValueError):
         build_tx(R(eth_getBlockByNumber={}), "0x" + "aa" * 20, "0x" + "bb" * 20, b"")
+
+
+def test_build_tx_nonce_tag_and_clamp():
+    rpc = R()
+    build_tx(rpc, "0x" + "aa" * 20, "0x" + "bb" * 20, b"", nonce_tag="latest")
+    assert ("eth_getTransactionCount", ["0x" + "aa" * 20, "latest"]) in rpc.calls
+    with pytest.raises(ValueError):
+        build_tx(R(), "0x" + "aa" * 20, "0x" + "bb" * 20, b"", nonce_tag="earliest")
+    hot = R(eth_getBlockByNumber={"baseFeePerGas": hex(10**13)})
+    tx = build_tx(hot, "0x" + "aa" * 20, "0x" + "bb" * 20, b"", max_fee_wei=5 * 10**11, clamp_fee=True)
+    assert tx["maxFeePerGas"] == 5 * 10**11 and tx["maxPriorityFeePerGas"] <= tx["maxFeePerGas"]
+    with pytest.raises(FeeTooHigh):        # gas is never clamped
+        build_tx(R(eth_estimateGas=hex(5_000_000)), "0x" + "aa" * 20, "0x" + "bb" * 20, b"", clamp_fee=True)

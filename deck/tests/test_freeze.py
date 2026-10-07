@@ -86,16 +86,51 @@ def test_send_failure_says_use_the_cold_key(tmp_path):
                 raise RpcError("network: down")
             return super().call(m, p)
 
-    spoken, b = [], Bridge()
+    spoken, b = [], Bridge(fail=True)
     assert run_freeze(tmp_path, Signer(), R(), b, MODULE, spoken.append) is False
     assert not (tmp_path / "frozen").exists() and "cold" in spoken[-1].lower()
     assert b.calls == ["panic"]                    # the CRE freeze is still asked for
 
 
+def test_failed_local_freeze_speaks_the_bridge_outcome(tmp_path):
+    class R(Rpc):
+        def call(self, m, p):
+            if m == "eth_estimateGas":
+                raise RpcError("network: down")
+            return super().call(m, p)
+
+    spoken = []
+    assert run_freeze(tmp_path, Signer(), R(), Bridge(), MODULE, spoken.append) is True   # CRE froze it
+    assert "Guardian froze" in spoken[-1] and "cold key unfreezes" in spoken[-1]
+
+    class DryBridge(Bridge):
+        def freeze(self, reason):
+            self.calls.append(reason)
+            return {"ok": False}                   # answered, but nothing written onchain (dry run)
+    spoken = []
+    assert run_freeze(tmp_path, None, Rpc(), DryBridge(), MODULE, spoken.append) is False
+    assert "couldn't freeze it either" in spoken[-1] and "cold key" in spoken[-1]
+
+
 def test_freeze_without_signer_still_asks_the_bridge(tmp_path):
-    spoken, b = [], Bridge()
+    spoken, b = [], Bridge(fail=True)
     assert run_freeze(tmp_path, None, Rpc(), b, MODULE, spoken.append) is False
-    assert b.calls == ["panic"] and "cold" in spoken[-1].lower()
+    assert b.calls == ["panic"] and "cold" in spoken[-1].lower() and "locked" in spoken[0]
+    spoken, b = [], Bridge()
+    assert run_freeze(tmp_path, None, Rpc(), b, MODULE, spoken.append) is True and "Guardian froze" in spoken[-1]
+
+
+def test_freeze_moves_every_queued_approval_to_expired(tmp_path):
+    import json
+    (tmp_path / "tx-queue").mkdir()
+    for n in ("001_a.json", "002_b.json"):
+        (tmp_path / "tx-queue" / n).write_text(json.dumps({"id": n}))
+    assert run_freeze(tmp_path, Signer(), Rpc(), Bridge(), MODULE, lambda t: None) is True
+    assert sorted(p.name for p in (tmp_path / "tx-expired").iterdir()) == ["001_a.json", "002_b.json"]
+    assert list((tmp_path / "tx-queue").glob("*.json")) == []
+    (tmp_path / "tx-queue" / "003_c.json").write_text("{}")   # even when nothing could be frozen
+    run_freeze(tmp_path, None, Rpc(), Bridge(fail=True), MODULE, lambda t: None)
+    assert (tmp_path / "tx-expired" / "003_c.json").exists()
 
 
 # ---- the two-button chord (pure; deck-buttons is a thin caller) ---------------------------------------------
@@ -167,8 +202,33 @@ def test_freeze_may_exceed_the_normal_ceiling_up_to_its_own(tmp_path):
             if m == "eth_getBlockByNumber":
                 return {"baseFeePerGas": hex(10**13)}
             return super().call(m, p)
-    s2 = Signer()
-    assert run_freeze(tmp_path / "b", s2, Absurd(), Bridge(), MODULE, lambda t: None) is False and s2.signed == []
+    s2 = Signer()                                               # past its own ceiling: clamped to it, never refused
+    assert run_freeze(tmp_path / "b", s2, Absurd(), Bridge(fail=True), MODULE, lambda t: None) is True
+    assert s2.signed[0]["maxFeePerGas"] == signer.FREEZE_MAX_FEE_WEI
+    assert s2.signed[0]["maxPriorityFeePerGas"] <= s2.signed[0]["maxFeePerGas"]
+
+
+def test_freeze_takes_the_latest_nonce_and_outbids_an_execute_in_flight(tmp_path):
+    """An execute is pending at nonce 3 (pending count 4, latest count 3): the freeze must reuse nonce 3 with at
+    least 2x its fees so it replaces the execute, rather than queue at nonce 4 behind it."""
+    from exo_deck.signer import build_tx
+    calls = []
+
+    class InFlight(Rpc):
+        def call(self, m, p):
+            calls.append((m, p))
+            if m == "eth_getTransactionCount":
+                return {"pending": "0x4", "latest": "0x3"}[p[1]]
+            return super().call(m, p)
+    normal = build_tx(InFlight(), Signer.address, MODULE, b"\x88")       # an approve takes the next free nonce
+    assert normal["nonce"] == 4 and ("eth_getTransactionCount", [Signer.address, "pending"]) in calls
+    in_flight = dict(normal, nonce=3)                                   # the execute already in the mempool
+    s = Signer()
+    assert run_freeze(tmp_path, s, InFlight(), Bridge(), MODULE, lambda t: None) is True
+    (tx,) = s.signed
+    assert tx["nonce"] == 3 and ("eth_getTransactionCount", [Signer.address, "latest"]) in calls
+    assert tx["maxFeePerGas"] >= 2 * in_flight["maxFeePerGas"]
+    assert tx["maxPriorityFeePerGas"] >= 2 * in_flight["maxPriorityFeePerGas"]
 
 
 def test_mic_tap_shorter_than_a_tick_cancels_the_approve():

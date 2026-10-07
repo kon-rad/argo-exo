@@ -1,7 +1,7 @@
 """hooks/freeze: the panic button (Approve + Mic held 2 s). ExoModule.freeze() straight from the deck's hot key,
 then the CRE freeze record through exo-bridge. A cloud outage never blocks the local freeze, and a failed local
-freeze still asks the bridge. state/frozen is set as soon as the freeze tx is out (deck-confirm keeps it in
-step with the chain afterwards)."""
+freeze still asks the bridge and says what it answered. Queued approvals move to tx-expired/ at once. state/frozen
+is set as soon as the freeze tx is out (deck-confirm keeps it in step with ExoModule.frozen() afterwards)."""
 from __future__ import annotations
 
 import logging
@@ -29,40 +29,72 @@ def _onchain_frozen(rpc, module: str) -> bool | None:
 
 def _send_freeze(state: Path, signer, rpc, module: str) -> str:
     with key_lock(state, wait_s=LOCK_WAIT_S):
-        # 2x the normal bid: replaces any same-nonce execute still in the mempool
-        tx = build_tx(rpc, signer.address, module, freeze_calldata(), bid=2, max_fee_wei=FREEZE_MAX_FEE_WEI)
+        # Nonce from "latest": the slot of any execute still in the mempool, so the freeze replaces it (2x the
+        # normal bid) instead of queueing behind it. Over the freeze ceiling the fee is clamped, never refused.
+        tx = build_tx(rpc, signer.address, module, freeze_calldata(), bid=2, max_fee_wei=FREEZE_MAX_FEE_WEI,
+                      nonce_tag="latest", clamp_fee=True)
         raw = bytes(signer.sign(tx))
         txh = "0x" + keccak(raw).hex()
         rpc.call("eth_sendRawTransaction", ["0x" + raw.hex()])
     return txh
 
 
+def expire_queue(state: Path) -> list[str]:
+    """Queued approvals don't survive a freeze: every tx-queue/ item moves to tx-expired/ (the key can't approve
+    any of them afterwards, even once the cold key unfreezes). Returns the names moved."""
+    q, moved = Path(state) / "tx-queue", []
+    for p in sorted(q.glob("*.json")) if q.exists() else []:
+        try:
+            (Path(state) / "tx-expired").mkdir(parents=True, exist_ok=True)
+            p.replace(Path(state) / "tx-expired" / p.name)
+            moved.append(p.name)
+        except OSError:
+            pass            # approved or moved by another process in the meantime
+    return moved
+
+
+def _bridge_freeze(bridge) -> bool | None:
+    """The CRE freeze through exo-bridge: True if it reports a freeze written onchain, False if it answered without
+    one (e.g. a dry run), None if it failed or was unreachable."""
+    try:
+        return bool(bridge.freeze("panic").get("ok"))
+    except Exception as exc:  # noqa: BLE001
+        log.warning("bridge freeze failed (%s)", type(exc).__name__)
+        return None
+
+
 def run_freeze(state: Path, signer, rpc, bridge, module: str, speak: Callable[[str], None]) -> bool:
-    """True if ExoModule is (or is now being) frozen from the deck."""
+    """True if ExoModule is (or is now being) frozen, from the deck or through the CRE freeze."""
     state = Path(state)
-    ok = False
+    moved = expire_queue(state)
+    if moved:
+        log.info("freeze: %d queued approval(s) moved to tx-expired", len(moved))
+    local = False
     if _onchain_frozen(rpc, module) is True:
-        ok = True
+        local = True
         speak("Already frozen. No transaction can run until the cold key unfreezes.")
     elif signer is None:
-        speak("The hot key is locked, so I couldn't freeze from the deck. Use the cold key to freeze.")
+        speak("The hot key is locked, so I couldn't freeze from the deck. Asking the Guardian to freeze.")
     else:
         try:
             txh = _send_freeze(state, signer, rpc, module)
         except Exception as exc:  # noqa: BLE001  RPC text, if any, stays in this log
             log.error("freeze tx failed (%s)", type(exc).__name__)
-            speak("The freeze didn't go out from the deck. Use the cold key to freeze now.")
+            speak("The freeze didn't go out from the deck. Asking the Guardian to freeze.")
         else:
-            ok = True
+            local = True
             _write(state / "frozen", "1\n")
             _write(state / "tx-sent", txh)
             log.info("freeze sent %s", txh)
             speak("Frozen. No transaction can run until the cold key unfreezes.")
-    try:
-        bridge.freeze("panic")                                  # the CRE record (and a second path to frozen)
-    except Exception as exc:  # noqa: BLE001
-        log.warning("bridge freeze failed (%s)", type(exc).__name__)
-    return ok
+    cre = _bridge_freeze(bridge)                                # the CRE record (and a second path to frozen)
+    if local:
+        return True
+    if cre:
+        speak("The Guardian froze it through CRE. No transaction can run until the cold key unfreezes.")
+        return True
+    speak("The Guardian couldn't freeze it either. Use the cold key to freeze now.")
+    return False
 
 
 def main(argv: list[str]) -> int:

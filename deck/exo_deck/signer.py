@@ -21,7 +21,7 @@ from .exo_module import execute_calldata, freeze_calldata   # noqa: F401  (re-ex
 MAX_GAS = 2_000_000                     # ExoModule.execute of a token transfer through the Safe is ~100k
 MAX_FEE_WEI = int(os.environ.get("EXO_MAX_FEE_GWEI", "300")) * 10**9
 # The freeze bids 2x the normal tip and maxFee so it replaces a same-nonce execute in flight; it may go over the
-# normal ceiling, up to this one (the hot key holds gas only, and the panic button must not be priced out).
+# normal ceiling, up to this one (the hot key holds gas only), and past it is clamped to it, never refused.
 FREEZE_MAX_FEE_WEI = max(MAX_FEE_WEI, int(os.environ.get("EXO_FREEZE_MAX_FEE_GWEI", "1500")) * 10**9)
 QTY = re.compile(r"^0x[0-9a-fA-F]{1,64}$")
 
@@ -68,23 +68,34 @@ def _qty(v) -> int:
 
 
 def build_tx(rpc, frm: str, to: str, data: bytes, value: int = 0, bid: int = 1,
-             max_fee_wei: int | None = None) -> dict:
-    """An EIP-1559 tx: nonce from the pending pool, maxFee = 2×base + tip, gas = estimate × 1.2. All ints (wei).
-    `bid` multiplies both tip and maxFee (the freeze uses 2). The estimate runs as the hot key, so a revert
+             max_fee_wei: int | None = None, nonce_tag: str = "pending", clamp_fee: bool = False) -> dict:
+    """An EIP-1559 tx: maxFee = 2×base + tip, gas = estimate × 1.2. All ints (wei). `bid` multiplies both tip and
+    maxFee (the freeze uses 2). The nonce comes from `nonce_tag`: "pending" (the next free one: approvals) or
+    "latest" (the freeze: the nonce of the oldest unmined tx, so it REPLACES an execute still in the mempool rather
+    than queueing behind it). Over the fee ceiling the tx is refused (FeeTooHigh), or with `clamp_fee` priced at the
+    ceiling instead (the panic button is never refused for price). The estimate runs as the hot key, so a revert
     (NotApproved, Expired, Frozen, caps…) stops here, unsigned."""
+    if isinstance(bid, bool) or not isinstance(bid, int) or bid < 1:
+        raise ValueError("bid must be an int >= 1")
+    if nonce_tag not in ("pending", "latest"):
+        raise ValueError("nonce_tag must be pending or latest")
+    ceiling = MAX_FEE_WEI if max_fee_wei is None else max_fee_wei
     tip = _qty(rpc.call("eth_maxPriorityFeePerGas", []))
     block = rpc.call("eth_getBlockByNumber", ["latest", False])
     base = _qty(block.get("baseFeePerGas") if isinstance(block, dict) else None)
     to = to_checksum_address(to)
     tx = {"chainId": _qty(rpc.call("eth_chainId", [])), "type": 2, "to": to, "value": value, "data": data,
-          "nonce": _qty(rpc.call("eth_getTransactionCount", [frm, "pending"])),
+          "nonce": _qty(rpc.call("eth_getTransactionCount", [frm, nonce_tag])),
           "maxPriorityFeePerGas": bid * tip, "maxFeePerGas": bid * (2 * base + tip)}
-    if isinstance(bid, bool) or not isinstance(bid, int) or bid < 1:
-        raise ValueError("bid must be an int >= 1")
     gas = _qty(rpc.call("eth_estimateGas", [{"from": frm, "to": to, "value": hex(value), "data": "0x" + data.hex()}]))
     tx["gas"] = gas * 12 // 10
-    if tx["maxFeePerGas"] > (MAX_FEE_WEI if max_fee_wei is None else max_fee_wei) or tx["gas"] > MAX_GAS:
+    if tx["gas"] > MAX_GAS:
         raise FeeTooHigh("fee or gas over the deck's ceiling")
+    if tx["maxFeePerGas"] > ceiling:
+        if not clamp_fee:
+            raise FeeTooHigh("fee or gas over the deck's ceiling")
+        tx["maxFeePerGas"] = ceiling
+        tx["maxPriorityFeePerGas"] = min(tx["maxPriorityFeePerGas"], ceiling)
     return tx
 
 
