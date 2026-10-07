@@ -216,3 +216,12 @@ footer.colophon nav a { margin: 0 6px; }
   .prose th, .prose td { min-width: 9.5em; } /* wide tables scroll sideways instead of crushing into one-word columns */
   .prose th:first-child, .prose td:first-child { min-width: 7em; }
 }
+
+/* figures inside posts: plates mounted on the page, caption ruled in accent like the landing figures */
+.prose .post-fig { margin: 30px 0; }
+.prose .post-fig img { display: block; width: 100%; height: auto; background: var(--surface); border: 1px solid var(--rule-soft); }
+.prose .post-fig.tall img { max-width: 520px; margin: 0 auto; }
+.prose .post-fig figcaption { max-width: var(--measure); }
+@media (min-width: 1000px) {
+  .prose .post-fig.wide { margin-left: -90px; margin-right: -90px; } /* wide plates bleed past the text measure on big screens */
+}
