@@ -5,3 +5,6 @@ gpiozero>=2
 lgpio
 pillow>=10
 websockets>=12
+eth-account>=0.13
+eth-abi>=5
+eth-utils>=4

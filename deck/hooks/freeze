@@ -1,0 +1,6 @@
+#!/bin/sh
+# deck-buttons runs this when Approve + Mic are held for 2 s.
+DECK_ROOT="${DECK_ROOT:-/srv/deck}"
+PYTHONPATH="$DECK_ROOT/app/deck:$DECK_ROOT/app/packages/nownodes-py"
+export DECK_ROOT PYTHONPATH
+cd "$DECK_ROOT/app/deck" && exec "$DECK_ROOT/venv/bin/python" -m exo_deck.freeze

@@ -4,7 +4,9 @@
 Buttons (GPIO to GND, internal pull-ups) -> gestures -> actions.
 Lights follow state files, so other services (voice loop, CRE, wallet) only need to touch a file.
 
-  Approve  GPIO 5   NOWNodes key (keychain): one press = approve + send the oldest queued transaction
+  Approve  GPIO 5   NOWNodes key (keychain): press and release = approve + send the oldest queued transaction
+                    (on release, and only if Mic stayed up: Approve + Mic is the panic chord)
+  Panic    Approve + Mic held together for 2 s = hooks/freeze (ExoModule.freeze() from the deck's hot key)
   Talk     GPIO 26  press = start listening at once (hooks/talk-start), release = send (hooks/talk-stop);
                     a press under 0.3 s = hooks/talk-cancel; two quick taps = hooks/repeat
   Camera   GPIO 6   tap = one photo (deck-capture snap), double = camera on/off
@@ -35,6 +37,7 @@ from gpiozero import Button, LED
 
 sys.path.insert(0, os.environ.get("EXO_DECK_PKG", "/srv/deck/app/deck"))
 from exo_deck import approvals   # noqa: E402
+from exo_deck.chord import ChordState   # noqa: E402
 from exo_deck.hookq import HookQueue   # noqa: E402
 
 DECK = Path(os.environ.get("DECK_ROOT", "/srv/deck"))
@@ -136,8 +139,10 @@ class Deck:
         self.talking, self.talk_down, self.talk_tap_at = False, 0.0, 0.0
         self.talkq = HookQueue(run_wait)   # talk hooks run one at a time, in order
         self.last_approve = 0.0
+        self.chord, self.chord_lock = ChordState(), threading.Lock()   # gpiozero callbacks vs tick()
         self.flashing = {"key": False, "ok": False}
         self.key.when_pressed = self.key_pressed
+        self.key.when_released = self.key_released
         self.talk.when_pressed = self.talk_start
         self.talk.when_released = self.talk_released
         Gestures(self.camera, on_tap=lambda: run(BIN["capture"], "snap"),
@@ -150,6 +155,16 @@ class Deck:
 
     # --- approval key -------------------------------------------------
     def key_pressed(self):
+        with self.chord_lock:
+            self.chord.key_down(time.time(), self.mic.is_pressed)
+
+    def key_released(self):
+        with self.chord_lock:
+            approve = self.chord.key_up(time.time(), self.mic.is_pressed)
+        if approve:
+            self.approve_oldest()
+
+    def approve_oldest(self):
         now = time.time()
         action, dest = approvals.on_key(STATE, now, self.last_approve)
         if action == "ignored":
@@ -200,6 +215,11 @@ class Deck:
         threading.Thread(target=go, daemon=True).start()
 
     def tick(self, now):
+        with self.chord_lock:
+            panic = self.chord.poll(now, self.key.is_pressed, self.mic.is_pressed)
+        if panic:
+            log.warning("panic chord: freezing")
+            hook("freeze")            # its own process, never behind the talk queue
         dest = approvals.on_tick_auto(STATE, now, self.last_approve)
         if dest:
             self.last_approve = now

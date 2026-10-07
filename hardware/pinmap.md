@@ -6,7 +6,8 @@ Copied verbatim from [[exo-hardware-priorities]] §2.1–2.2.
 
 | Control | Part | GPIO (pin) | GND pin | Action |
 |---|---|---|---|---|
-| **Approve** | **NOWNodes keyswitch keychain** | GPIO 5 (29) | 30 | **One press = approve and send the oldest queued transaction** (manual mode). Does nothing in auto mode or when the queue is empty |
+| **Approve** | **NOWNodes keyswitch keychain** | GPIO 5 (29) | 30 | **Press and release = approve and send the oldest queued transaction** (manual mode). Approves on release, and only if Mic stayed up. Does nothing when the queue is empty |
+| **Panic freeze** | Approve + Mic together | GPIO 5 + GPIO 13 | — | **Hold both for 2 s = `ExoModule.freeze()` from the deck's hot key** (`hooks/freeze`), then the CRE freeze record via exo-bridge. Approves nothing |
 | **Talk** (master agent STT) | Tactile | GPIO 26 (37) | 39 | **Press = start listening at once, release = send to the master agent.** A press under 0.3 s cancels; two quick taps repeat the last reply |
 | **Camera** | Tactile | GPIO 6 (31) | 34 | Tap = **one photo**; double-tap = camera on/off (photo every 30 s) |
 | **Mic** | Tactile | GPIO 13 (33) | 34 | Tap = **memo start / stop** |

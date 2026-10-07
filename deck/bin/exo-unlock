@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# Put the hot key's passphrase in tmpfs for this boot only (run once after boot, as deck, over ssh or the keyboard).
+# The passphrase is read from the terminal, never argv, and written with printf (a shell builtin, so it is never
+# in a process's argv either) to /run/exo/hot.pass, mode 0600. /run is tmpfs: a reboot forgets it.
+# Usage: exo-unlock          (EXO_HOT_KEYSTORE, EXO_HOT_PASSFILE override the defaults)
+set -euo pipefail
+KS="${EXO_HOT_KEYSTORE:-/srv/deck/keys/hot.json}"
+PF="${EXO_HOT_PASSFILE:-/run/exo/hot.pass}"
+PY="${DECK_PY:-/srv/deck/venv/bin/python}"
+DIR="$(dirname "$PF")"
+[ -f "$KS" ] || { echo "no keystore at $KS" >&2; exit 1; }
+[ -d "$DIR" ] || sudo install -d -m 700 -o "$(id -un)" -g "$(id -gn)" "$DIR"
+FS="$(stat -f -c %T "$DIR" 2>/dev/null || true)"
+[ "$FS" = "tmpfs" ] || { echo "refusing: $DIR is not tmpfs (got '${FS:-unknown}'); the passphrase must not touch disk" >&2; exit 1; }
+read -rsp "Hot key passphrase: " P; echo
+umask 077
+rm -f "$PF"
+printf '%s\n' "$P" > "$PF"
+unset P
+chmod 600 "$PF"
+# Decrypt once to check it; paths go in through the environment, the passphrase only through the file.
+if EXO_KS="$KS" EXO_PF="$PF" "$PY" - <<'PYEOF'
+import json, os, sys
+from eth_account import Account
+try:
+    acct = Account.from_key(Account.decrypt(json.load(open(os.environ["EXO_KS"])), open(os.environ["EXO_PF"]).read().strip()))
+except Exception:
+    sys.exit(1)
+print("unlocked", acct.address)
+PYEOF
+then
+  exit 0
+fi
+rm -f "$PF"
+echo "wrong passphrase (or unreadable keystore); nothing kept" >&2
+exit 1

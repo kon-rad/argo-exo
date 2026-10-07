@@ -1,0 +1,280 @@
+import json
+
+import pytest
+from eth_utils import keccak
+from exo_deck import approve_hook
+from exo_deck.approve_hook import run_hook
+from exo_deck.bridge_client import BridgeError
+from exo_deck.exo_module import approval_hash, execute_calldata
+from exo_nownodes.rpc import RpcError
+
+MODULE = "0x" + "44" * 20
+NOW = 1_800_000_000
+PID = "11111111-1111-4111-8111-111111111111"
+RAW = b"\x02signed"
+TXH = "0x" + keccak(RAW).hex()
+
+
+def word(n: int) -> str:
+    return "0x" + n.to_bytes(32, "big").hex()
+
+
+class FakeRpc:
+    def __init__(self, until=NOW + 300, used=0, frozen=0, receipt=None, known=None):
+        self.sent, self.calls = [], []
+        self.until, self.used, self.frozen, self.receipt, self.known = until, used, frozen, receipt, known
+
+    def views(self, sel):
+        return {"bfc3b08f": word(self.until), "b07c411f": word(self.used), "054f7d9c": word(self.frozen)}[sel]
+
+    def batch(self, calls):
+        return [self.call(m, p) for m, p in calls]
+
+    def call(self, m, p):
+        self.calls.append(m)
+        if m == "eth_sendRawTransaction":
+            self.sent.append(p[0])
+            return TXH
+        if m == "eth_call":
+            return self.views(p[0]["data"][2:10])
+        if m == "eth_getTransactionReceipt":
+            return self.receipt
+        if m == "eth_getTransactionByHash":
+            return self.known
+        return {"eth_getTransactionCount": "0x0", "eth_estimateGas": "0x5208", "eth_maxPriorityFeePerGas": "0x1",
+                "eth_getBlockByNumber": {"baseFeePerGas": "0x1"}, "eth_chainId": "0x1"}[m]
+
+
+class FakeSigner:
+    address = "0x" + "dd" * 20
+
+    def __init__(self):
+        self.signed = []
+
+    def sign(self, tx):
+        self.signed.append(tx)
+        return RAW
+
+
+class FakeBridge:
+    def __init__(self, fail=False):
+        self.reports, self.fail = [], fail
+
+    def report_executed(self, pid, tx_hash=None, error=None):
+        if self.fail:
+            raise BridgeError("network: down")
+        self.reports.append((pid, tx_hash, error))
+        return True
+
+
+def item(tmp_path, **kw):
+    p = tmp_path / "tx-approved" / f"1_{PID}.json"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    it = {"id": PID, "summary": "Send 20 USDC", "chain": "ethereum", "to": "0x" + "22" * 20, "value": "7",
+          "data": "0xa9059cbb", "salt": "0x" + "00" * 31 + "aa", "expires_at": NOW + 300}
+    it.update(kw)
+    p.write_text(json.dumps(it))
+    return p
+
+
+def run(p, rpc, br=None, signer=None, spoken=None):
+    return run_hook(p, signer or FakeSigner(), rpc, br or FakeBridge(), MODULE,
+                    (spoken if spoken is not None else []).append, now=lambda: NOW)
+
+
+def test_hook_signs_sends_records(tmp_path):
+    p, rpc, br, signer = item(tmp_path), FakeRpc(), FakeBridge(), FakeSigner()
+    assert run(p, rpc, br, signer) == TXH
+    it = json.loads(p.read_text())
+    assert it["sent_tx"] == TXH and it["reported"] is True and (tmp_path / "tx-sent").read_text() == TXH
+    assert br.reports == [(PID, TXH, None)] and rpc.sent == ["0x" + RAW.hex()]
+    (tx,) = signer.signed
+    assert tx["to"].lower() == MODULE and tx["value"] == 0     # the Safe pays `value`, never the hot key
+    assert tx["data"] == execute_calldata("0x" + "22" * 20, 7, bytes.fromhex("a9059cbb"), bytes.fromhex("00" * 31 + "aa"))
+
+
+def test_hook_is_idempotent(tmp_path):
+    p, rpc, br, signer = item(tmp_path), FakeRpc(), FakeBridge(), FakeSigner()
+    run(p, rpc, br, signer)
+    assert run(p, rpc, br, signer) is None
+    assert len(rpc.sent) == 1 and len(signer.signed) == 1 and len(br.reports) == 1
+
+
+def test_marker_is_written_before_broadcast(tmp_path):
+    p = item(tmp_path)
+    seen = {}
+
+    class Peek(FakeRpc):
+        def call(self, m, prm):
+            if m == "eth_sendRawTransaction":
+                seen.update(json.loads(p.read_text()))
+            return super().call(m, prm)
+
+    run(p, Peek())
+    assert seen["sending"]["tx_hash"] == TXH and seen["sending"]["raw"] == "0x" + RAW.hex() and "sent_tx" not in seen
+
+
+def test_crash_after_broadcast_resumes_from_receipt_without_resigning(tmp_path):
+    p = item(tmp_path, sending={"tx_hash": TXH, "raw": "0x" + RAW.hex()})
+    rpc, signer, br = FakeRpc(receipt={"status": "0x1", "transactionHash": TXH}), FakeSigner(), FakeBridge()
+    assert run(p, rpc, br, signer) == TXH
+    assert rpc.sent == [] and signer.signed == [] and br.reports == [(PID, TXH, None)]
+    assert json.loads(p.read_text())["sent_tx"] == TXH
+
+
+def test_marker_with_tx_in_mempool_is_treated_as_sent(tmp_path):
+    p = item(tmp_path, sending={"tx_hash": TXH, "raw": "0x" + RAW.hex()})
+    rpc = FakeRpc(known={"hash": TXH})
+    assert run(p, rpc) == TXH and rpc.sent == []
+
+
+def test_marker_unknown_to_node_rebroadcasts_the_same_bytes(tmp_path):
+    p = item(tmp_path, sending={"tx_hash": TXH, "raw": "0x" + RAW.hex()})
+    rpc, signer = FakeRpc(), FakeSigner()
+    assert run(p, rpc, signer=signer) == TXH
+    assert rpc.sent == ["0x" + RAW.hex()] and signer.signed == []      # identical signed bytes, same nonce
+
+
+def test_marker_whose_raw_does_not_hash_to_the_marker_is_refused(tmp_path):
+    p = item(tmp_path, sending={"tx_hash": "0x" + "00" * 32, "raw": "0x" + RAW.hex()})
+    rpc, spoken = FakeRpc(), []
+    assert run(p, rpc, spoken=spoken) is None and rpc.sent == []
+    assert "sent_tx" not in json.loads(p.read_text())
+
+
+def test_reverted_receipt_reports_failure(tmp_path):
+    p = item(tmp_path, sending={"tx_hash": TXH, "raw": "0x" + RAW.hex()})
+    br, spoken = FakeBridge(), []
+    assert run(p, FakeRpc(receipt={"status": "0x0"}), br, spoken=spoken) is None
+    assert br.reports == [(PID, None, "reverted onchain")] and "didn't go through" in spoken[0]
+    assert json.loads(p.read_text())["failed"] == "reverted onchain"
+
+
+def test_transport_error_on_send_leaves_marker_and_reports_nothing(tmp_path):
+    class Flaky(FakeRpc):
+        def call(self, m, prm):
+            if m == "eth_sendRawTransaction":
+                raise RpcError("network: read timed out")
+            return super().call(m, prm)
+
+    p, br, spoken = item(tmp_path), FakeBridge(), []
+    assert run(p, Flaky(), br, spoken=spoken) is None
+    it = json.loads(p.read_text())
+    assert it["sending"]["tx_hash"] == TXH and "failed" not in it and "sent_tx" not in it and br.reports == []
+    assert spoken and "not sure" in spoken[0].lower()
+    # next run: the node has it mined -> recorded, never re-signed
+    signer = FakeSigner()
+    assert run(p, FakeRpc(receipt={"status": "0x1"}), br, signer) == TXH and signer.signed == []
+
+
+def test_explicit_rejection_on_send_reports_fixed_error(tmp_path):
+    class Rejects(FakeRpc):
+        def call(self, m, prm):
+            if m == "eth_sendRawTransaction":
+                raise RpcError("eth_sendRawTransaction: insufficient funds for gas * price + value: secret-detail")
+            return super().call(m, prm)
+
+    p, br = item(tmp_path), FakeBridge()
+    assert run(p, Rejects(), br) is None
+    assert br.reports == [(PID, None, "broadcast rejected")]
+
+
+@pytest.mark.parametrize("msg", ["eth_sendRawTransaction: already known",
+                                 "eth_sendRawTransaction: nonce too low: next nonce 4, tx nonce 3"])
+def test_ambiguous_rejections_leave_the_marker(tmp_path, msg):
+    class Ambig(FakeRpc):
+        def call(self, m, prm):
+            if m == "eth_sendRawTransaction":
+                raise RpcError(msg)
+            return super().call(m, prm)
+
+    p, br = item(tmp_path), FakeBridge()
+    assert run(p, Ambig(), br) is None and br.reports == []
+    assert "failed" not in json.loads(p.read_text())
+
+
+def test_send_failure_reports_error(tmp_path):
+    class Bad(FakeRpc):
+        def call(self, m, p):
+            if m == "eth_estimateGas":
+                raise RpcError("eth_estimateGas: execution reverted: NotApproved 0xdeadbeef")
+            return super().call(m, p)
+
+    p, br, spoken = item(tmp_path), FakeBridge(), []
+    assert run(p, Bad(), br, spoken=spoken) is None
+    assert br.reports == [(PID, None, "gas estimate reverted")] and "didn't go through" in spoken[0]
+    assert "0xdeadbeef" not in json.dumps(br.reports) and "0xdeadbeef" not in spoken[0]
+    rpc = FakeRpc()
+    assert run(p, rpc, br) is None and rpc.sent == [] and len(br.reports) == 1   # a failed item stays failed
+
+
+@pytest.mark.parametrize("state,err", [({"used": 1}, "approval already used"), ({"frozen": 1}, "frozen"),
+                                       ({"until": 0}, "not approved onchain"), ({"until": NOW - 1}, "not approved onchain")])
+def test_onchain_recheck_blocks_signing(tmp_path, state, err):
+    p, br, signer = item(tmp_path), FakeBridge(), FakeSigner()
+    rpc = FakeRpc(**state)
+    assert run(p, rpc, br, signer) is None
+    assert signer.signed == [] and rpc.sent == [] and br.reports == [(PID, None, err)]
+
+
+def test_recheck_uses_the_locally_recomputed_hash(tmp_path):
+    p = item(tmp_path)
+    want = approval_hash(1, MODULE, "0x" + "22" * 20, 7, bytes.fromhex("a9059cbb"), bytes.fromhex("00" * 31 + "aa"))
+    datas = []
+
+    class Rec(FakeRpc):
+        def call(self, m, prm):
+            if m == "eth_call":
+                datas.append(prm[0]["data"])
+            return super().call(m, prm)
+
+    run(p, Rec())
+    assert "0xbfc3b08f" + want.hex() in datas and "0xb07c411f" + want.hex() in datas
+
+
+@pytest.mark.parametrize("bad", [{"salt": "0x01"}, {"to": MODULE}, {"value": "-3"}, {"chain": "base"}])
+def test_invalid_item_is_never_signed(tmp_path, bad):
+    p, br, signer = item(tmp_path, **bad), FakeBridge(), FakeSigner()
+    assert run(p, FakeRpc(), br, signer) is None
+    assert signer.signed == [] and br.reports == [(PID, None, "invalid queue item")]
+
+
+def test_rpc_down_before_signing_fails_closed(tmp_path):
+    class Down(FakeRpc):
+        def batch(self, calls):
+            raise RpcError("network: down")
+
+    p, br, signer = item(tmp_path), FakeBridge(), FakeSigner()
+    assert run(p, Down(), br, signer) is None and signer.signed == []
+    assert br.reports == [(PID, None, "rpc unavailable")]
+
+
+def test_bridge_down_after_send_keeps_sent_tx_and_retries_report(tmp_path):
+    p, rpc = item(tmp_path), FakeRpc()
+    assert run(p, rpc, FakeBridge(fail=True)) == TXH
+    it = json.loads(p.read_text())
+    assert it["sent_tx"] == TXH and it.get("reported") is not True
+    br = FakeBridge()
+    assert run(p, rpc, br) is None
+    assert br.reports == [(PID, TXH, None)] and len(rpc.sent) == 1 and json.loads(p.read_text())["reported"] is True
+
+
+def test_unreadable_item_does_nothing(tmp_path):
+    p = tmp_path / "tx-approved" / "1_x.json"
+    p.parent.mkdir(parents=True)
+    p.write_text("not json")
+    br, rpc = FakeBridge(), FakeRpc()
+    assert run(p, rpc, br) is None and rpc.calls == [] and br.reports == []
+
+
+def test_main_with_locked_key_puts_the_item_back(tmp_path, monkeypatch):
+    p = item(tmp_path)
+    monkeypatch.setenv("DECK_ROOT", str(tmp_path.parent))
+    spoken = []
+    monkeypatch.setattr(approve_hook, "_speak", spoken.append)
+    monkeypatch.setenv("EXO_MODULE_ADDRESS", MODULE)
+    monkeypatch.setenv("EXO_HOT_KEYSTORE", str(tmp_path / "missing.json"))
+    monkeypatch.setenv("EXO_HOT_PASSFILE", str(tmp_path / "missing.pass"))
+    assert approve_hook.main([str(p)]) == 1
+    assert not p.exists() and (tmp_path / "tx-queue" / p.name).exists()
+    assert "exo-unlock" in spoken[0]
