@@ -11,15 +11,26 @@ const USD = z.number().finite().nonnegative();
 export const PolicySchema = z.object({
   address_book: z.record(ADDRESS, z.string()),
   max_usd_per_tx: USD, max_usd_per_day: USD, auto_max_usd: USD,
-  allow_unlimited_approvals: z.boolean(), allow_approval_for_all: z.boolean(),
+  /** Allows token approvals to spenders outside the address book, and unlimited approvals to anyone. */
+  allow_unknown_spender_approvals: z.boolean(), allow_approval_for_all: z.boolean(),
   refuse_sources: z.array(z.string()),
   require_known_recipient_over_usd: USD,
   stablecoins: z.array(ADDRESS),
 }).strict();
 export type Policy = z.infer<typeof PolicySchema>;
 
+/** Keys that were renamed: a policy still using one is refused with a message naming the new key. */
+export const RENAMED_POLICY_KEYS: Record<string, string> = { allow_unlimited_approvals: "allow_unknown_spender_approvals" };
+
 /** Parse the POLICY_JSON secret. Throws on bad JSON or a bad policy; the caller treats a throw as a refusal. */
-export const parsePolicy = (json: string): Policy => PolicySchema.parse(JSON.parse(json));
+export const parsePolicy = (json: string): Policy => {
+  const raw = JSON.parse(json);
+  if (raw && typeof raw === "object") {
+    for (const [old, now] of Object.entries(RENAMED_POLICY_KEYS))
+      if (Object.hasOwn(raw, old)) throw new Error(`policy key ${old} was renamed to ${now}`);
+  }
+  return PolicySchema.parse(raw);
+};
 
 /** §4.3 of the architecture. `token` is a 0x address or "ETH" (absent = ETH); `amount` is a decimal string in
  *  whole token units ("20", "0.5"). */
@@ -121,12 +132,12 @@ export function checkRules(i: RulesInput, p: Policy): { violations: string[]; no
   for (const c of i.changes) {
     if (lc(c.from) !== me) continue;
     if (c.kind === "approval_for_all" && c.approved && !p.allow_approval_for_all) v.push("gives control of all NFTs in a collection");
-    if (c.kind === "approval" && c.tokenId === undefined && isUnlimited(c.amount ?? 0n) && !p.allow_unlimited_approvals)
+    if (c.kind === "approval" && c.tokenId === undefined && isUnlimited(c.amount ?? 0n) && !p.allow_unknown_spender_approvals)
       v.push("grants an unlimited token approval");
   }
   // A bounded allowance just under the "unlimited" line (2^96 - 2) is no safer in practice: any grant to a
-  // spender outside the address book refuses unless the policy explicitly allows unlimited approvals.
-  if (!p.allow_unlimited_approvals && i.changes.some((c) => isGrant(c, me) && !inBook(book, c.to)))
+  // spender outside the address book refuses unless the policy explicitly allows unknown-spender approvals.
+  if (!p.allow_unknown_spender_approvals && i.changes.some((c) => isGrant(c, me) && !inBook(book, c.to)))
     v.push("grants a token approval to an address not in your address book");
 
   const outs = i.changes.filter((c) => isOutflow(c, me));

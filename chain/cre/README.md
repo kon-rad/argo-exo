@@ -4,7 +4,7 @@ CRE project `cre` with one TypeScript workflow, `exo` (`@chainlink/cre-sdk` 1.22
 
 | Trigger | Handler | Input | Output |
 |---|---|---|---|
-| 0 | `guard` | §4.3 request (+ `requested_at`, `context.spent_today_usd`) | §4.3 result JSON; a kind-1 (approve) or kind-2 (refuse) report to ExoModule |
+| 0 | `guard` | §4.3 request (+ `requested_at`, `context.spent_today_usd`) | §4.3 result JSON; a kind-1 report to ExoModule on approve only (a refusal writes nothing onchain) |
 | 1 | `freeze` | `{"reason"}` | `{"ok", "report_tx"}`; a kind-3 report |
 
 `exo/main.ts` only adapts the CRE runtime. The pipeline is `exo/src/lib/guard.ts` (`runGuard`, `runFreeze`), and
@@ -38,10 +38,12 @@ These files were written by hand from the CRE docs. `cre init` was never run her
    `bunx cre-setup` downloads the Javy WASM toolchain. `cre init`'s template runs it as a postinstall; it is left
    out here so CI doesn't download it.
 3. Fill `chain/cre/.env` from `.env.example`. Use a dedicated `CRE_ETH_PRIVATE_KEY`. `POLICY_JSON` must be one line
-   and match `PolicySchema` exactly (unknown keys are refused). For example:
+   and match `PolicySchema` exactly (unknown keys are refused). `allow_unknown_spender_approvals` (formerly
+   `allow_unlimited_approvals`, which is now refused with an error naming the new key) allows token approvals to
+   spenders outside the address book and unlimited approvals. For example:
 
    ```
-   POLICY_JSON={"address_book":{"0x…mira":"mira.eth"},"max_usd_per_tx":100,"max_usd_per_day":300,"auto_max_usd":25,"allow_unlimited_approvals":false,"allow_approval_for_all":false,"refuse_sources":["camera"],"require_known_recipient_over_usd":50,"stablecoins":["0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48","0xdac17f958d2ee523a2206206994597c13d831ec7","0x6b175474e89094c44da98b954eedeac495271d0f"]}
+   POLICY_JSON={"address_book":{"0x…mira":"mira.eth"},"max_usd_per_tx":100,"max_usd_per_day":300,"auto_max_usd":25,"allow_unknown_spender_approvals":false,"allow_approval_for_all":false,"refuse_sources":["camera"],"require_known_recipient_over_usd":50,"stablecoins":["0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48","0xdac17f958d2ee523a2206206994597c13d831ec7","0x6b175474e89094c44da98b954eedeac495271d0f"]}
    ```
 
 4. Fill these TODOs:
@@ -86,6 +88,8 @@ moment.
   which works only in simulation. Each one needs the bridge's signing address (TODO(konrad) in `main.ts`). Without
   it, anyone who can reach the trigger can freeze the module, or spend the workflow's quota on refusals.
 - A guard request that isn't bound to this Safe, chain and module is refused, and no report is written for it.
-  Only a correctly bound request can write a kind-2 report, which revokes a pending approval with the same hash.
+- A refusal writes no report at all. Each request gets a fresh salt from the runner, so no pending approval ever
+  shares a refused request's hash and a kind-2 write would only spend gas. An approval that is never executed
+  expires on its own: `ttlSeconds` in `config.mainnet.json`, capped at 1 h.
 - Order the ExoModule migration as described in `chain/README.md`: forwarder first, then identity, then
   `demoReporter`.

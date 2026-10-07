@@ -11,7 +11,7 @@ const NFT = "0x000000000000000000000000000000000000cccc";
 const STRANGER = "0x00000000000000000000000000000000000000ff";
 const meta = { [USDC]: { symbol: "USDC", decimals: 6 } };
 const POLICY = { address_book: { [MIRA]: "mira.eth" }, max_usd_per_tx: 100, max_usd_per_day: 300, auto_max_usd: 25,
-  allow_unlimited_approvals: false, allow_approval_for_all: false, refuse_sources: ["camera"], require_known_recipient_over_usd: 50, stablecoins: [USDC] };
+  allow_unknown_spender_approvals: false, allow_approval_for_all: false, refuse_sources: ["camera"], require_known_recipient_over_usd: 50, stablecoins: [USDC] };
 const policy = PolicySchema.parse(POLICY);
 const send = (amount: bigint, to = MIRA): Change[] => [{ kind: "erc20", token: USDC as any, from: SELF as any, to: to as any, amount }];
 const intent: Intent = { kind: "send", summary: "send 20 USDC to mira", token: USDC, amount: "20", to: MIRA };
@@ -109,7 +109,7 @@ test("unlimited approvals refuse from uint96 max up, unless the policy allows th
     checkRules({ ...base, changes: appr(amount), intent: { kind: "approve", summary: "approve" }, usdOut: 0 }, p).violations;
   expect(run(2n ** 256n - 1n)).toContain("grants an unlimited token approval");
   expect(run(2n ** 96n - 1n)).toContain("grants an unlimited token approval");
-  expect(run(2n ** 256n - 1n, PolicySchema.parse({ ...POLICY, allow_unlimited_approvals: true }))).toEqual([]);
+  expect(run(2n ** 256n - 1n, PolicySchema.parse({ ...POLICY, allow_unknown_spender_approvals: true }))).toEqual([]);
 });
 
 test("any approval to a spender outside the address book refuses, however bounded (2^96 - 2 bypass)", () => {
@@ -128,7 +128,7 @@ test("any approval to a spender outside the address book refuses, however bounde
   expect(run(erc20(STRANGER, 0n))).toEqual([]);
   expect(run({ kind: "approval", token: NFT as any, from: SELF as any, to: "0x0000000000000000000000000000000000000000" as any, tokenId: 7n })).toEqual([]);
   // policy switch
-  expect(run(erc20(STRANGER, 2n ** 96n - 2n), PolicySchema.parse({ ...POLICY, allow_unlimited_approvals: true }))).toEqual([]);
+  expect(run(erc20(STRANGER, 2n ** 96n - 2n), PolicySchema.parse({ ...POLICY, allow_unknown_spender_approvals: true }))).toEqual([]);
   // the probe: a send intent's raw sibling with a bounded approval riding along
   const v = checkRules({ ...base, changes: [...send(20_000_000n), erc20(STRANGER, 2n ** 96n - 2n)], intent: { kind: "raw", summary: "x" }, usdOut: 20 }, policy).violations;
   expect(v).toContain(msg);
@@ -215,4 +215,14 @@ test("policy parsing is strict: typo'd keys, bad addresses, negative caps and ba
   const { stablecoins: _s, ...missing } = POLICY;
   expect(() => parsePolicy(JSON.stringify(missing))).toThrow();
   expect(() => parsePolicy("not json")).toThrow();
+});
+
+test("the old allow_unlimited_approvals key is refused with a message naming its replacement", () => {
+  const { allow_unknown_spender_approvals, ...rest } = POLICY as any;
+  const old = JSON.stringify({ ...rest, allow_unlimited_approvals: allow_unknown_spender_approvals });
+  expect(() => parsePolicy(old)).toThrow("policy key allow_unlimited_approvals was renamed to allow_unknown_spender_approvals");
+  // both keys at once is still the old key: refused
+  expect(() => parsePolicy(JSON.stringify({ ...POLICY, allow_unlimited_approvals: false }))).toThrow("renamed");
+  expect(() => PolicySchema.parse({ ...rest, allow_unlimited_approvals: false })).toThrow();
+  expect(parsePolicy(JSON.stringify(POLICY)).allow_unknown_spender_approvals).toBe(false);
 });

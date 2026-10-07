@@ -82,7 +82,7 @@ const refuseWith = (reasons: string[]): Decision => ({ verdict: "refuse", risk: 
 const isNativeOutflow = (c: Change, me: string) => c.kind === "native" && c.from.toLowerCase() === me && c.to.toLowerCase() !== me;
 
 /** The full guard pipeline (§4.3): parse, simulate the exact transaction, price, rules, explain, two judges, decide,
- *  then write a kind-1 (approve) or kind-2 (refuse, revokes a pending approval of the same hash) report. Any throw
+ *  then write a kind-1 report for an approval (a refusal writes nothing onchain). Any throw
  *  anywhere before the verdict is a refusal (failClosed). */
 export function runGuard(input: unknown, cfg: Config, ports: GuardPorts): GuardResult {
   // Filled in as the pipeline gets that far; whatever is missing after a throw stays at its safe default.
@@ -150,16 +150,16 @@ export function runGuard(input: unknown, cfg: Config, ports: GuardPorts): GuardR
   if (d.verdict !== "approve") ctx.expiresAt = 0n;
 
   let reportTx = "";
-  // A report needs a request bound to this Safe, chain and module (so its hash is ours to approve or revoke).
-  if (ctx.bound && ctx.txHash && !isZeroAddress(cfg.module)) {
+  // Only an approval is written onchain (kind 1), and only for a request bound to this Safe, chain and module (so
+  // its hash is ours to approve). A refusal writes nothing: its salt is fresh, so no pending approval shares its
+  // hash and a kind-2 write would be pure gas. Approvals that are never executed expire on their own (ttl, <= 1 h).
+  if (d.verdict === "approve" && ctx.bound && ctx.txHash && !isZeroAddress(cfg.module)) {
     try {
-      reportTx = ports.writeReport(reportPayload(d.verdict === "approve" ? 1 : 2, ctx.txHash, ctx.expiresAt, d.reasons.join("; ")));
+      reportTx = ports.writeReport(reportPayload(1, ctx.txHash, ctx.expiresAt, d.reasons.join("; ")));
     } catch {
-      // An approval that never lands onchain cannot execute: report a refusal so nothing queues it for the key.
-      if (d.verdict === "approve") {
-        d = { verdict: "refuse", risk: "high", auto_eligible: false, reasons: ["the approval could not be written onchain"] };
-        ctx.expiresAt = 0n;
-      }
+      // An approval that never lands onchain cannot execute: refuse, so nothing queues it for the key.
+      d = { verdict: "refuse", risk: "high", auto_eligible: false, reasons: ["the approval could not be written onchain"] };
+      ctx.expiresAt = 0n;
     }
   }
   if (cfg.debug) ports.log(`guard ${ctx.req?.proposal_id ?? "?"}: ${d.verdict} (${d.risk}), report ${reportTx || "none"}`);

@@ -1,6 +1,6 @@
 // Argo Exo Transaction Guardian: the CRE workflow `exo`.
 // Thin wiring only. Every decision lives in src/lib (bun-tested); this file adapts the CRE runtime to GuardPorts.
-//   trigger 0 = guard  (HTTP, §4.3 request → §4.3 result JSON; writes a kind-1 or kind-2 report)
+//   trigger 0 = guard  (HTTP, §4.3 request → §4.3 result JSON; writes a kind-1 report on approve; a refusal writes nothing)
 //   trigger 1 = freeze (HTTP {"reason"} → kind-3 report)
 import {
   bytesToHex, consensusIdenticalAggregation, decodeJson, EVMClient, getNetwork, handler, handlerInTee, hexToBase64,

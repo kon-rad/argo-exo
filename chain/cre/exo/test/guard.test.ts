@@ -20,7 +20,7 @@ const SALT = `0x${"5a".repeat(32)}` as Hex;
 const NOW = 1_800_000_000;
 const KEYS = { NOWNODES_API_KEY: "nn-secret-key", OPENROUTER_API_KEY: "or-secret-key" };
 const POLICY = { address_book: { [MIRA]: "mira.eth" }, max_usd_per_tx: 100, max_usd_per_day: 300, auto_max_usd: 25,
-  allow_unlimited_approvals: false, allow_approval_for_all: false, refuse_sources: ["camera"], require_known_recipient_over_usd: 50, stablecoins: [USDC] };
+  allow_unknown_spender_approvals: false, allow_approval_for_all: false, refuse_sources: ["camera"], require_known_recipient_over_usd: 50, stablecoins: [USDC] };
 
 const cfg: Config = ConfigSchema.parse({
   chainSelectorName: "ethereum-mainnet", chainId: 1, module: MODULE, safe: SAFE, gasLimit: "300000", ttlSeconds: 600,
@@ -107,12 +107,11 @@ test("expiry comes from the workflow clock, never requested_at", () => {
   expect(runGuard(sendReq(), cfg, ports({ now: NOW + 5 })).expires_at).toBe(NOW + 605);
 });
 
-test("a millisecond clock refuses and writes a kind-2 report with no expiry", () => {
+test("a millisecond clock refuses with no expiry and writes no report", () => {
   const p = ports({ now: NOW * 1000 });
   const r = runGuard(sendReq(), cfg, p);
-  expect(r).toMatchObject({ verdict: "refuse", risk: "high", auto_eligible: false, expires_at: 0, usd_out: null });
-  const [kind, , exp, rh] = decodeReport(p.reports[0]);
-  expect([kind, exp, rh]).toEqual([2, 0n, reasonHash(r.reasons)]);
+  expect(r).toMatchObject({ verdict: "refuse", risk: "high", auto_eligible: false, expires_at: 0, usd_out: null, report_tx: "" });
+  expect(p.reports).toHaveLength(0);
 });
 
 test("setApprovalForAll from the camera refuses for both reasons", () => {
@@ -121,7 +120,7 @@ test("setApprovalForAll from the camera refuses for both reasons", () => {
   expect(r.verdict).toBe("refuse");
   expect(r.reasons.join(" | ")).toContain("camera");
   expect(r.reasons.join(" | ")).toContain("all NFTs");
-  expect(decodeReport(p.reports[0])[0]).toBe(2);
+  expect(p.reports).toHaveLength(0); // a refusal writes nothing onchain
   expect(r.explanation.startsWith("Refused: ")).toBe(true);
 });
 
@@ -132,13 +131,13 @@ test("a reverted trace and an unknown function both refuse", () => {
   expect(r.reasons).toContain("calls a function this check does not understand");
 });
 
-test("any throwing port is a refusal (failClosed), and the refusal is still reported for a known hash", () => {
+test("any throwing port is a refusal (failClosed), and the refusal writes no report", () => {
   for (const [o, reason] of [[{ post: () => { throw new Error("rpc down"); } }, "the check failed: rpc down"],
     [{ secrets: () => { throw new Error("vault said NOWNODES_API_KEY=abc"); } }, "secrets unavailable"]] as const) {
     const p = ports(o as any);
     const r = runGuard(sendReq(), cfg, p);
-    expect(r).toMatchObject({ verdict: "refuse", risk: "high", reasons: [reason] });
-    expect(decodeReport(p.reports[0])[0]).toBe(2);
+    expect(r).toMatchObject({ verdict: "refuse", risk: "high", reasons: [reason], report_tx: "" });
+    expect(p.reports).toHaveLength(0);
   }
 });
 
@@ -149,7 +148,7 @@ test("an unreadable policy refuses with a fixed reason that quotes none of it", 
     const r = runGuard(sendReq(), cfg, p);
     expect(r).toMatchObject({ verdict: "refuse", reasons: ["policy unreadable"], explanation: "Refused: policy unreadable." });
     expect(JSON.stringify(r)).not.toMatch(/mira|aproval|address_book/);
-    expect(decodeReport(p.reports[0])[0]).toBe(2); // the request itself is bound to the Safe: its refusal is reported
+    expect(p.reports).toHaveLength(0); // bound to the Safe, but a refusal is never written onchain
   }
 });
 
@@ -191,7 +190,7 @@ test("an unconfigured module or Safe refuses and writes no report", () => {
   }
 });
 
-test("a request with the same hash as a pending approval but the wrong from cannot revoke it; a bound refusal can", () => {
+test("no refusal writes onchain: neither a mis-bound request sharing an approval's hash nor a bound one", () => {
   const legit = ports();
   const ok = runGuard(sendReq(), cfg, legit);
   expect(ok.verdict).toBe("approve");
@@ -202,8 +201,7 @@ test("a request with the same hash as a pending approval but the wrong from cann
   const bound = ports();
   const refused = runGuard(sendReq({ source: "camera" }), cfg, bound); // same hash, bound to the Safe, refused by rules
   expect(refused.verdict).toBe("refuse");
-  const [kind, h] = decodeReport(bound.reports[0]);
-  expect([kind, h]).toEqual([2, ok.tx_hash!]);
+  expect(bound.reports).toHaveLength(0); // the approval stays live until it expires (ttl) or is executed
 });
 
 test("calling the module or the Safe directly refuses", () => {
@@ -222,7 +220,9 @@ test("an approval that can't be written onchain becomes a refusal; a failed refu
   const boom = () => { throw new Error("tx reverted"); };
   expect(runGuard(sendReq(), cfg, ports({ writeReport: boom })))
     .toMatchObject({ verdict: "refuse", reasons: ["the approval could not be written onchain"], expires_at: 0, report_tx: "" });
-  expect(runGuard(sendReq({ source: "camera" }), cfg, ports({ writeReport: boom })).verdict).toBe("refuse");
+  const refused = ports({ writeReport: boom });
+  expect(runGuard(sendReq({ source: "camera" }), cfg, refused).verdict).toBe("refuse");
+  expect(refused.reports).toHaveLength(0); // never even tried
 });
 
 test("ETH sends read the Chainlink price; a stale, zero or future price refuses", () => {

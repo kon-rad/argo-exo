@@ -16,7 +16,7 @@ const MIRA = "0x000000000000000000000000000000000000bbbb";
 const NOW = 1_800_000_000;
 const KEYS = { NOWNODES_API_KEY: "nn-secret-key", OPENROUTER_API_KEY: "or-secret-key" };
 const POLICY = { address_book: { [MIRA]: "mira.eth" }, max_usd_per_tx: 100, max_usd_per_day: 300, auto_max_usd: 25,
-  allow_unlimited_approvals: false, allow_approval_for_all: false, refuse_sources: ["camera"], require_known_recipient_over_usd: 50, stablecoins: [USDC] };
+  allow_unknown_spender_approvals: false, allow_approval_for_all: false, refuse_sources: ["camera"], require_known_recipient_over_usd: 50, stablecoins: [USDC] };
 const config = ConfigSchema.parse({
   chainSelectorName: "ethereum-mainnet", chainId: 1, module: MODULE, safe: SAFE, gasLimit: "300000", ttlSeconds: 600,
   simMethod: "debug_traceCall", ethUsdFeed: "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419", judges: ["anthropic/a", "google/b"],
@@ -79,9 +79,10 @@ test("guard (DON mode): secrets, node-mode HTTP with consensus, DON time, report
 
 test("guard (DON mode): a missing secret, a garbled body or a failed write all refuse", () => {
   mockHttp();
-  mockEvm();
+  const writes = mockEvm();
   const noPolicy = newTestRuntime(new Map([["main", new Map(Object.entries(KEYS))]]), { timeProvider: () => NOW * 1000 }, config);
-  expect(JSON.parse(onGuard(noPolicy, payload(request))).verdict).toBe("refuse");
+  expect(JSON.parse(onGuard(noPolicy, payload(request)))).toMatchObject({ verdict: "refuse", report_tx: "" });
+  expect(writes).toHaveLength(0); // a refusal is never written onchain
   const rt = () => newTestRuntime(secrets(), { timeProvider: () => NOW * 1000 }, config);
   expect(JSON.parse(onGuard(rt(), { input: new TextEncoder().encode("{not json") } as any))).toMatchObject({ verdict: "refuse", tx_hash: null });
   mockEvm({ txStatus: "TX_STATUS_REVERTED", errorMessage: "out of gas" });
