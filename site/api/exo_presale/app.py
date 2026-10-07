@@ -40,10 +40,13 @@ def _uint(v, lo: int, hi: int) -> int | None:
 
 
 def _clean(v, max_len: int) -> str | None:
-    """Trimmed string without control/surrogate/separator/format characters, 1..max_len long; else None."""
-    if not isinstance(v, str):
+    """The string exactly as sent, 1..max_len long, with no leading/trailing whitespace and no control, surrogate,
+    separator or format characters; else None. Never stripped here: the signature covers the exact bytes, and the
+    page (wallet.mjs claimFields) trims and rejects the same way before hashing, so a field that would need
+    normalising is refused rather than saved differently from what was signed (e.g. a trailing \x1c, which Python's
+    strip() removes but JS trim() keeps)."""
+    if not isinstance(v, str) or v != v.strip():
         return None
-    v = v.strip()
     if not 1 <= len(v) <= max_len or any(unicodedata.category(c) in BAD_CATEGORIES for c in v):
         return None
     return v

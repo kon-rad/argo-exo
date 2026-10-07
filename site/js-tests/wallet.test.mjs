@@ -90,6 +90,17 @@ test('claim details hash matches the API (trimmed fields)', async () => {
   assert.equal(await w.detailsHash('  Ada ', '\tada@example.com\n', 'Japan'), h);   // public-ok
 });
 
+test('claim fields: trimmed like the API, and anything the API would refuse is refused here too', () => {
+  assert.deepEqual(w.claimFields('  Ada L. ', '\tada@example.com\n', 'Japan'), { name: 'Ada L.', email: 'ada@example.com', country: 'Japan' });   // public-ok
+  // \x1c-\x1f: whitespace to Python's strip(), not to JS trim(). Refused on both sides, never silently dropped.
+  for (const bad of ['Ada\x1c', '\x1fAda', 'Ada\x00', 'A\u200bda', 'A\ufeffda', 'Ada\u2028x', 'Ada\x85'])
+    assert.throws(() => w.claimFields(bad, 'ada@example.com', 'Japan'), /check: name/, JSON.stringify(bad));   // public-ok
+  assert.throws(() => w.claimFields('Ada', 'ada@example.com\x1e', 'Japan'), /check: email/);   // public-ok
+  // what JS trim() does remove (BOM, NBSP, U+2028 at the ends) is gone before hashing, so the API sees clean fields
+  assert.equal(w.claimFields('\ufeffAda\u00a0', 'ada@example.com', 'Japan').name, 'Ada');   // public-ok
+  assert.throws(() => w.claimFields('Ada', 'ada@example.com', 'Japan\x1c'), /check: country/);   // public-ok
+});
+
 test('personal_sign payload is the UTF-8 hex of the message', () => {
   assert.equal(w.utf8Hex('Ab\n'), '0x41620a');
   assert.equal(w.utf8Hex('No. ·'), '0x4e6f2e20c2b7');

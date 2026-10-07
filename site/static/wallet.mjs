@@ -138,7 +138,17 @@ export async function sha256Hex(text) {
 }
 
 /** Same as the API's details_hash over the trimmed fields it stores (name and email trimmed, country exact). */
-export const claimFields = (name, email, country) => ({ name: String(name).trim(), email: String(email).trim(), country: String(country) });
+/** Same rule as the API's _clean (exo_presale/app.py): control, surrogate, line/paragraph separator and format
+ *  characters are refused, never silently dropped. */
+export const BAD_CHARS = /[\p{Cc}\p{Cs}\p{Zl}\p{Zp}\p{Cf}]/u;
+/** The claim fields as signed and sent: name and email trimmed (JS trim), then refused if anything the API would
+ *  reject is left (e.g. a \x1c, which trim() keeps). Throws Error('check: <fields>') like the API's 400. */
+export function claimFields(name, email, country) {
+  const f = { name: String(name).trim(), email: String(email).trim(), country: String(country) };
+  const bad = ['name', 'email', 'country'].filter((k) => BAD_CHARS.test(f[k]) || f[k] !== f[k].trim());
+  if (bad.length) throw new Error(`check: ${bad.join(', ')}`);
+  return f;
+}
 export async function detailsHash(name, email, country) {
   const f = claimFields(name, email, country);
   return sha256Hex(`${f.name}\n${f.email}\n${f.country}`);

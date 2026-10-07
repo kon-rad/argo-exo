@@ -181,3 +181,16 @@ def test_bucket_table_is_capped(tmp_path):
         now[0] += 1
     assert len(a.config["EXO_RATE_BUCKETS"]) <= 3
     assert post("198.51.100.9") == 429                         # the newest bucket survived eviction  # public-ok
+
+
+def test_untrimmed_or_separator_fields_are_rejected_not_stripped(tmp_path):
+    """The signature covers the exact fields: the API refuses anything it would have had to normalise. \\x1c-\\x1f
+    are whitespace to Python's strip() but not to JS trim(), so stripping here would save something other than what
+    the page hashed."""
+    c = client(tmp_path, rate=100)
+    for patch in ({"name": " Ada"}, {"name": "Ada "}, {"name": "Ada\x1c"}, {"name": "\x1fAda"}, {"name": "Ada\t"},
+                  {"email": "ada@example.com\n"}, {"email": " ada@example.com"}, {"name": "Ada　"},
+                  {"name": "Ada\x85"}):  # public-ok
+        r = c.post("/api/claims", json={**signed(), **patch})
+        assert r.status_code == 400, patch
+    assert c.post("/api/claims", json=signed(name="Ada L.")).status_code == 200   # an inner space is fine
