@@ -2,11 +2,14 @@
 Description=NOWNodes header proxy (loopback only)
 After=network-online.target
 
+# Runs as exoguard from exoguard's checkout: the CRE simulator's EVM writes (the Guardian's approval and freeze
+# reports) go through this proxy, so its code must not be editable by the hermes user (agents/install-bridge.sh).
 [Service]
-User=hermes
-EnvironmentFile=/home/hermes/.config/exo/nownodes.env
-Environment=PYTHONPATH=/home/hermes/argo-exo/packages/nownodes-py
-ExecStart=/usr/bin/python3 /home/hermes/argo-exo/infra/nownodes-proxy/nownodes_proxy.py 8545
+User=exoguard
+Group=exoguard
+EnvironmentFile=/srv/exo-guard/config/nownodes.env
+Environment=PYTHONPATH=/srv/exo-guard/argo-exo/packages/nownodes-py
+ExecStart=/usr/bin/python3 /srv/exo-guard/argo-exo/infra/nownodes-proxy/nownodes_proxy.py 8545
 Restart=on-failure
 MemoryMax=40M
 NoNewPrivileges=yes

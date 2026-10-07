@@ -67,7 +67,7 @@ exit 0
     env = {**os.environ, "PATH": f"{bindir}:{os.environ['PATH']}", "HERMES_HOME": str(home)}
     global _install_env
     _install_env = env
-    r = subprocess.run(["bash", str(AGENTS / "install-profiles.sh"), *args], env=env, capture_output=True, text=True)
+    r = subprocess.run(["bash", str(AGENTS / "install-profiles.sh"), "--no-venv", *args], env=env, capture_output=True, text=True)
     return r, home, log.read_text()
 
 
@@ -105,7 +105,7 @@ def test_install_links_wallet_skill_without_touching_gateways(tmp_path):
     assert not (home / "profiles" / "researcher" / "skills").exists()
     assert "gateway" not in calls
     import subprocess
-    again = subprocess.run(["bash", str(AGENTS / "install-profiles.sh")], capture_output=True, text=True,
+    again = subprocess.run(["bash", str(AGENTS / "install-profiles.sh"), "--no-venv"], capture_output=True, text=True,
                            env=_install_env)  # idempotent re-run over existing links
     assert again.returncode == 0, again.stderr
 

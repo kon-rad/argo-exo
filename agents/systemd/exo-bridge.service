@@ -1,18 +1,36 @@
 [Unit]
-Description=Exo bridge: deck -> Hermes talk + kanban (tailnet only)
+Description=Exo bridge + Transaction Guardian (exoguard user, tailnet only)
 After=network-online.target tailscaled.service
 Wants=network-online.target
 
+# Runs as `exoguard`, never as `hermes`: the Guardian's secrets (bridge token, ledger writer DSN, simulator key in
+# chain/cre/.env) and the code that decides approvals live in /srv/exo-guard, which the hermes user (and so every
+# Hermes agent, which has file and terminal tools) can neither read nor write. See agents/install-bridge.sh.
 [Service]
 Type=simple
-User=hermes
-WorkingDirectory=/home/hermes/argo-exo/agents/bridge
-EnvironmentFile=/home/hermes/.config/exo/bridge.env
-Environment=PATH=/home/hermes/.local/bin:/usr/local/bin:/usr/bin:/bin
-ExecStart=/home/hermes/.venvs/exo-bridge/bin/python -m exo_bridge
+User=exoguard
+Group=exoguard
+WorkingDirectory=/srv/exo-guard/argo-exo/agents/bridge
+EnvironmentFile=/srv/exo-guard/config/bridge.env
+Environment=HOME=/srv/exo-guard
+# exo_guardian (the Guardian runner) from exoguard's own checkout, never the hermes one.
+Environment=PYTHONPATH=/srv/exo-guard/argo-exo/chain/runner
+# bun and the cre CLI, installed AS exoguard into its home (bun's installer: ~/.bun/bin; the CRE CLI installer:
+# ~/.cre/bin). `cre workflow simulate` needs both on PATH. Check with: sudo -u exoguard -H bash -lc 'command -v bun cre'
+Environment=PATH=/srv/exo-guard/.bun/bin:/srv/exo-guard/.cre/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/srv/exo-guard/venv/bin/python -m exo_bridge
 Restart=on-failure
 RestartSec=5
-MemoryMax=150M
+UMask=0077
+PrivateTmp=true
+ProtectSystem=full
+# 600M: the bridge itself is small (Flask + waitress), but each guard runs `cre workflow simulate` (the CRE CLI plus the bun/Javy
+# WASM toolchain compiling and running the workflow) as a child of this unit, expected at several hundred MB at
+# peak (not yet measured on the droplet). 150M was likely too small, and an OOM-killed simulation is a refusal.
+# Only one guard runs at a time (the guard lock), so this is one simulation's worth.
+MemoryMax=600M
+# Not NoNewPrivileges: the kanban wrapper (/usr/local/bin/exo-hermes) uses one sudoers rule to run
+# `hermes kanban ...` AS hermes. ProtectHome is off for the same reason (hermes' data lives in /home/hermes).
 
 [Install]
 WantedBy=multi-user.target

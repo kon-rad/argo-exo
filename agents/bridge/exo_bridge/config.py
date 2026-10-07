@@ -4,7 +4,7 @@ import ipaddress
 from dataclasses import dataclass
 from typing import Mapping
 
-DEFAULT_MANIFEST = "/home/hermes/argo-exo/chain/cre/workflow-manifest.json"
+DEFAULT_MANIFEST = "/srv/exo-guard/argo-exo/chain/cre/workflow-manifest.json"   # exoguard's checkout
 DEFAULT_AGENTS = "librarian,trader,portfolio,wallet,builder,researcher"
 
 

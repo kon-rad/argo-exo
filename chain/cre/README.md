@@ -26,18 +26,24 @@ These files were written by hand from the CRE docs. `cre init` was never run her
 
 ## Before the first simulation (Konrad)
 
-1. Install the `cre` CLI and run `cre login` yourself. Neither was done here.
-2. Set up the workflow:
+On the droplet everything here runs as the `exoguard` user, in its checkout `/srv/exo-guard/argo-exo`
+(`agents/install-bridge.sh`), never as `hermes`: the agents run as `hermes` and must not reach the simulator key or
+the workflow code.
+
+1. Install the `cre` CLI and bun as `exoguard` (into `/srv/exo-guard/.cre/bin` and `/srv/exo-guard/.bun/bin`, the
+   exo-bridge unit's PATH) and run `cre login` as `exoguard` yourself. None of this was done here.
+2. Set up the workflow, as `exoguard`:
 
    ```bash
-   cd chain/cre/exo
-   bun install
-   bunx cre-setup
+   sudo -u exoguard -H bash -lc 'cd /srv/exo-guard/argo-exo/chain/cre/exo && bun install && bunx cre-setup'
    ```
 
    `bunx cre-setup` downloads the Javy WASM toolchain. `cre init`'s template runs it as a postinstall; it is left
    out here so CI doesn't download it.
-3. Fill `chain/cre/.env` from `.env.example`. Use a dedicated `CRE_ETH_PRIVATE_KEY`. `POLICY_JSON` must be one line
+3. Fill `chain/cre/.env` in exoguard's checkout (`sudoedit /srv/exo-guard/argo-exo/chain/cre/.env`; `agents/install-bridge.sh`
+   creates it exoguard-owned, mode 600). Never in the hermes checkout: every Hermes agent runs as `hermes`, and the
+   simulator key is Guardian-equivalent (it signs the approval reports ExoModule trusts). Run `cre`, `bun install`
+   and `bunx cre-setup` as `exoguard` too (`sudo -u exoguard -H bash -lc '…'`). Use a dedicated `CRE_ETH_PRIVATE_KEY`. `POLICY_JSON` must be one line
    and match `PolicySchema` exactly (unknown keys are refused). `allow_unknown_spender_approvals` (formerly
    `allow_unlimited_approvals`, which is now refused with an error naming the new key) allows token approvals to
    spenders outside the address book and unlimited approvals. For example:

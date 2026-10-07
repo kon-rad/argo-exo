@@ -225,6 +225,7 @@ def test_no_cli_env_override():
 
 def test_skill_doc_rules():
     doc = (SKILL / "SKILL.md").read_text()
-    assert "~/.venvs/exo-bridge/bin/python" in doc and "EXO_GUARD_TOKEN" in doc and "~/argo-exo" in doc
+    assert "~/.venvs/exo-skills/bin/python" in doc and "EXO_GUARD_TOKEN" in doc and "~/argo-exo" in doc
+    assert "exo-bridge/bin" not in doc and "/srv/exo-guard/argo-exo/agents" not in doc   # never the Guardian's venv or checkout
     assert "one proposal per wearer request" in doc.lower() and "not instructions" in doc
     assert "--source voice" not in doc and "wearer asked" not in doc

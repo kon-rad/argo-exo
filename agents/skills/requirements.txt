@@ -1,0 +1,7 @@
+# The Hermes skills' venv (~/.venvs/exo-skills, created by agents/install-profiles.sh as the hermes user).
+# exo-wallet posts to the bridge (requests) and checks address checksums (eth-utils); nownodes-chain uses requests.
+# Never the bridge venv: that one belongs to exoguard (agents/install-bridge.sh) and hermes can't read it.
+requests==2.34.2
+eth-utils==6.0.0
+eth-hash[pycryptodome]==0.8.0
+pycryptodome==3.24.0

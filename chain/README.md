@@ -49,12 +49,17 @@ passwords as psql variables; see its header). guardian-run (`chain/runner/exo_gu
 kiosk reads `exo_tx_v` and `exo_cre_calls_v` as `exo_reader`, which can't see the base tables.
 
 `exo-bridge` serves the Guardian routes (`/guard`, `/approvals/pending`, `/approvals/<id>/executed`, `/freeze`) when
-`EXO_LEDGER_WRITER_DSN` is set and `chain/runner` is on its `PYTHONPATH`; otherwise they answer 503. The writer DSN
-lives only in the bridge's env. The Hermes skill calls `python -m exo_guardian.cli guard '<request json>'` with
-`EXO_BRIDGE_URL` and `EXO_BRIDGE_TOKEN`; the CLI POSTs to the bridge's `/guard` and never touches the ledger.
+`EXO_LEDGER_WRITER_DSN` is set and `chain/runner` is on its `PYTHONPATH`; otherwise they answer 503. The bridge,
+guardian-run and `cre` run as the `exoguard` user from its own checkout (`/srv/exo-guard/argo-exo`), which the
+`hermes` user (every agent) can't read or write; the writer DSN lives only in exoguard's `bridge.env` (mode 600), and
+the simulator key in exoguard's `chain/cre/.env` (mode 600) is Guardian-equivalent. See `agents/install-bridge.sh`.
+The Hermes skill calls `exo_guardian/cli.py guard '<request json>'` from the hermes checkout with `EXO_BRIDGE_URL`
+and the narrow `EXO_GUARD_TOKEN`; the CLI POSTs to the bridge's `/guard` and never touches the ledger. With that
+token the bridge accepts only the sources `agent:<profile>`, `camera` and `dashboard`.
 
 Guards run one at a time, end to end (a Postgres advisory lock from reading `spent_today_usd` to recording the
-verdict), so two concurrent requests can't both spend the same daily headroom. `/freeze` doesn't wait on that lock.
+verdict), so two concurrent requests can't both spend the same daily headroom. The lock is never waited on: a
+second guard gets 503 `{"error":"guardian busy"}` at once. `/freeze` doesn't take that lock.
 
 An item reaches the deck's approval queue only when all of these hold:
 
@@ -71,8 +76,8 @@ UTC `usd_out` of executed and unexpired waiting approvals, from the ledger); the
 failure, timeout or unreadable output is a refusal recorded with its latency, and the bridge answers 502
 `guardian unavailable`.
 
-**`EXO_GUARDIAN_BROADCAST=1` sends real mainnet report transactions from the simulator key on every guard and
-freeze.** Leave it unset until Konrad gives the go-ahead. Without it, `/freeze` answers `{"ok": false, "simulated": true}`.
+**`EXO_GUARDIAN_BROADCAST=1` sends real mainnet report transactions from the simulator key on every approval and
+freeze** (a refusal writes no report). Leave it unset until Konrad gives the go-ahead. Without it, `/freeze` answers `{"ok": false, "simulated": true}`.
 
 PgStore tests run only against a throwaway database (`EXO_TEST_PG_ADMIN_DSN`, `EXO_TEST_PG_WRITER_DSN`,
 `EXO_TEST_PG_READER_DSN`; see `chain/runner/tests/guardian_pg.py`). They truncate the ledger.
