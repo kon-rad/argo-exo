@@ -80,15 +80,25 @@ def _tokens(j: dict) -> list[dict]:
     return out
 
 
-class Balances:
-    """`client_for(chain)` returns an exo_nownodes Blockbook (anything with .address(addr, details=...))."""
+def _spawn(fn: Callable) -> None:
+    threading.Thread(target=fn, daemon=True, name="exo-balances").start()
 
-    def __init__(self, client_for: Callable, wallets: list[dict], ttl_s: int = 60, clock: Callable = time.time):
-        self.client_for, self.wallets, self.ttl, self.clock = client_for, wallets, ttl_s, clock
+
+class Balances:
+    """`client_for(chain)` returns an exo_nownodes Blockbook (anything with .address(addr, details=...)).
+
+    panel() never blocks on the network: it answers from the cache at once (or a loading state the first time) and
+    starts at most one background refresh when the cache is older than the TTL. The cache age is taken when a
+    refresh FINISHES, so a slow refresh cannot trigger another one back to back. Rows older than the TTL are
+    marked stale. `spawn` runs the refresh (a daemon thread by default; tests pass a synchronous one)."""
+
+    def __init__(self, client_for: Callable, wallets: list[dict], ttl_s: int = 60, clock: Callable = time.time,
+                 spawn: Callable = _spawn):
+        self.client_for, self.wallets, self.ttl, self.clock, self.spawn = client_for, wallets, ttl_s, clock, spawn
         self._cache: dict | None = None
         self._at = 0.0
         self._good: dict = {}
-        self._lock = threading.Lock()
+        self._running = threading.Lock()      # held for the duration of one refresh
 
     def _refresh(self) -> dict:
         rows, errors = [], []
@@ -102,7 +112,7 @@ class Balances:
                 if native is None:
                     raise ValueError("bad balance")
                 tokens = _tokens(j)
-                row = {"label": w["label"], "chain": w["chain"], "address_short": w["address"][:6] + "…" + w["address"][-4:],
+                row = {"label": w["label"], "chain": w["chain"], "address_short": w["address"][:6] + "\u2026" + w["address"][-4:],
                        "native": f"{native} {NATIVE[w['chain']]}", "tokens": tokens[:MAX_TOKENS],
                        "tokens_more": max(0, len(tokens) - MAX_TOKENS), "stale": False}
                 self._good[key] = row
@@ -114,13 +124,31 @@ class Balances:
                     rows.append(dict(self._good[key], stale=True))
         return {"wallets": rows, "errors": errors}
 
+    def _run(self) -> None:
+        try:
+            result = self._refresh()
+            self._cache, self._at = result, self.clock()     # age starts when the refresh finished
+        except Exception as exc:  # noqa: BLE001
+            log.warning("balance refresh failed: %s", type(exc).__name__)
+        finally:
+            self._running.release()
+
+    def _kick(self) -> None:
+        if self._running.acquire(blocking=False):
+            try:
+                self.spawn(self._run)
+            except Exception:  # noqa: BLE001  (could not start a thread: free the slot, serve the cache)
+                self._running.release()
+
     def panel(self, page: int) -> dict:
-        with self._lock:
-            now = self.clock()
-            if self._cache is None or now - self._at > self.ttl:
-                self._cache, self._at = self._refresh(), now
-            cache, age = self._cache, int(now - self._at)
-        rows = cache["wallets"]
+        now = self.clock()
+        cache, at = self._cache, self._at
+        if cache is None or now - at > self.ttl:
+            self._kick()
+        if cache is None:
+            return {"wallets": [], "more": 0, "errors": [], "age_s": 0, "loading": True}
+        old = now - at > self.ttl
+        rows = [dict(r, stale=True) if old else r for r in cache["wallets"]]
         page = max(0, min(page, (len(rows) - 1) // PAGE)) if rows else 0
         return {"wallets": rows[page * PAGE:(page + 1) * PAGE], "more": max(0, len(rows) - (page + 1) * PAGE),
-                "errors": cache["errors"][:3], "age_s": age}
+                "errors": cache["errors"][:3], "age_s": int(max(0, now - at)), "loading": False}

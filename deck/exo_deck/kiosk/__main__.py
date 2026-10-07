@@ -12,6 +12,19 @@ from ..config import Settings
 from .app import create_app
 
 
+KIOSK_TIMEOUT = (3, 5)      # connect, read: a hung NOWNodes must not tie up a refresh for 20 s per call
+
+
+def _wallets_provider():
+    from exo_nownodes.blockbook import Blockbook
+
+    def get(url, **kw):
+        kw["timeout"] = KIOSK_TIMEOUT       # the client's own seam: no fork of exo_nownodes
+        return requests.get(url, **kw)
+
+    return chain_view.Balances(lambda chain: Blockbook(chain, get=get), chain_view.load_wallets()).panel
+
+
 def build_providers(s: Settings) -> dict:
     providers = {"talk": lambda page: {"turns": st.recent_turns(s.state, 7)}}
     providers["approvals"] = lambda page: approvals.panel(s.state, time.time(), page)
@@ -20,9 +33,11 @@ def build_providers(s: Settings) -> dict:
     providers["media"] = lambda page: media.panel(s.deck_root, s.state, page)
     bridge = Bridge(s.bridge_url, s.bridge_token)
     providers["agents"] = lambda page: agents_view.panel(bridge)
-    from exo_nownodes.blockbook import Blockbook    # packages/nownodes-py: on the Pi via PYTHONPATH in the kiosk unit
-    balances = chain_view.Balances(lambda chain: Blockbook(chain), chain_view.load_wallets())
-    providers["wallets"] = balances.panel
+    try:    # packages/nownodes-py: on the Pi via PYTHONPATH in the kiosk unit. A failure here must not take the kiosk down.
+        providers["wallets"] = _wallets_provider()
+    except Exception as exc:  # noqa: BLE001
+        logging.getLogger("exo-kiosk").warning("wallets panel disabled: %s", type(exc).__name__)
+        providers["wallets"] = lambda page: {"error": "wallets unavailable"}
     providers["transactions"] = lambda page: ledger_view.transactions_panel(bridge, page)
     providers["cre"] = lambda page: ledger_view.cre_panel(bridge, page)
     # 10.3-10.8 add: agents, transactions, wallets, cre, body, sensors, media (add each one's imports here too)

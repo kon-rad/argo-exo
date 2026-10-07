@@ -45,7 +45,12 @@ def _handler(h) -> dict:
 def transactions_panel(bridge, page: int) -> dict:
     try:
         data = bridge.transactions(page)
-        counts = {k: int(v) for k, v in (data.get("counts") or {}).items()
+        raw = data.get("counts")
+        if raw is None:
+            raw = {}
+        if not isinstance(raw, dict):
+            return {"error": UNREACHABLE}
+        counts = {k: int(v) for k, v in raw.items()
                   if k in STATUSES and isinstance(v, int) and not isinstance(v, bool)}
         total = sum(counts.values())
         last = max(0, (total - 1) // PAGE)
@@ -63,12 +68,14 @@ def cre_panel(bridge, page: int) -> dict:
         handlers = [_handler(h) for h in bridge.workflows()["handlers"]]
     except BridgeError as exc:
         return {"error": _err(exc)}
-    calls, calls_error = [], ""
+    calls, calls_error, more = [], "", False
     try:
-        data = bridge.cre_calls(page)
+        data = bridge.cre_calls(page, extra=1)           # one row past the page tells us whether there is more
         if page > 0 and not data["rows"]:
-            page, data = 0, bridge.cre_calls(0)
-        calls = [_call(r) for r in data["rows"]][:PAGE]
+            page, data = 0, bridge.cre_calls(0, extra=1)
+        rows = data["rows"]
+        more = len(rows) > PAGE
+        calls = [_call(r) for r in rows][:PAGE]
     except BridgeError as exc:                          # the manifest still shows when the ledger is down
         calls_error = _err(exc)
-    return {"handlers": handlers[:7], "calls": calls, "calls_error": calls_error, "page": page, "more": len(calls) == PAGE}
+    return {"handlers": handlers[:7], "calls": calls, "calls_error": calls_error, "page": page, "more": more}

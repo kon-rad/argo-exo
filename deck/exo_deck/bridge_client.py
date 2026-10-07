@@ -95,8 +95,9 @@ class Bridge:
     def transactions(self, page: int) -> dict:
         return self._read("/ledger/transactions", {"limit": 7, "offset": page * 7}, "rows")
 
-    def cre_calls(self, page: int) -> dict:
-        return self._read("/ledger/cre-calls", {"limit": 7, "offset": page * 7}, "rows")
+    def cre_calls(self, page: int, extra: int = 0) -> dict:
+        """`extra` asks for rows past the page (the caller shows 7 and uses the rest to know there is more)."""
+        return self._read("/ledger/cre-calls", {"limit": 7 + max(0, min(extra, 3)), "offset": page * 7}, "rows")
 
     def workflows(self) -> dict:
         return self._read("/cre/workflows", None, "handlers")

@@ -128,3 +128,14 @@ def test_ledger_network_and_bad_body_are_bridge_errors():
         Bridge("http://b", "t", get=lambda u, **k: Resp(200, ["not", "a", "dict"])).transactions(0)
     with pytest.raises(BridgeError):
         Bridge("http://b", "t", get=lambda u, **k: Resp(200, {"rows": 1})).cre_calls(0)    # rows must be a list
+
+
+def test_cre_calls_extra_row_for_the_more_probe():
+    seen = {}
+
+    def get(url, **kw):
+        seen.update(kw)
+        return Resp(200, {"rows": []})
+
+    Bridge("http://b", "t", get=get).cre_calls(1, extra=1)
+    assert seen["params"] == {"limit": 8, "offset": 7}

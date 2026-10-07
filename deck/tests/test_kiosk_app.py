@@ -116,3 +116,13 @@ def test_build_providers_wires_agents_wallets_and_ledger(tmp_path, monkeypatch):
     assert p["agents"](0) == {"online": False, "cols": {}, "counts": {}}      # no bridge url: offline, not a crash
     assert p["wallets"](0)["wallets"] == []
     assert p["transactions"](0) == {"error": "Ledger unreachable"} and p["cre"](0) == {"error": "Ledger unreachable"}
+
+
+def test_a_broken_nownodes_import_only_disables_the_wallets_panel(tmp_path, monkeypatch):
+    import sys
+    from exo_deck.config import Settings
+    from exo_deck.kiosk.__main__ import build_providers
+    monkeypatch.setitem(sys.modules, "exo_nownodes.blockbook", None)      # import now raises ImportError
+    p = build_providers(Settings.from_env({"DECK_ROOT": str(tmp_path)}))
+    assert p["wallets"](0) == {"error": "wallets unavailable"}
+    assert {"agents", "transactions", "cre", "approvals", "body", "sensors", "media", "talk"} <= set(p)

@@ -17,11 +17,11 @@ class B:
             raise self.exc
         return {"rows": self.rows[page * 7:(page + 1) * 7], "counts": self.counts}
 
-    def cre_calls(self, page):
+    def cre_calls(self, page, extra=0):
         self.pages.append(page)
         if self.exc:
             raise self.exc
-        return {"rows": self.calls[page * 7:(page + 1) * 7]}
+        return {"rows": self.calls[page * 7:(page + 1) * 7 + extra]}
 
     def workflows(self):
         if self.exc:
@@ -58,7 +58,7 @@ def test_not_connected_and_unreachable_have_fixed_text():
 
 def test_cre_panel_shows_handlers_even_when_the_ledger_is_down():
     class Half(B):
-        def cre_calls(self, page):
+        def cre_calls(self, page, extra=0):
             raise BridgeError("HTTP 503 ledger not connected")
     h = [{"handler": "guard", "trigger": "http", "priority": "Must", "status": "simulated"}]
     p = lv.cre_panel(Half(handlers=h), 0)
@@ -72,6 +72,19 @@ def test_cre_panel_pages_and_shapes():
     assert len(p["calls"]) == 7 and p["more"] is True and p["calls_error"] == ""
     assert lv.cre_panel(b, 1)["more"] is False
     assert lv.cre_panel(b, 5)["calls"] == [] or b.pages[-1] == 0   # an empty far page falls back to page 0
+
+
+def test_cre_more_is_false_when_exactly_a_full_page():
+    calls = [{"id": i, "handler": "guard"} for i in range(7)]
+    p = lv.cre_panel(B(calls=calls, handlers=[{"handler": "guard"}]), 0)
+    assert len(p["calls"]) == 7 and p["more"] is False
+
+
+def test_counts_must_be_an_object():
+    class Bad(B):
+        def transactions(self, page):
+            return {"rows": [], "counts": [1, 2]}
+    assert lv.transactions_panel(Bad(), 0) == {"error": "Ledger unreachable"}
 
 
 def test_cre_workflows_failure_is_a_panel_error():
