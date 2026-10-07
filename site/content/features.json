@@ -1,0 +1,14 @@
+[
+  {"id": "wearable",  "name": "The wearable computer",        "section": "C1",  "fig": 1,  "blurb": "TODO(konrad)"},
+  {"id": "talk",      "name": "Push-to-talk",                 "section": "C2",  "fig": 2,  "blurb": "TODO(konrad)"},
+  {"id": "camera",    "name": "On-command camera and memos",  "section": "C3",  "fig": 3,  "blurb": "TODO(konrad)"},
+  {"id": "dashboard", "name": "The Argo dashboard",           "section": "C4",  "fig": 4,  "blurb": "TODO(konrad)"},
+  {"id": "agents",    "name": "Agents you own",               "section": "C5",  "fig": 5,  "blurb": "TODO(konrad)"},
+  {"id": "wallets",   "name": "Agent Safe and cold storage",  "section": "C6",  "fig": 6,  "blurb": "TODO(konrad)"},
+  {"id": "guardian",  "name": "The Transaction Guardian",     "section": "C7",  "fig": 7,  "blurb": "TODO(konrad)"},
+  {"id": "approve",   "name": "The approve key",              "section": "C7",  "fig": 8,  "blurb": "TODO(konrad)"},
+  {"id": "nownodes",  "name": "100+ chains through NOWNodes", "section": "C8",  "fig": 9,  "blurb": "TODO(konrad)"},
+  {"id": "brain",     "name": "Your second brain",            "section": "C5",  "fig": 10, "blurb": "TODO(konrad)"},
+  {"id": "opensource","name": "Open source, your own server", "section": "C10", "fig": 11, "blurb": "TODO(konrad)"},
+  {"id": "receipt",   "name": "A numbered receipt onchain",   "section": "C9",  "fig": 12, "blurb": "TODO(konrad)"}
+]

@@ -1,0 +1,4 @@
+[
+  {"id": "a", "tier": 1, "plate": "II",  "name": "TODO(konrad)", "includes": ["TODO(konrad)"]},
+  {"id": "b", "tier": 2, "plate": "III", "name": "TODO(konrad)", "includes": ["TODO(konrad)"]}
+]

@@ -1,0 +1,13 @@
+{
+  "title": "Argo Exo",
+  "hero": {"kicker": "TODO(konrad)", "headline": "TODO(konrad)", "lede": "TODO(konrad)", "cta": "Pre-order"},
+  "contents_heading": "Contents",
+  "sections": {
+    "features": {"numeral": "I", "heading": "TODO(konrad)", "intro": "TODO(konrad)"},
+    "kit": {"numeral": "II", "heading": "TODO(konrad)", "intro": "TODO(konrad)"},
+    "preorder": {"numeral": "III", "heading": "TODO(konrad)", "intro": "TODO(konrad)"},
+    "faq": {"numeral": "IV", "heading": "TODO(konrad)", "items": [{"q": "TODO(konrad)", "a": "TODO(konrad)"}]}
+  },
+  "terms": {"refund": "TODO(konrad)", "payment": "TODO(konrad)", "shipping": "TODO(konrad)", "countries": ["TODO(konrad)"]},
+  "colophon": "TODO(konrad)"
+}
