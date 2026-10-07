@@ -16,6 +16,11 @@ export const RENDER = {
     `<h1>Agents</h1><div class="cols">${['queued', 'ready', 'running', 'done'].map((c) =>
       `<div><p class="${c === 'running' ? 'warn' : c === 'done' ? 'ok' : 'muted'}"><b>${c.toUpperCase()} ${COLSTAT[c].reduce((n, k) => n + (j.counts[k] || 0), 0)}</b></p><ul class="rows tight">${(j.cols[c] || []).map((t) =>
         `<li><span class="clamp"><b>${esc(t.assignee || '-')}</b> <span class="muted">${t.created_at ? ago(t.created_at) : ''}</span><br>${esc(t.title)}</span></li>`).join('') || '<li class="muted">none</li>'}</ul></div>`).join('')}</div>`,
+  wallets: (j) => `<h1>Wallets</h1><ul class="rows tight">${j.wallets.map((w) =>
+    `<li><span class="clamp"><b>${esc(w.label)}</b> <span class="muted">${esc(w.chain)} · ${esc(w.address_short)}${w.stale ? ' · stale' : ''}</span><br>${w.tokens.map((t) => `${esc(t.amount)} ${esc(t.symbol)}`).join(' · ') || '<span class="muted">no tokens</span>'}${w.tokens_more ? ` <span class="muted">+${esc(w.tokens_more)}</span>` : ''}</span>
+     <span class="tag big">${esc(w.native)}</span></li>`).join('') || '<li class="muted">No wallets configured</li>'}</ul>`
+    + (j.more ? `<p class="warn tight">+${esc(j.more)} more — say "more"</p>` : '')
+    + (j.errors.length ? `<p class="bad tight clamp">${j.errors.map(esc).join(' · ')}</p>` : '') + `<p class="muted tight">updated ${esc(j.age_s)}s ago</p>`,
   approvals: (j) => {
     const row = (t) => `<li><span class="clamp">${esc(t.summary)}<br><span class="muted">${esc(t.explanation || '')}</span></span>
       <span class="tag ${t.risk === 'low' ? 'ok' : t.risk === 'high' ? 'bad' : 'warn'}">${esc(t.risk || '?')}${t.auto_eligible === true ? ' · auto' : ''}</span></li>`;

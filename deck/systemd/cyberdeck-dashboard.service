@@ -6,7 +6,7 @@ After=network.target srv-deck.mount tailscaled.service
 Type=simple
 User=deck
 EnvironmentFile=/srv/deck/.env
-Environment=PYTHONPATH=/srv/deck/app/deck
+Environment=PYTHONPATH=/srv/deck/app/deck:/srv/deck/app/packages/nownodes-py
 WorkingDirectory=/srv/deck/app/deck
 ExecStart=/srv/deck/venv/bin/python3 -m exo_deck.kiosk
 Restart=on-failure

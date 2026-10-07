@@ -6,7 +6,7 @@ import time
 import requests
 from waitress import serve
 
-from .. import agents_view, approvals, media, ring_view, state as st, system_view
+from .. import agents_view, approvals, chain_view, media, ring_view, state as st, system_view
 from ..bridge_client import Bridge
 from ..config import Settings
 from .app import create_app
@@ -20,6 +20,9 @@ def build_providers(s: Settings) -> dict:
     providers["media"] = lambda page: media.panel(s.deck_root, s.state, page)
     bridge = Bridge(s.bridge_url, s.bridge_token)
     providers["agents"] = lambda page: agents_view.panel(bridge)
+    from exo_nownodes.blockbook import Blockbook    # packages/nownodes-py: on the Pi via PYTHONPATH in the kiosk unit
+    balances = chain_view.Balances(lambda chain: Blockbook(chain), chain_view.load_wallets())
+    providers["wallets"] = balances.panel
     # 10.3-10.8 add: agents, transactions, wallets, cre, body, sensors, media (add each one's imports here too)
     return providers
 
