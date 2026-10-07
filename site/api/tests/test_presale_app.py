@@ -189,8 +189,8 @@ def test_untrimmed_or_separator_fields_are_rejected_not_stripped(tmp_path):
     the page hashed."""
     c = client(tmp_path, rate=100)
     for patch in ({"name": " Ada"}, {"name": "Ada "}, {"name": "Ada\x1c"}, {"name": "\x1fAda"}, {"name": "Ada\t"},
-                  {"email": "ada@example.com\n"}, {"email": " ada@example.com"}, {"name": "Ada　"},
-                  {"name": "Ada\x85"}):  # public-ok
+                  {"email": "ada@example.com\n"}, {"email": "\u00a0ada@example.com"},  # public-ok
+                  {"name": "Ada\u3000"}, {"name": "Ada\x85"}):
         r = c.post("/api/claims", json={**signed(), **patch})
         assert r.status_code == 400, patch
     assert c.post("/api/claims", json=signed(name="Ada L.")).status_code == 200   # an inner space is fine
