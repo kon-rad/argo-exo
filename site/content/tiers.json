@@ -1,4 +1,28 @@
 [
-  {"id": "a", "tier": 1, "plate": "II",  "name": "TODO(konrad)", "includes": ["TODO(konrad)"]},
-  {"id": "b", "tier": 2, "plate": "III", "name": "TODO(konrad)", "includes": ["TODO(konrad)"]}
+  {
+    "id": "a",
+    "tier": 1,
+    "plate": "II",
+    "name": "Exo",
+    "includes": [
+      "Raspberry Pi deck in a cooled case, fully assembled and tested",
+      "Sling with the chest control plate: talk, camera, memo and two programmable keys",
+      "The lit approve key and an outward-facing recording light",
+      "Clip-on camera, microphone, and wired earbuds",
+      "Adapter and cable for USB-C DisplayPort glasses you already own",
+      "USB-C power supply and a numbered receipt onchain"
+    ]
+  },
+  {
+    "id": "b",
+    "tier": 2,
+    "plate": "III",
+    "name": "Exo Complete",
+    "includes": [
+      "Everything in Exo",
+      "Display glasses, tested with your deck before it ships",
+      "A two-output power bank for the deck and the glasses",
+      "Air-gapped cold wallet: a Pi Zero with no radio that creates your key offline and owns your agent Safe"
+    ]
+  }
 ]

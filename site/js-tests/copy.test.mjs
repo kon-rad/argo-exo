@@ -26,8 +26,9 @@ test('every error kind and stage purchase.mjs can produce has a message', () => 
   for (const [, s] of purchase.matchAll(/onStage\('([a-z_]+)'\)/g)) assert.ok(s in copy.checkout, `stage ${s}`);
 });
 
-test('the new slots are Konrad\'s: none filled in by the build', () => {
-  for (const [k, v] of Object.entries(copy.checkout)) assert.equal(v, 'TODO(konrad)', k);
+test('every checkout message is written (no placeholder, never blank) and the edition keeps its counters', () => {
+  for (const [k, v] of Object.entries(copy.checkout)) assert.ok(typeof v === 'string' && v.trim() && !/TODO\(konrad\)/i.test(v), k);
+  assert.ok(copy.checkout.edition.includes('{minted}') && copy.checkout.edition.includes('{max}'));
 });
 
 test('no untrusted string goes in as HTML', () => {

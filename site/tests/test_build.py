@@ -20,14 +20,29 @@ def fill(root):
     for name in ("copy.json", "features.json", "tiers.json"):
         p = root / "content" / name
         p.write_text(p.read_text().replace("TODO(konrad)", "Filled <b>by</b> Konrad"))
+    c = json.loads((root / "content" / "copy.json").read_text())
+    c["hero"]["headline"] = "Filled <b>by</b> Konrad"
+    (root / "content" / "copy.json").write_text(json.dumps(c))
+
+
+def unfill(root):
+    """Put two slots back to the placeholder, as an unwritten page would have them."""
+    c = json.loads((root / "content" / "copy.json").read_text())
+    c["hero"]["headline"] = "TODO(konrad)"
+    (root / "content" / "copy.json").write_text(json.dumps(c))
+    t = json.loads((root / "content" / "tiers.json").read_text())
+    t[0]["name"] = "TODO(konrad)"
+    (root / "content" / "tiers.json").write_text(json.dumps(t))
 
 
 def test_draft_build_keeps_todos(site, tmp_path):
+    unfill(site)
     build.build(site, tmp_path / "dist")
     assert "TODO(konrad)" in (tmp_path / "dist" / "index.html").read_text()
 
 
 def test_release_refuses_todos_and_names_them(site, tmp_path):
+    unfill(site)
     with pytest.raises(SystemExit) as e:
         build.build(site, tmp_path / "dist", release=True)
     assert "hero.headline" in str(e.value) and "tiers[0].name" in str(e.value)
@@ -105,7 +120,7 @@ def test_every_img_has_an_alt(site, tmp_path):
 def test_terms_show_chain_and_contract_only_from_preorder_json(site, tmp_path):
     build.build(site, tmp_path / "dist")
     terms = (tmp_path / "dist" / "terms.html").read_text(encoding="utf-8")
-    assert "basescan" not in terms and "8453" not in terms and "Base" not in terms
+    assert "basescan" not in terms and "8453" not in terms and "Base (chain ID" not in terms
     addr = "0x" + "ab" * 20
     (site / "static" / "preorder.json").write_text(json.dumps(
         {"chainId": 8453, "chainName": "Base", "contract": addr, "explorer": "https://basescan.org"}))

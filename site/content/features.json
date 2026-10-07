@@ -1,14 +1,14 @@
 [
-  {"id": "wearable",  "name": "The wearable computer",        "section": "C1",  "fig": 1,  "alt": "TODO(konrad)", "blurb": "TODO(konrad)"},
-  {"id": "talk",      "name": "Push-to-talk",                 "section": "C2",  "fig": 2,  "alt": "TODO(konrad)", "blurb": "TODO(konrad)"},
-  {"id": "camera",    "name": "On-command camera and memos",  "section": "C3",  "fig": 3,  "alt": "TODO(konrad)", "blurb": "TODO(konrad)"},
-  {"id": "dashboard", "name": "The Argo dashboard",           "section": "C4",  "fig": 4,  "alt": "TODO(konrad)", "blurb": "TODO(konrad)"},
-  {"id": "agents",    "name": "Agents you own",               "section": "C5",  "fig": 5,  "alt": "TODO(konrad)", "blurb": "TODO(konrad)"},
-  {"id": "wallets",   "name": "Agent Safe and cold storage",  "section": "C6",  "fig": 6,  "alt": "TODO(konrad)", "blurb": "TODO(konrad)"},
-  {"id": "guardian",  "name": "The Transaction Guardian",     "section": "C7",  "fig": 7,  "alt": "TODO(konrad)", "blurb": "TODO(konrad)"},
-  {"id": "approve",   "name": "The approve key",              "section": "C7",  "fig": 8,  "alt": "TODO(konrad)", "blurb": "TODO(konrad)"},
-  {"id": "nownodes",  "name": "100+ chains through NOWNodes", "section": "C8",  "fig": 9,  "alt": "TODO(konrad)", "blurb": "TODO(konrad)"},
-  {"id": "brain",     "name": "Your second brain",            "section": "C5",  "fig": 10, "alt": "TODO(konrad)", "blurb": "TODO(konrad)"},
-  {"id": "opensource","name": "Open source, your own server", "section": "C10", "fig": 11, "alt": "TODO(konrad)", "blurb": "TODO(konrad)"},
-  {"id": "receipt",   "name": "A numbered receipt onchain",   "section": "C9",  "fig": 12, "alt": "TODO(konrad)", "blurb": "TODO(konrad)"}
+  {"id": "wearable", "name": "The wearable computer", "section": "C1", "fig": 1, "alt": "Engraving of a small computer with a display, worn on a strap.", "blurb": "A Raspberry Pi in a sling, display glasses and earbuds. Your agents, your wallet and your notes, worn rather than opened."},
+  {"id": "talk", "name": "Push-to-talk", "section": "C2", "fig": 2, "alt": "Engraving of a push button wired to a small microphone.", "blurb": "Hold the talk key, speak, release. Your words become text and go to your agents; the answer comes back in your ears and as a line in your glasses."},
+  {"id": "camera", "name": "On-command camera and memos", "section": "C3", "fig": 3, "alt": "Engraving of a camera lens with a closed aperture.", "blurb": "A clip-on camera and a memo button. Photos, clips and voice notes only when you press, with a red light facing outward while it's on."},
+  {"id": "dashboard", "name": "The Argo dashboard", "section": "C4", "fig": 4, "alt": "Engraving of a screen divided into columns of cards.", "blurb": "Talk, agents, approvals, transactions, wallets and more, in your glasses. Switch panels by voice, by a button or with keys 1 to 9."},
+  {"id": "agents", "name": "Agents you own", "section": "C5", "fig": 5, "alt": "Engraving of three linked circles.", "blurb": "Six open-source Hermes agents on your own server: a librarian, a researcher, wallet, trader and portfolio agents, and a builder. They share a kanban board, not your keys."},
+  {"id": "wallets", "name": "Agent Safe and cold storage", "section": "C6", "fig": 6, "alt": "Engraving of a safe with a combination dial.", "blurb": "The agents work from a capped Safe smart account. Your savings sit with a cold key that never goes online and owns everything, including the power to cut the agent off."},
+  {"id": "guardian", "name": "The Transaction Guardian", "section": "C7", "fig": 7, "alt": "Engraving of a shield, half hatched.", "blurb": "Every proposed transaction is simulated against live Ethereum state, checked against rules the agent can't see, and approved onchain for that exact transaction only. A Chainlink CRE workflow, in simulation today."},
+  {"id": "approve", "name": "The approve key", "section": "C7", "fig": 8, "alt": "Engraving of an old key.", "blurb": "A lit mechanical keyswitch on the deck. It blinks when a checked transaction is waiting; you hear what it does, then press once. Hold it with the mic key to freeze the wallet."},
+  {"id": "nownodes", "name": "Every chain call through NOWNodes", "section": "C8", "fig": 9, "alt": "Engraving of a hub with many radiating spokes.", "blurb": "Simulation, broadcast and balances on Ethereum, Base, Arbitrum and Polygon through one NOWNodes key, with more than 100 networks behind it."},
+  {"id": "brain", "name": "Your second brain", "section": "C5", "fig": 10, "alt": "Engraving of an open book.", "blurb": "Memos, photos and notes are filed into a plain-markdown second brain your agents can read and answer from. Notes stop being write-only."},
+  {"id": "opensource", "name": "Open source, your own server", "section": "C10", "fig": 11, "alt": "Engraving of a rack of servers.", "blurb": "MIT-licensed, on GitHub: the deck, the Guardian, the Safe module and the pre-order contract. Your agents run on your server, with the models you choose."},
+  {"id": "receipt", "name": "A numbered receipt onchain", "section": "C9", "fig": 12, "alt": "Engraving of a seal with a serrated edge.", "blurb": "Your pre-order mints Argo Exo · Apparatus No. N to your wallet, with your device number engraved onchain."}
 ]

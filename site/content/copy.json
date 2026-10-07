@@ -1,36 +1,164 @@
 {
   "title": "Argo Exo",
-  "hero": {"kicker": "TODO(konrad)", "headline": "TODO(konrad)", "lede": "TODO(konrad)", "cta": "Pre-order"},
+  "hero": {
+    "kicker": "A wearable computer, run by agents you own",
+    "headline": "Your agents can propose anything. Only your rules and your finger move the money.",
+    "lede": "Exo is a computer you wear: display glasses, earbuds and a few keys on a sling. Hold a button and speak to your own open-source agents. Every transaction they propose is simulated, checked against your rules by a Chainlink CRE workflow, explained in your ear, and sent only when you press the approve key.",
+    "cta": "Pre-order"
+  },
   "contents_heading": "Contents",
   "sections": {
-    "features": {"numeral": "I", "heading": "TODO(konrad)", "intro": "TODO(konrad)"},
-    "kit": {"numeral": "II", "heading": "TODO(konrad)", "intro": "TODO(konrad)"},
-    "preorder": {"numeral": "III", "heading": "TODO(konrad)", "intro": "TODO(konrad)", "agree": "TODO(konrad)"},
-    "faq": {"numeral": "IV", "heading": "TODO(konrad)", "items": [{"q": "TODO(konrad)", "a": "TODO(konrad)"}]}
+    "features": {
+      "numeral": "I",
+      "heading": "The Apparatus",
+      "intro": "Twelve parts of one idea: hand the routine to AI agents without handing over your keys, and without being stuck at a screen. Some of it you wear, some of it runs on a server you own, and some of it lives onchain where no one can quietly change it."
+    },
+    "kit": {
+      "numeral": "II",
+      "heading": "The Kits",
+      "intro": "Exo ships fully assembled, tested button by button, and numbered. Choose the deck alone if you already own compatible glasses, or the complete kit. Prices are set in the pre-order contract and appear here the moment it opens. Until then, nothing on this page is a price."
+    },
+    "preorder": {
+      "numeral": "III",
+      "heading": "The Pre-order",
+      "intro": "Pay in USDC on Base from your own wallet. In the same transaction you receive an onchain receipt, Argo Exo · Apparatus No. N, where N is your device number, in the order the pre-orders arrive. Your wallet signs a maximum price, so the price can't change under you between the click and the block.",
+      "agree": "I've read the terms and understand Exo is new hardware, still in development, and that its Guardian runs in Chainlink's CRE simulator today."
+    },
+    "faq": {
+      "numeral": "IV",
+      "heading": "Questions",
+      "items": [
+        {
+          "q": "Can the AI agent spend my money?",
+          "a": "No. The agents can only propose a transaction. A Chainlink CRE workflow simulates it, checks it against your rules and writes an approval for that exact transaction onchain. Then you press the approve key. The key on the device holds only gas, and your savings sit with a cold key that never goes online."
+        },
+        {
+          "q": "What does the Guardian refuse?",
+          "a": "Anything over your limits, payments to strangers above your threshold, unlimited token approvals, approvals to unknown contracts, setApprovalForAll, anything built from a camera photo, anything that reverts, and anything whose effects don't match what the agent said it would do. Today it also refuses swaps, marketplace purchases and votes, because it doesn't decode those functions yet. It refuses what it doesn't understand."
+        },
+        {
+          "q": "Is it live on Ethereum mainnet?",
+          "a": "The Guardian runs in Chainlink's CRE simulator against live mainnet data, and has approved and refused real transactions there. It isn't deployed to a Chainlink DON or a TEE yet. We'll say so plainly until it is."
+        },
+        {
+          "q": "Does it record all the time?",
+          "a": "No. The camera takes a photo or a clip only when you press its button, and the microphone listens only while you hold talk or record a memo. A red light faces outward whenever either is on."
+        },
+        {
+          "q": "What else do I need?",
+          "a": "Your own Hermes agent server (a small cloud server is enough), a Deepgram key for speech, display glasses that take a USB-C DisplayPort signal (or the complete kit, which includes them) and a wallet with USDC on Base."
+        },
+        {
+          "q": "Is it open source?",
+          "a": "Yes. The deck, the Guardian workflow, the Safe module, the pre-order contract and the wiring guide are MIT-licensed on GitHub. You can read every line that touches your wallet, and run all of it without us."
+        },
+        {
+          "q": "When does it ship?",
+          "a": "Exo is built by hand in small batches. We'll email every holder a shipping window before their batch is built. We won't promise a date we can't keep."
+        }
+      ]
+    }
   },
-  "states": {"opening_soon": "Subscriptions open shortly", "reading_receipt": "Reading the receipt…",
-             "paused": "TODO(konrad)", "sold_out": "TODO(konrad)", "unavailable": "TODO(konrad)"},
-  "checkout": {"edition": "TODO(konrad)", "agree_first": "TODO(konrad)", "no_wallet": "TODO(konrad)",
-               "wrong_chain": "TODO(konrad)", "cancelled": "TODO(konrad)", "price_changed": "TODO(konrad)",
-               "not_open": "TODO(konrad)", "low_balance": "TODO(konrad)", "checking": "TODO(konrad)",
-               "signing_permit": "TODO(konrad)", "approving": "TODO(konrad)", "approving_wait": "TODO(konrad)",
-               "confirm_preorder": "TODO(konrad)", "confirming": "TODO(konrad)", "still_waiting": "TODO(konrad)",
-               "approved_click_again": "TODO(konrad)", "resuming": "TODO(konrad)", "unconfirmed": "TODO(konrad)",
-               "failed": "TODO(konrad)", "replaced": "TODO(konrad)", "reverted": "TODO(konrad)", "rpc": "TODO(konrad)",
-               "wallet_error": "TODO(konrad)", "approve_failed": "TODO(konrad)"},
-  "receipt": {"claim_intro": "TODO(konrad)", "submit": "Sign and save", "heading": "TODO(konrad)",
-              "number_label": "TODO(konrad)", "nft_note": "TODO(konrad)", "tx_link": "TODO(konrad)",
-              "no_number": "TODO(konrad)", "saved": "TODO(konrad)"},
-  "terms": {"refund": "TODO(konrad)", "payment": "TODO(konrad)", "shipping": "TODO(konrad)",
-            "receipt": "TODO(konrad)", "price": "TODO(konrad)", "countries": ["TODO(konrad)"]},
+  "states": {
+    "opening_soon": "Subscriptions open shortly",
+    "reading_receipt": "Reading the receipt…",
+    "paused": "The pre-order is paused for a moment. Nothing was charged.",
+    "sold_out": "This edition is fully subscribed.",
+    "unavailable": "The pre-order can't be reached just now. Please try again shortly."
+  },
+  "checkout": {
+    "edition": "No. {minted} of {max} subscribed",
+    "agree_first": "Please read and accept the terms first.",
+    "no_wallet": "No wallet found. Open this page in a browser with an Ethereum wallet.",
+    "wrong_chain": "Please switch your wallet to Base.",
+    "cancelled": "Cancelled in your wallet. Nothing was charged.",
+    "price_changed": "The price changed before your transaction landed, so nothing was charged. Please check the new price.",
+    "not_open": "This kit isn't open for pre-order yet.",
+    "low_balance": "Your wallet doesn't hold enough USDC on Base for this kit.",
+    "checking": "Checking the price and your balance…",
+    "signing_permit": "Sign the USDC permit in your wallet. It approves this one payment only.",
+    "approving": "Approve exactly this amount of USDC in your wallet.",
+    "approving_wait": "Waiting for the approval to land…",
+    "confirm_preorder": "Confirm the pre-order in your wallet.",
+    "confirming": "Waiting for Base to confirm your pre-order…",
+    "still_waiting": "Still waiting for the network. You can leave this page open; nothing will be charged twice.",
+    "approved_click_again": "Your USDC approval landed. Press Pre-order again to finish.",
+    "resuming": "Picking up your pre-order where it left off…",
+    "unconfirmed": "We couldn't confirm the pre-order yet. Check your wallet's activity before trying again.",
+    "failed": "Something went wrong. Nothing was charged unless your wallet shows a completed pre-order.",
+    "replaced": "Your wallet replaced the transaction. Check its activity before trying again.",
+    "reverted": "The transaction was reverted, so nothing was charged.",
+    "rpc": "We couldn't reach the Base network. Please try again in a moment.",
+    "wallet_error": "Your wallet reported an error. Nothing was charged.",
+    "approve_failed": "The USDC approval didn't go through. Nothing was charged."
+  },
+  "receipt": {
+    "claim_intro": "Tell us where to ship your Exo. Your wallet signs these details to prove you hold this receipt. They're stored on our server only, never onchain.",
+    "submit": "Sign and save",
+    "heading": "Argo Exo · Apparatus",
+    "number_label": "No.",
+    "nft_note": "Your receipt is an NFT in your wallet. Whoever holds it when your batch ships receives the device.",
+    "tx_link": "View the transaction",
+    "no_number": "This receipt number isn't valid.",
+    "saved": "Saved. We'll email you before your batch is built."
+  },
+  "terms": {
+    "refund": "Until your Exo ships, you can cancel for a full refund of the USDC you paid, sent to the wallet that holds the receipt. The receipt is burned and its number retired. After shipping, a faulty device is repaired or replaced.",
+    "payment": "Payment is in USDC on Base only, from your own wallet. The price is read from the pre-order contract at the moment you buy, and your wallet signs a maximum price so you can never be charged more than you saw. You pay the network fee.",
+    "shipping": "Each Exo is assembled by hand in small batches. We email every holder a shipping window before their batch is built. Shipping, import duty and local taxes are paid by the buyer and quoted before dispatch.",
+    "receipt": "An ERC-721 token, Argo Exo · Apparatus No. N, minted to your wallet in the same transaction as your payment. It's transferable: whoever holds it when your batch ships receives the device.",
+    "price": "Set per kit in the contract. Shown on the page only after it's read from the chain.",
+    "countries": [
+      "Singapore",
+      "Japan",
+      "Malaysia",
+      "Thailand",
+      "Indonesia",
+      "South Korea",
+      "Hong Kong",
+      "Taiwan",
+      "Australia",
+      "United Arab Emirates",
+      "United Kingdom",
+      "Germany",
+      "France",
+      "Netherlands",
+      "Portugal",
+      "Spain",
+      "Switzerland",
+      "United States",
+      "Canada"
+    ]
+  },
   "labels": {
-    "skip": "Skip to the text", "footer_nav": "Colophon", "terms_link": "Terms of the pre-order",
-    "source_link": "Source", "argo_link": "Argo", "emblem_alt": "Argo", "terms_emblem_alt": "Argo, back to the pre-order",
-    "receipt_title": "Receipt", "claim_number": "No.", "name": "Name", "email": "Email", "country": "Shipping country",
-    "terms_title": "Terms of the Pre-order", "refunds": "Refunds", "payment": "Payment", "shipping": "Shipping",
-    "shipping_countries": "Shipping countries", "network": "Network", "chain_id": "chain ID",
-    "contract": "Contract", "receipt": "Receipt", "price": "Price",
-    "blog_link": "Field notes", "blog_title": "Field Notes", "blog_back": "All field notes"
+    "skip": "Skip to the text",
+    "footer_nav": "Colophon",
+    "terms_link": "Terms of the pre-order",
+    "source_link": "Source",
+    "argo_link": "Argo",
+    "emblem_alt": "Argo",
+    "terms_emblem_alt": "Argo, back to the pre-order",
+    "receipt_title": "Receipt",
+    "claim_number": "No.",
+    "name": "Name",
+    "email": "Email",
+    "country": "Shipping country",
+    "terms_title": "Terms of the Pre-order",
+    "refunds": "Refunds",
+    "payment": "Payment",
+    "shipping": "Shipping",
+    "shipping_countries": "Shipping countries",
+    "network": "Network",
+    "chain_id": "chain ID",
+    "contract": "Contract",
+    "receipt": "Receipt",
+    "price": "Price",
+    "blog_link": "Field notes",
+    "blog_title": "Field Notes",
+    "blog_back": "All field notes",
+    "renders_heading": "Concept renders",
+    "renders_note": "How the printed parts are meant to look. These are generated renders, not photographs; the people are invented.",
+    "renders_link": "Read about the design"
   },
-  "colophon": "TODO(konrad)"
+  "colophon": "Argo Exo was built at the TOKEN2049 Origins hackathon in Singapore, October 2026. Set in Newsreader. Nothing here is financial advice."
 }

@@ -225,3 +225,8 @@ footer.colophon nav a { margin: 0 6px; }
 @media (min-width: 1000px) {
   .prose .post-fig.wide { margin-left: -90px; margin-right: -90px; } /* wide plates bleed past the text measure on big screens */
 }
+
+/* concept renders band on the landing page: photographs, so never inverted in the evening scheme */
+.renders .render-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 18px; }
+.renders .render-grid img { display: block; width: 100%; height: 100%; object-fit: cover; border: 1px solid var(--rule-soft); }
+.renders .render-grid .render-wide { grid-column: 1 / -1; height: auto; }
