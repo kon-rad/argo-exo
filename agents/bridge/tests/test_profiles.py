@@ -41,3 +41,51 @@ def test_scripts_keep_the_constraints():
     assert "EXO_BRIDGE_HOST=$TS_IP" in bridge  # never a wildcard or public IP
     assert "umask 077" in bridge and "chmod 600" in bridge
     assert "echo $TOKEN" not in bridge and 'echo "$TOKEN"' not in bridge
+
+
+def _run_install(tmp_path, *args):
+    import os
+    import subprocess
+    home = tmp_path / "home"
+    for d in ("argo-wallet", "researcher"):
+        (home / "profiles" / d).mkdir(parents=True)
+        (home / "profiles" / d / "SOUL.md").write_text("old")
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    log = tmp_path / "calls.log"
+    stub = bindir / "hermes"
+    stub.write_text(f"""#!/usr/bin/env bash
+echo "$@" >> {log}
+[[ "$*" == *--help* ]] && exit 0
+if [[ "$1 $2" == "profile create" ]]; then mkdir -p "{home}/profiles/${{@: -1}}"; fi
+if [[ "$1 $2 $3" == "kanban boards list" ]]; then echo "exo-old"; fi
+exit 0
+""")
+    stub.chmod(0o755)
+    env = {**os.environ, "PATH": f"{bindir}:{os.environ['PATH']}", "HERMES_HOME": str(home)}
+    r = subprocess.run(["bash", str(AGENTS / "install-profiles.sh"), *args], env=env, capture_output=True, text=True)
+    return r, home, log.read_text()
+
+
+def test_install_profiles_checks_directory_not_table(tmp_path):
+    r, home, calls = _run_install(tmp_path)
+    assert r.returncode == 0, r.stderr
+    assert "profile create --no-alias" in calls and "wallet" in calls
+    assert (home / "profiles" / "wallet" / "SOUL.md").read_text().startswith("# wallet")
+    assert (home / "profiles" / "researcher" / "SOUL.md").read_text() == "old"
+    assert "create --no-alias --description Reads balances" in calls
+    assert "boards create exo" in calls  # exo-old must not satisfy the check
+
+
+def test_install_profiles_force_backs_up(tmp_path):
+    r, home, _ = _run_install(tmp_path, "--force")
+    assert r.returncode == 0, r.stderr
+    assert (home / "profiles" / "researcher" / "SOUL.md").read_text().startswith("# researcher")
+    assert list((home / "profiles" / "researcher").glob("SOUL.md.bak-*"))
+
+
+def test_bridge_deps_are_pinned():
+    reqs = (AGENTS / "bridge" / "requirements.txt").read_text().lower()
+    for pkg in ("flask", "waitress", "requests"):
+        assert f"{pkg}==" in reqs
+    assert "requirements.txt" in (AGENTS / "install-bridge.sh").read_text()

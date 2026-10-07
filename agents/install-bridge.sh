@@ -17,7 +17,7 @@ grep -q '^API_SERVER_KEY=' "$HERMES_ENV" 2>/dev/null || die "API_SERVER_KEY miss
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 python3 -m venv "$HOME/.venvs/exo-bridge"
-"$HOME/.venvs/exo-bridge/bin/pip" install -q flask waitress requests
+"$HOME/.venvs/exo-bridge/bin/pip" install -q -r "$REPO/agents/bridge/requirements.txt"
 
 mkdir -p "$HOME/.config/exo" && chmod 700 "$HOME/.config/exo"
 ENV="$HOME/.config/exo/bridge.env"
@@ -27,6 +27,7 @@ else
   umask 077
   TOKEN="$(openssl rand -hex 32)"
   KEY="$(grep '^API_SERVER_KEY=' "$HERMES_ENV" | head -1 | cut -d= -f2-)"
+  KEY="${KEY%\"}"; KEY="${KEY#\"}"; KEY="${KEY%\'}"; KEY="${KEY#\'}"
   {
     echo "EXO_BRIDGE_TOKEN=$TOKEN"
     echo "EXO_BRIDGE_HOST=$TS_IP"

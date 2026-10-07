@@ -17,7 +17,7 @@
 1. Install Tailscale on the droplet and join the tailnet (`install-bridge.sh` refuses without it).
 2. Config (vault `.hermes/server/config.yaml`, symlinked on the droplet): add `platforms.api_server` (`enabled: true`, `extra.host: 127.0.0.1`, `extra.port: 8642`) and `kanban.max_in_progress: 1`. Confirm the key names with `hermes config --help` / `hermes gateway --help` first.
 3. As `hermes`: add `API_SERVER_KEY` (`openssl rand -hex 32`) and `API_SERVER_HOST=127.0.0.1` to `~/.hermes/.env` if absent.
-4. Restart the existing gateway once: `hermes gateway restart`. Never `hermes gateway start` a second one.
+4. Restart the existing gateway once: `hermes gateway restart`. Never `hermes gateway start` a second one.  Each profile has its own gateway (default running, others stopped); never start a profile's gateway.
 5. `bash agents/install-profiles.sh` (existing profiles, including `researcher`, are skipped; `--force` backs up SOUL.md then replaces).
 6. `bash agents/install-bridge.sh`, fill `EXO_TELEGRAM_CHAT_ID` (and `EXO_LEDGER_WRITER_DSN` once the ledger exists) in `~/.config/exo/bridge.env`.
 7. The sudo commands the script prints (install unit, enable, check `ss -ltnp`).
