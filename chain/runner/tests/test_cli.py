@@ -67,3 +67,23 @@ def test_usage_errors_are_2(argv, env):
 def test_cli_never_touches_the_ledger():
     src = (Path(cli.__file__)).read_text()
     assert "DSN" not in src and "PgStore" not in src and "psycopg" not in src and "service" not in src
+
+
+def test_guard_uses_the_narrow_token(capsys):
+    b = FakeBridge()
+    env = dict(ENV, EXO_GUARD_TOKEN="g" * 40)
+    assert cli.main(["guard", json.dumps(REQ)], env=env, post=b) == 0
+    assert b.calls[0][1]["headers"] == {"Authorization": "Bearer " + "g" * 40}
+    assert "falling back" not in capsys.readouterr().err
+
+
+def test_guard_falls_back_to_the_full_token_with_a_warning(capsys):
+    b = FakeBridge()
+    assert cli.main(["guard", json.dumps(REQ)], env=ENV, post=b) == 0
+    assert b.calls[0][1]["headers"] == {"Authorization": "Bearer " + "t" * 40}
+    err = capsys.readouterr().err
+    assert "EXO_GUARD_TOKEN is unset" in err and "t" * 40 not in err
+
+
+def test_guard_with_no_token_is_usage_error():
+    assert cli.main(["guard", json.dumps(REQ)], env={"EXO_BRIDGE_URL": "http://x"}, post=FakeBridge()) == 2

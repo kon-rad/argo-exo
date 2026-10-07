@@ -125,3 +125,58 @@ def test_existing_routes_still_work_without_blueprints():
     cl = create_app(Config.from_env(ENV), None, None).test_client()
     assert cl.get("/health").json == {"ok": True}
     assert cl.get("/approvals/pending", headers=AUTH).status_code == 404
+
+
+GUARD_TOKEN = "g" * 40
+
+
+def _guard_client(g=None):
+    from flask import Blueprint
+    cfg = Config.from_env(dict(ENV, EXO_GUARD_TOKEN=GUARD_TOKEN))
+    bp = Blueprint("ext", __name__)
+
+    @bp.get("/ext")
+    def ext():
+        return {"ok": True}
+
+    class K:
+        def list(self):
+            return []
+
+        def create(self, *a):
+            return {"id": "t"}
+
+    class T:
+        def ask(self, *a):
+            return "hi"
+    return create_app(cfg, K(), T(), blueprints=(guardian_blueprint(g or FakeGuardian()), bp)).test_client()
+
+
+def test_guard_token_opens_guard_only():
+    cl, narrow = _guard_client(), {"Authorization": f"Bearer {GUARD_TOKEN}"}
+    assert cl.post("/guard", json={"tx": {}, "from": "0x1"}, headers=narrow).status_code == 200
+    assert cl.post("/freeze", json={}, headers=narrow).status_code == 401
+    assert cl.post(f"/approvals/{PID}/executed", json={}, headers=narrow).status_code == 401
+    assert cl.get("/approvals/pending", headers=narrow).status_code == 401
+    assert cl.post("/talk", json={"text": "x"}, headers=narrow).status_code == 401
+    assert cl.post("/tasks", json={"text": "x", "agent": "wallet"}, headers=narrow).status_code == 401
+    assert cl.get("/board", headers=narrow).status_code == 401
+    assert cl.get("/ext", headers=narrow).status_code == 401
+    assert cl.get("/guard", headers=narrow).status_code in (401, 405)  # wrong method never reaches a handler
+
+
+def test_full_token_still_works_everywhere_and_junk_is_rejected():
+    cl = _guard_client()
+    assert cl.post("/guard", json={"tx": {}, "from": "0x1"}, headers=AUTH).status_code == 200
+    assert cl.post("/freeze", json={}, headers=AUTH).status_code == 200
+    assert cl.post("/guard", json={"tx": {}}, headers={"Authorization": "Bearer nope"}).status_code == 401
+    assert cl.post("/guard", json={"tx": {}}).status_code == 401
+
+
+def test_guard_token_is_optional_and_validated():
+    assert Config.from_env(ENV).guard_token == ""
+    cl = c(FakeGuardian())  # no guard token configured: it is simply not accepted
+    assert cl.post("/guard", json={"tx": {}}, headers={"Authorization": f"Bearer {GUARD_TOKEN}"}).status_code == 401
+    for bad in ("short", TOKEN):
+        with pytest.raises(ValueError):
+            Config.from_env(dict(ENV, EXO_GUARD_TOKEN=bad))

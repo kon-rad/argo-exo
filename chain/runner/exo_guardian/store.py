@@ -13,7 +13,7 @@ from contextlib import contextmanager
 from typing import Iterator, Protocol
 
 STATUSES = ("proposed", "refused", "simulated", "waiting_key", "executed", "failed")
-REAL_TX = re.compile(r"^0x(?!0{64}$)[0-9a-f]{64}$")
+REAL_TX = re.compile(r"0x(?!0{64}\Z)[0-9a-f]{64}")
 DAY = 86_400
 GUARD_LOCK_KEY = 0x45584F4755415244   # "EXOGUARD": the one advisory lock every guard call holds
 GUARD_LOCK_TIMEOUT_S = 300            # longer than one simulation (240 s); a stuck holder fails the next guard
@@ -21,7 +21,7 @@ GUARD_LOCK_TIMEOUT_S = 300            # longer than one simulation (240 s); a st
 
 def is_real_tx(h) -> bool:
     """A 32-byte tx hash that isn't the zero hash a dry run returns."""
-    return isinstance(h, str) and bool(REAL_TX.match(h.lower()))
+    return isinstance(h, str) and bool(REAL_TX.fullmatch(h.lower()))
 
 
 def queueable(result: dict) -> bool:

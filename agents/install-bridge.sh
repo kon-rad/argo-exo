@@ -26,10 +26,14 @@ if [[ -f "$ENV" ]]; then
 else
   umask 077
   TOKEN="$(openssl rand -hex 32)"
+  GUARD_TOKEN="$(openssl rand -hex 32)"
   KEY="$(grep '^API_SERVER_KEY=' "$HERMES_ENV" | head -1 | cut -d= -f2-)"
   KEY="${KEY%\"}"; KEY="${KEY#\"}"; KEY="${KEY%\'}"; KEY="${KEY#\'}"
   {
     echo "EXO_BRIDGE_TOKEN=$TOKEN"
+    echo "# Narrow token: opens POST /guard only. This (with EXO_BRIDGE_URL and EXO_SAFE) is the ONLY bridge secret"
+    echo "# that goes into the Hermes env for the exo-wallet skill; never EXO_BRIDGE_TOKEN."
+    echo "EXO_GUARD_TOKEN=$GUARD_TOKEN"
     echo "EXO_BRIDGE_HOST=$TS_IP"
     echo "EXO_BRIDGE_PORT=8765"
     echo "EXO_BOARD=exo"
@@ -44,8 +48,8 @@ else
     echo "# PYTHONPATH=$REPO/chain/runner"
   } > "$ENV"
   chmod 600 "$ENV"
-  unset TOKEN KEY
-  echo "wrote $ENV (mode 600). Fill EXO_TELEGRAM_CHAT_ID and EXO_LEDGER_WRITER_DSN there; copy EXO_BRIDGE_TOKEN to the deck's .env by hand."
+  unset TOKEN GUARD_TOKEN KEY
+  echo "wrote $ENV (mode 600). Fill EXO_TELEGRAM_CHAT_ID and EXO_LEDGER_WRITER_DSN there; copy EXO_BRIDGE_TOKEN to the deck's .env by hand. Only EXO_GUARD_TOKEN, EXO_BRIDGE_URL and EXO_SAFE go into the Hermes env."
 fi
 
 [[ -e "$HOME/argo-exo" ]] || ln -s "$REPO" "$HOME/argo-exo"

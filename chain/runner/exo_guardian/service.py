@@ -24,10 +24,10 @@ from .store import is_real_tx
 
 log = logging.getLogger("exo-guardian")
 
-ADDRESS = re.compile(r"^0x[0-9a-fA-F]{40}$")
-HEXBYTES = re.compile(r"^0x(?:[0-9a-fA-F]{2})*$")
-HASH = re.compile(r"^0x[0-9a-fA-F]{64}$")
-UINT = re.compile(r"^\d{1,78}$")
+ADDRESS = re.compile(r"0x[0-9a-fA-F]{40}")
+HEXBYTES = re.compile(r"0x(?:[0-9a-fA-F]{2})*")
+HASH = re.compile(r"0x[0-9a-fA-F]{64}")
+UINT = re.compile(r"[0-9]{1,78}")
 UINT256_MAX = 2 ** 256 - 1
 # The intent fields the workflow's GuardRequestSchema reads, with its length caps.
 INTENT_FIELDS = {"kind": 32, "summary": 500, "token": 64, "amount": 80, "to": 64}
@@ -56,18 +56,18 @@ def _parse_request(req) -> dict:
     if not isinstance(tx, dict):
         raise InvalidRequest("tx required")
     to, value, data, chain_id = tx.get("to"), tx.get("value", "0"), tx.get("data", "0x"), tx.get("chain_id")
-    if not isinstance(to, str) or not ADDRESS.match(to):
+    if not isinstance(to, str) or not ADDRESS.fullmatch(to):
         raise InvalidRequest("tx.to must be a 0x address")
-    if isinstance(value, bool) or not ((isinstance(value, str) and UINT.match(value)) or (isinstance(value, int) and value >= 0)):
+    if isinstance(value, bool) or not ((isinstance(value, str) and UINT.fullmatch(value)) or (isinstance(value, int) and value >= 0)):
         raise InvalidRequest("tx.value must be a decimal wei amount")
     value = int(value)
     if value > UINT256_MAX:
         raise InvalidRequest("tx.value exceeds uint256")
-    if not isinstance(data, str) or not HEXBYTES.match(data):
+    if not isinstance(data, str) or not HEXBYTES.fullmatch(data):
         raise InvalidRequest("tx.data must be 0x-prefixed hex bytes")
     if isinstance(chain_id, bool) or not isinstance(chain_id, int) or chain_id <= 0:
         raise InvalidRequest("tx.chain_id must be a positive integer")
-    if not isinstance(frm, str) or not ADDRESS.match(frm):
+    if not isinstance(frm, str) or not ADDRESS.fullmatch(frm):
         raise InvalidRequest("from must be a 0x address")
     if not isinstance(source, str) or len(source) > 100:
         raise InvalidRequest("source must be a string")
@@ -105,7 +105,7 @@ class Guardian:
         if module is None or chain_id is None:
             cid, mod = workflow_binding()
             module, chain_id = module or mod, chain_id or cid
-        if not ADDRESS.match(module):
+        if not ADDRESS.fullmatch(module):
             raise ValueError("module must be a 0x address")
         self.store, self.simulate, self.clock, self.salt = store, simulate, clock, salt
         self.module, self.chain_id, self.broadcast = module.lower(), int(chain_id), bool(broadcast)
@@ -152,7 +152,7 @@ class Guardian:
             return self._record(pid, result, ms, "refused")
         expected = "0x" + approval_hash(self.chain_id, self.module, tx["to"], int(tx["value"]),
                                         bytes.fromhex(tx["data"][2:]), bytes(salt)).hex()
-        if not HASH.match(result["tx_hash"]) or result["tx_hash"].lower() != expected:
+        if not HASH.fullmatch(result["tx_hash"]) or result["tx_hash"].lower() != expected:
             log.warning("guard %s: approval hash mismatch", pid)
             return self._refuse(pid, ms, ["approval hash mismatch"],
                                 "Refused: the Guardian's approval did not match this transaction.", base=result)
@@ -199,7 +199,7 @@ class Guardian:
         if (tx_hash is None) == (error is None):
             raise InvalidRequest("send exactly one of tx_hash or error")
         if tx_hash is not None:
-            if not isinstance(tx_hash, str) or not HASH.match(tx_hash):
+            if not isinstance(tx_hash, str) or not HASH.fullmatch(tx_hash):
                 raise InvalidRequest("tx_hash must be a 32-byte 0x hash")
             return self.store.mark_executed(pid, tx_hash.lower())
         if not isinstance(error, str) or not error.strip():

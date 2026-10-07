@@ -41,6 +41,8 @@ def test_scripts_keep_the_constraints():
     assert "EXO_BRIDGE_HOST=$TS_IP" in bridge  # never a wildcard or public IP
     assert "umask 077" in bridge and "chmod 600" in bridge
     assert "echo $TOKEN" not in bridge and 'echo "$TOKEN"' not in bridge
+    assert "EXO_GUARD_TOKEN=$GUARD_TOKEN" in bridge and 'echo "$GUARD_TOKEN"' not in bridge and "unset TOKEN GUARD_TOKEN" in bridge
+    assert "EXO_GUARD_TOKEN" in (AGENTS / "docs" / "board-conventions.md").read_text()
 
 
 def _run_install(tmp_path, *args):

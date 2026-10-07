@@ -9,7 +9,7 @@
 - Every bridge-created task has `--max-runtime 30m` and a Telegram home subscription.
 - Money agents (trader, portfolio, wallet) never sign; their output is a Guardian request.
 - `kanban.max_in_progress: 1` on a small server: one worker process at a time.
-- No profile or skill holds a database DSN. The ledger writer DSN lives only in the bridge env file; skills reach the Guardian via `EXO_BRIDGE_URL` / `EXO_BRIDGE_TOKEN`.
+- No profile or skill holds a database DSN. The ledger writer DSN lives only in the bridge env file; skills reach the Guardian via `EXO_BRIDGE_URL` / `EXO_GUARD_TOKEN`. `EXO_GUARD_TOKEN` is a narrow bridge token that opens `POST /guard` only; `EXO_BRIDGE_TOKEN` (freeze, executed, talk, tasks, board) must never go into the Hermes env, because any agent can read that env. Only `EXO_GUARD_TOKEN`, `EXO_BRIDGE_URL` and `EXO_SAFE` do.
 - `api_server` and `hermes dashboard` stay on `127.0.0.1`; only `exo-bridge` binds the tailnet IP.
 
 ## Droplet runbook (Konrad runs these, in order; nothing here has been run)

@@ -348,3 +348,17 @@ def test_concurrent_guards_cannot_both_spend_the_cap(store):
         t.join()
     assert sorted(r["verdict"] for r in results) == ["approve", "refuse"]
     assert len(guardian(store, Sim()).pending()) == 1
+
+
+@pytest.mark.parametrize("patch", [
+    {"to": "0x" + "a" * 40 + "\n"}, {"value": "5\n"}, {"value": "١٢"}, {"data": "0xab\n"}])
+def test_validators_reject_trailing_newline_and_non_ascii_digits(store, patch):
+    sim = Sim()
+    with pytest.raises(InvalidRequest):
+        guardian(store, sim).guard(dict(REQ, tx=dict(REQ["tx"], **patch)))
+    assert sim.calls == []
+
+
+def test_from_with_trailing_newline_rejected(store):
+    with pytest.raises(InvalidRequest):
+        guardian(store, Sim()).guard(dict(REQ, **{"from": SAFE + "\n"}))

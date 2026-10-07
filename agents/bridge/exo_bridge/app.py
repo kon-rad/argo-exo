@@ -30,6 +30,7 @@ def create_app(cfg: Config, kanban, talker, blueprints=()) -> Flask:
     app = Flask("exo-bridge")
     app.config["MAX_CONTENT_LENGTH"] = MAX_BODY_BYTES
     expected = f"Bearer {cfg.token}".encode()
+    guard_expected = f"Bearer {cfg.guard_token}".encode() if cfg.guard_token else None
 
     def authed(fn):
         @wraps(fn)
@@ -39,7 +40,11 @@ def create_app(cfg: Config, kanban, talker, blueprints=()) -> Flask:
 
     def _gate():
         got = request.headers.get("Authorization", "").encode()
-        if not hmac.compare_digest(got, expected):
+        ok = hmac.compare_digest(got, expected)
+        # The narrow guard token (the only one agents hold) opens POST /guard and nothing else.
+        if guard_expected is not None and request.method == "POST" and request.path == "/guard":
+            ok = hmac.compare_digest(got, guard_expected) or ok
+        if not ok:
             return jsonify(error="unauthorized"), 401
         return None
 

@@ -1,6 +1,6 @@
 """The Hermes `exo-wallet` skill's entry point to the Guardian, on the droplet:
 
-    EXO_BRIDGE_URL=http://<tailnet ip>:8765 EXO_BRIDGE_TOKEN=... python -m exo_guardian.cli guard '<request json>'
+    EXO_BRIDGE_URL=http://<tailnet ip>:8765 EXO_GUARD_TOKEN=... python -m exo_guardian.cli guard '<request json>'
 
 It POSTs the request to exo-bridge's /guard and prints the bridge's JSON. The skill never holds the ledger
 credentials or decides broadcast: those live only in the bridge's env, behind its bearer token.
@@ -30,9 +30,15 @@ def main(argv, env=os.environ, post=requests.post) -> int:
     if not isinstance(req, dict):
         print("guard: the request must be a JSON object", file=sys.stderr)
         return 2
-    url, token = env.get("EXO_BRIDGE_URL", "").rstrip("/"), env.get("EXO_BRIDGE_TOKEN", "")
+    url = env.get("EXO_BRIDGE_URL", "").rstrip("/")
+    token = env.get("EXO_GUARD_TOKEN", "")   # the narrow token: the bridge accepts it only for POST /guard
+    if not token:
+        token = env.get("EXO_BRIDGE_TOKEN", "")
+        if token:
+            print("guard: EXO_GUARD_TOKEN is unset; falling back to the full EXO_BRIDGE_TOKEN (set a guard token)",
+                  file=sys.stderr)
     if not url or not token:
-        print("guard: EXO_BRIDGE_URL and EXO_BRIDGE_TOKEN must be set", file=sys.stderr)
+        print("guard: EXO_BRIDGE_URL and EXO_GUARD_TOKEN must be set", file=sys.stderr)
         return 2
     try:
         r = post(f"{url}/guard", json=req, headers={"Authorization": f"Bearer {token}"}, timeout=TIMEOUT_S)
