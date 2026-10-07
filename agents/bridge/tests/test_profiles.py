@@ -63,6 +63,8 @@ exit 0
 """)
     stub.chmod(0o755)
     env = {**os.environ, "PATH": f"{bindir}:{os.environ['PATH']}", "HERMES_HOME": str(home)}
+    global _install_env
+    _install_env = env
     r = subprocess.run(["bash", str(AGENTS / "install-profiles.sh"), *args], env=env, capture_output=True, text=True)
     return r, home, log.read_text()
 
@@ -89,3 +91,18 @@ def test_bridge_deps_are_pinned():
     for pkg in ("flask", "waitress", "requests"):
         assert f"{pkg}==" in reqs
     assert "requirements.txt" in (AGENTS / "install-bridge.sh").read_text()
+
+
+def test_install_links_wallet_skill_without_touching_gateways(tmp_path):
+    r, home, calls = _run_install(tmp_path)
+    assert r.returncode == 0, r.stderr
+    for name in ("trader", "portfolio", "wallet"):
+        link = home / "profiles" / name / "skills" / "exo-wallet"
+        assert link.is_symlink() and (link / "wallet.py").is_file()
+    assert (home / "skills" / "exo-wallet").is_symlink()
+    assert not (home / "profiles" / "researcher" / "skills").exists()
+    assert "gateway" not in calls
+    import subprocess
+    again = subprocess.run(["bash", str(AGENTS / "install-profiles.sh")], capture_output=True, text=True,
+                           env=_install_env)  # idempotent re-run over existing links
+    assert again.returncode == 0, again.stderr

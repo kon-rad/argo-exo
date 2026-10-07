@@ -34,7 +34,8 @@ probe profile describe
 probe kanban boards list
 probe kanban boards create
 
-cd "$(dirname "$0")/profiles"
+AGENTS_DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "$AGENTS_DIR/profiles"
 HOME_DIR="${HERMES_HOME:-$HOME/.hermes}"
 stamp=$(date +%Y%m%d-%H%M%S)
 
@@ -55,6 +56,25 @@ for dir in */; do
   install -m 644 "$name/SOUL.md" "$target/SOUL.md"
   echo "profile $name ok"
 done
+
+# Link the exo-wallet skill (agents propose transactions only through the Guardian) into the money agents and the
+# default profile. A symlink to this checkout, so a git pull updates it. Existing profiles are linked too: linking
+# never touches SOUL.md. A real directory already at the link path is left alone. Never starts a gateway.
+skill_src="$AGENTS_DIR/skills/exo-wallet"
+link_skill() {  # $1 = skills directory to link into
+  local dest="$1/exo-wallet"
+  mkdir -p "$1"
+  if [[ -e "$dest" && ! -L "$dest" ]]; then
+    echo "skill exo-wallet: $dest exists and is not a symlink; left untouched"
+    return
+  fi
+  ln -sfn "$skill_src" "$dest"
+  echo "skill exo-wallet linked: $dest"
+}
+for name in trader portfolio wallet; do
+  [[ -d "$HOME_DIR/profiles/$name" ]] && link_skill "$HOME_DIR/profiles/$name/skills"
+done
+link_skill "$HOME_DIR/skills"   # the default profile
 
 boards="$(hermes kanban boards list 2>/dev/null || true)"
 if ! grep -Eq '(^|[[:space:]])exo([[:space:]]|$)' <<<"$boards"; then
