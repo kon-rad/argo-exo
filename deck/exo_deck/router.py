@@ -1,7 +1,8 @@
 """Decide from the first words whether a transcript is a question (talk) or a job (delegate).
 
 Rules, in order:
-  nav / control phrases ("show approvals", "panel 3", "more", "auto approve off", "open 4")  → handled locally
+  nav / control phrases ("show approvals", "panel 3", "more", "auto approve off", "turn off auto approve",
+  "open 4")                                          → handled locally
   "have|ask|tell|get [the] <agent> [agent] [to] …"  → delegate to <agent>, if it's a known agent
   "note|journal|remember …"                         → delegate to the librarian
   "build me …"                                       → delegate to the builder (whole sentence kept)
@@ -40,6 +41,7 @@ _SHOW = re.compile(r"^(?:show|open|go to|switch to)\s+(?:me\s+)?(?:the\s+)?(?P<w
 _PANEL_N = re.compile(r"^panel\s+(?P<n>\w+)$", re.I)
 _OPEN_N = re.compile(r"^open\s+(?:number\s+)?(?P<n>\d|one|two|three|four|five|six|seven|eight|nine)$", re.I)
 _AUTO = re.compile(r"^(?:(?:turn|switch)\s+)?auto[\s-]?approve\s+(?P<state>on|off)(?:[\s,]+please)?$", re.I)
+_AUTO_VERB_FIRST = re.compile(r"^(?:please\s+)?(?:turn|switch)\s+(?P<state>on|off)\s+(?:the\s+)?auto[\s-]?approve(?:[\s,]+please)?$", re.I)
 
 
 def _local(text: str) -> Route | None:
@@ -53,7 +55,7 @@ def _local(text: str) -> Route | None:
         return Route("nav", t)
     if t == "close":
         return Route("control", "close")
-    m = _AUTO.match(t)
+    m = _AUTO.match(t) or _AUTO_VERB_FIRST.match(t)
     if m:
         return Route("control", f"auto-{m['state'].lower()}")
     m = _OPEN_N.match(t)
