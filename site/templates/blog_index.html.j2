@@ -1,0 +1,19 @@
+{% extends "base.html.j2" %}
+{% block title %}{{ copy.title }} · {{ copy.labels.blog_title }}{% endblock %}
+{% block body %}
+<header class="terms-head">
+  <a href="/"><div class="emblem-mount"><img src="/static/img/argo-emblem.png" alt="{{ copy.labels.terms_emblem_alt }}" width="120" height="150"></div></a>
+  <hr class="rule-double">
+  <h1>{{ copy.labels.blog_title }}</h1>
+  <hr class="rule-double">
+</header>
+<ol class="post-list">
+  {% for p in posts %}
+  <li>
+    <p class="post-meta"><span class="num">No. {{ loop.index }}</span> · <time datetime="{{ p.date.isoformat() }}">{{ p.date.strftime("%-d %B %Y") }}</time></p>
+    <h2><a href="/blog/{{ p.slug }}.html">{{ p.title }}</a></h2>
+    <p>{{ p.summary }}</p>
+  </li>
+  {% endfor %}
+</ol>
+{% endblock %}

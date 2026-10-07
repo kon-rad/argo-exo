@@ -29,7 +29,8 @@
     "receipt_title": "Receipt", "claim_number": "No.", "name": "Name", "email": "Email", "country": "Shipping country",
     "terms_title": "Terms of the Pre-order", "refunds": "Refunds", "payment": "Payment", "shipping": "Shipping",
     "shipping_countries": "Shipping countries", "network": "Network", "chain_id": "chain ID",
-    "contract": "Contract", "receipt": "Receipt", "price": "Price"
+    "contract": "Contract", "receipt": "Receipt", "price": "Price",
+    "blog_link": "Field notes", "blog_title": "Field Notes", "blog_back": "All field notes"
   },
   "colophon": "TODO(konrad)"
 }

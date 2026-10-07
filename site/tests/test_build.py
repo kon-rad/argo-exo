@@ -128,7 +128,8 @@ def test_labels_render_from_copy_and_are_release_gated(site, tmp_path):
         c["labels"][k] = f"L-{k}"
     (site / "content" / "copy.json").write_text(json.dumps(c), encoding="utf-8")
     build.build(site, tmp_path / "dist", release=True)
-    html = "".join((tmp_path / "dist" / p).read_text(encoding="utf-8") for p in ("index.html", "receipt.html", "terms.html"))
+    pages = ["index.html", "receipt.html", "terms.html"] + [str(p.relative_to(tmp_path / "dist")) for p in (tmp_path / "dist" / "blog").glob("*.html")]
+    html = "".join((tmp_path / "dist" / p).read_text(encoding="utf-8") for p in pages)
     for k in c["labels"]:
         if k not in ("network", "contract", "chain_id"):  # those three need a deployed preorder.json
             assert f"L-{k}" in html, k
@@ -171,3 +172,31 @@ def test_font_loads_by_link_not_import(site, tmp_path):
     assert "@import" not in (SITE / "static" / "styles.css").read_text(encoding="utf-8")
     head = (tmp_path / "dist" / "index.html").read_text(encoding="utf-8").split("</head>")[0]
     assert '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader' in head
+
+
+def test_blog_renders_index_posts_and_landing_links(site, tmp_path):
+    build.build(site, tmp_path / "dist")
+    posts = build.load_posts(site)
+    assert len(posts) >= 1
+    index = (tmp_path / "dist" / "blog" / "index.html").read_text()
+    landing = (tmp_path / "dist" / "index.html").read_text()
+    for p in posts:
+        page = tmp_path / "dist" / "blog" / f"{p['slug']}.html"
+        assert page.exists()
+        assert f'href="/blog/{p["slug"]}.html"' in index and f'href="/blog/{p["slug"]}.html"' in landing
+    html = (tmp_path / "dist" / "blog" / f"{posts[0]['slug']}.html").read_text()
+    assert "<table>" in html or "<p>" in html
+    assert 'href="/blog/"' in landing
+
+
+def test_blog_post_needs_front_matter_and_a_clean_slug(site, tmp_path):
+    blog = site / "content" / "blog"
+    (blog / "zz-bad.md").write_text("no front matter here")
+    with pytest.raises(SystemExit, match="front-matter"):
+        build.load_posts(site)
+    (blog / "zz-bad.md").write_text("---\ntitle: T\nslug: Bad Slug\ndate: 2026-10-07\nsummary: S\n---\nbody")
+    with pytest.raises(SystemExit, match="slug"):
+        build.load_posts(site)
+    (blog / "zz-bad.md").write_text("---\ntitle: T\nslug: ok\ndate: 2026-10-07\n---\nbody")
+    with pytest.raises(SystemExit, match="summary"):
+        build.load_posts(site)

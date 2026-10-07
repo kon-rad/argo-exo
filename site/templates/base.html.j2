@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light dark">
   <title>{% block title %}{{ copy.title }}{% endblock %}</title>
-  <meta name="description" content="{{ copy.hero.lede }}">
+  <meta name="description" content="{% block description %}{{ copy.hero.lede }}{% endblock %}">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400;1,6..72,500&amp;display=swap">
@@ -24,7 +24,7 @@
   <img class="endpiece" src="/static/img/colophon-endpiece.png" alt="" width="240" height="48">
   <p>{{ copy.colophon }}</p>
   <nav aria-label="{{ copy.labels.footer_nav }}">
-    <a href="/terms.html">{{ copy.labels.terms_link }}</a> · <a href="https://github.com/kon-rad/argo-exo">{{ copy.labels.source_link }}</a> · <a href="https://myargoquest.com">{{ copy.labels.argo_link }}</a>
+    <a href="/blog/">{{ copy.labels.blog_link }}</a> · <a href="/terms.html">{{ copy.labels.terms_link }}</a> · <a href="https://github.com/kon-rad/argo-exo">{{ copy.labels.source_link }}</a> · <a href="https://myargoquest.com">{{ copy.labels.argo_link }}</a>
   </nav>
 </footer>
 </div>

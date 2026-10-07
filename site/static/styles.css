@@ -186,3 +186,33 @@ footer.colophon nav a { margin: 0 6px; }
   .plate { padding: 28px 20px; }
   .plate .price { font-size: 25px; }
 }
+
+/* field notes (blog): the index, then each post set as a chapter of the volume */
+.post-list { list-style: none; margin: 24px auto; padding: 0; max-width: var(--measure); }
+.post-list > li { padding: 22px 0; border-top: 1px solid var(--rule-soft); }
+.post-list > li:last-child { border-bottom: 1px solid var(--rule-soft); }
+.post-list h2, .post-list h3 { margin: 4px 0 6px; font-style: italic; }
+.post-list.compact > li { padding: 14px 0; }
+.post-list p { margin: 0; }
+.post-meta { font-variant: small-caps; letter-spacing: 0.08em; color: var(--muted); font-size: 16px; margin: 0; }
+.post { max-width: var(--measure); margin: 0 auto; }
+.post-head { text-align: center; padding: 48px 0 0; }
+.post-head h1 { font-weight: 500; font-size: clamp(32px, 5.4vw, 48px); line-height: 1.12; margin: 10px 0 12px; }
+.post-head .post-summary { font-style: italic; color: var(--muted); margin: 0 auto; }
+.prose h2 { margin-top: 44px; font-style: italic; }
+.prose h3 { margin-top: 30px; }
+.prose blockquote { margin: 20px 0; padding-left: 18px; border-left: 3px solid var(--accent); font-style: italic; }
+.prose code { font-size: 0.86em; background: var(--surface); padding: 1px 4px; border: 1px solid var(--hairline); }
+.prose pre { background: var(--surface); border: 1px solid var(--rule-soft); padding: 14px 16px; overflow-x: auto; font-size: 15px; line-height: 1.45; }
+.prose pre code { background: none; border: 0; padding: 0; font-size: inherit; }
+.prose .table-wrap, .prose table { display: block; overflow-x: auto; }
+.prose table { border-collapse: collapse; margin: 22px 0; font-size: 16px; max-width: 100%; }
+.prose th, .prose td { border-top: 1px solid var(--rule-soft); padding: 8px 10px; text-align: left; vertical-align: top; }
+.prose thead th { font-weight: 600; font-variant: small-caps; letter-spacing: 0.05em; border-top: 2px solid var(--rule); border-bottom: 1px solid var(--rule); }
+.prose tr:last-child td { border-bottom: 1px solid var(--rule-soft); }
+.prose li { margin: 4px 0; }
+.post-back { text-align: center; font-variant: small-caps; letter-spacing: 0.08em; max-width: none; }
+@media (max-width: 520px) {
+  .prose th, .prose td { min-width: 9.5em; } /* wide tables scroll sideways instead of crushing into one-word columns */
+  .prose th:first-child, .prose td:first-child { min-width: 7em; }
+}

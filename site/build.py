@@ -1,4 +1,5 @@
-"""Render the Exo landing page from content/*.json + templates/ into dist/.
+"""Render the Exo landing page from content/*.json + templates/ into dist/,
+and the blog from content/blog/*.md into dist/blog/.
     python site/build.py            draft (TODO(konrad) allowed, noindex)
     python site/build.py --release  refuses while any slot is unfilled"""
 from __future__ import annotations
@@ -8,13 +9,44 @@ import json
 import re
 import shutil
 import sys
+from datetime import date
 from pathlib import Path
 
+import markdown
 from jinja2 import Environment, FileSystemLoader, select_autoescape
+from markupsafe import Markup
 
 TODO = "TODO(konrad)"
 _TODO_RE = re.compile(re.escape(TODO), re.IGNORECASE)
 PAGES = ("index.html", "receipt.html", "terms.html")
+POST_FIELDS = ("title", "slug", "date", "summary")
+_SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+
+
+def load_posts(root: Path) -> list[dict]:
+    """content/blog/*.md, newest first. Each file opens with a front-matter block of `key: value` lines between
+    `---` fences (title, slug, date as YYYY-MM-DD, summary, optional order); the rest is Markdown."""
+    posts = []
+    for p in sorted((root / "content" / "blog").glob("*.md")):
+        text = p.read_text(encoding="utf-8")
+        m = re.match(r"^---\n(.*?)\n---\n(.*)$", text, re.S)
+        if not m:
+            raise SystemExit(f"{p.name}: missing the --- front-matter block")
+        meta = dict(line.split(":", 1) for line in m[1].splitlines() if line.strip())
+        meta = {k.strip(): v.strip() for k, v in meta.items()}
+        missing = [f for f in POST_FIELDS if not meta.get(f)]
+        if missing:
+            raise SystemExit(f"{p.name}: front matter lacks {', '.join(missing)}")
+        if not _SLUG_RE.match(meta["slug"]):
+            raise SystemExit(f"{p.name}: slug must be lowercase kebab-case")
+        meta["date"] = date.fromisoformat(meta["date"])
+        meta["order"] = int(meta.get("order", 0))
+        meta["html"] = Markup(markdown.markdown(m[2], extensions=["tables", "fenced_code", "sane_lists"]))
+        posts.append(meta)
+    slugs = [p["slug"] for p in posts]
+    if len(set(slugs)) != len(slugs):
+        raise SystemExit("two blog posts share a slug")
+    return sorted(posts, key=lambda p: (p["date"], -p["order"]), reverse=True)
 
 
 def load_content(root: Path) -> dict:
@@ -58,11 +90,21 @@ def build(root: Path, out: Path, release: bool = False) -> list[Path]:
             raise SystemExit("release blocked, fill these first: " + ", ".join(problems))
     env = Environment(loader=FileSystemLoader(root / "templates"), autoescape=select_autoescape(["html", "j2"]))
     preorder = load_preorder(root)
+    posts = load_posts(root)
     out.mkdir(parents=True, exist_ok=True)
     written = []
     for page in PAGES:
-        (out / page).write_text(env.get_template(page + ".j2").render(**content, preorder=preorder, release=release), encoding="utf-8")
+        (out / page).write_text(env.get_template(page + ".j2").render(**content, posts=posts, preorder=preorder, release=release), encoding="utf-8")
         written.append(out / page)
+    blog = out / "blog"
+    if blog.exists():
+        shutil.rmtree(blog)
+    blog.mkdir()
+    pages = [(blog / "index.html", "blog_index.html.j2", {})]
+    pages += [(blog / f"{p['slug']}.html", "blog_post.html.j2", {"post": p}) for p in posts]
+    for path, tpl, extra in pages:
+        path.write_text(env.get_template(tpl).render(**content, posts=posts, release=release, **extra), encoding="utf-8")
+        written.append(path)
     if (out / "static").exists():
         shutil.rmtree(out / "static")
     shutil.copytree(root / "static", out / "static")

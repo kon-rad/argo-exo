@@ -68,6 +68,16 @@
   {{ section_head("faq") }}
   {% for item in copy.sections.faq["items"] %}<h3>{{ item.q }}</h3><p>{{ item.a }}</p>{% endfor %}
 </section>
+{% if posts %}
+<hr class="rule-hair">
+<section id="notes" aria-labelledby="notes-title">
+  <h2 id="notes-title"><span class="heading">{{ copy.labels.blog_title }}</span></h2>
+  <ol class="post-list compact">
+    {% for p in posts %}<li><h3><a href="/blog/{{ p.slug }}.html">{{ p.title }}</a></h3><p>{{ p.summary }}</p></li>
+    {% endfor %}
+  </ol>
+</section>
+{% endif %}
 <script type="application/json" id="checkout-copy">{{ {"states": {"paused": copy.states.paused, "sold_out": copy.states.sold_out, "unavailable": copy.states.unavailable}, "checkout": copy.checkout, "receipt": copy.receipt} | tojson }}</script>
 <script type="module" src="/static/checkout.js"></script>
 {% endblock %}

@@ -1,0 +1,16 @@
+{% extends "base.html.j2" %}
+{% block title %}{{ post.title }} · {{ copy.title }}{% endblock %}
+{% block description %}{{ post.summary }}{% endblock %}
+{% block body %}
+<article class="post" aria-labelledby="post-title">
+  <header class="post-head">
+    <p class="post-meta"><a href="/blog/">{{ copy.labels.blog_title }}</a> · <time datetime="{{ post.date.isoformat() }}">{{ post.date.strftime("%-d %B %Y") }}</time></p>
+    <h1 id="post-title">{{ post.title }}</h1>
+    <p class="post-summary">{{ post.summary }}</p>
+    <hr class="rule-double">
+  </header>
+  <div class="prose">{{ post.html }}</div>
+  <hr class="rule-hair">
+  <p class="post-back"><a href="/blog/">{{ copy.labels.blog_back }}</a></p>
+</article>
+{% endblock %}
