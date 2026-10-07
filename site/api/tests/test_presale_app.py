@@ -147,3 +147,37 @@ def test_no_cors_headers(tmp_path):
 def test_unknown_route_fixed_json(tmp_path):
     r = client(tmp_path).get("/api/nope")
     assert r.status_code == 404 and r.json == {"error": "not found"}
+
+
+def test_unicode_format_chars_rejected(tmp_path):
+    c = client(tmp_path, rate=100)
+    for patch in ({"name": "Ada\u202eevil"}, {"name": "A\u200bda"}, {"email": "a\u200d@example.com"},  # public-ok
+                  {"name": "\ufeffAda"}, {"name": "Ada\u2066x"}):
+        r = c.post("/api/claims", json={**signed(), **patch})
+        assert r.status_code == 400, patch
+
+
+def test_ipv6_rate_limit_keyed_by_64(tmp_path):
+    c = client(tmp_path, rate=1)
+    post = lambda xff: c.post("/api/claims", json=signed(), environ_base={"REMOTE_ADDR": "127.0.0.1"},
+                              headers={"X-Forwarded-For": xff})
+    assert post("2001:db8:1:2::1").status_code == 200
+    assert post("2001:db8:1:2:ffff::9").status_code == 429       # same /64, new address: same bucket
+    assert post("2001:db8:1:3::1").status_code != 429            # next /64: its own bucket
+    assert post("::ffff:203.0.113.7").status_code != 429         # v4-mapped stays a single v4 address
+    assert post("203.0.113.7").status_code == 429
+
+
+def test_bucket_table_is_capped(tmp_path):
+    from exo_presale import app as appmod
+    now = [1100]
+    store = ClaimStore(tmp_path / "c.db")
+    a = create_app(FakeSale(), store, countries=("Japan",), rate_per_hour=1, clock=lambda: now[0], max_buckets=3)
+    c = a.test_client()
+    post = lambda ip: c.post("/api/claims", json=signed(at=1100), environ_base={"REMOTE_ADDR": "127.0.0.1"},
+                             headers={"X-Forwarded-For": ip}).status_code
+    for i in range(10):
+        post(f"198.51.100.{i}")  # public-ok
+        now[0] += 1
+    assert len(a.config["EXO_RATE_BUCKETS"]) <= 3
+    assert post("198.51.100.9") == 429                         # the newest bucket survived eviction  # public-ok

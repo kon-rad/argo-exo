@@ -23,6 +23,10 @@ MAX_BODY = 4096
 MAX_DEVICE = 2 ** 32
 MAX_TIME = 2 ** 40
 WINDOW_S = 3600
+MAX_BUCKETS = 10_000
+# Cc control, Cs surrogate, Zl/Zp line/paragraph separators, Cf format (bidi overrides, zero-width joiners, BOM):
+# none belong in a name or an address label, and Cf ones can make an export row read differently from what it holds.
+BAD_CATEGORIES = ("Cc", "Cs", "Zl", "Zp", "Cf")
 FIXED = {400: "bad request", 404: "not found", 405: "method not allowed", 413: "request too large",
          415: "unsupported media type", 500: "internal error"}
 
@@ -36,11 +40,11 @@ def _uint(v, lo: int, hi: int) -> int | None:
 
 
 def _clean(v, max_len: int) -> str | None:
-    """Trimmed string without control/surrogate/line-separator characters, 1..max_len long; else None."""
+    """Trimmed string without control/surrogate/separator/format characters, 1..max_len long; else None."""
     if not isinstance(v, str):
         return None
     v = v.strip()
-    if not 1 <= len(v) <= max_len or any(unicodedata.category(c) in ("Cc", "Cs", "Zl", "Zp") for c in v):
+    if not 1 <= len(v) <= max_len or any(unicodedata.category(c) in BAD_CATEGORIES for c in v):
         return None
     return v
 
@@ -52,11 +56,26 @@ def _loopback(addr: str | None) -> bool:
         return False
 
 
-def create_app(sale, store, countries: tuple, rate_per_hour: int = 10, clock=time.time) -> Flask:
+def rate_key(addr: str) -> str:
+    """One bucket per IPv4 address, and per /64 for IPv6 (one host usually holds a whole /64)."""
+    try:
+        ip = ipaddress.ip_address(addr)
+    except ValueError:
+        return addr
+    if ip.version == 6:
+        if ip.ipv4_mapped:
+            return str(ip.ipv4_mapped)
+        return str(ipaddress.ip_network(f"{ip}/64", strict=False))
+    return str(ip)
+
+
+def create_app(sale, store, countries: tuple, rate_per_hour: int = 10, clock=time.time,
+               max_buckets: int = MAX_BUCKETS) -> Flask:
     app = Flask("exo-presale")
     app.config["MAX_CONTENT_LENGTH"] = MAX_BODY
     countries = tuple(countries)
     hits: dict[str, deque] = defaultdict(deque)
+    app.config["EXO_RATE_BUCKETS"] = hits
     hits_lock = threading.Lock()
 
     def client_ip() -> str:
@@ -69,10 +88,14 @@ def create_app(sale, store, countries: tuple, rate_per_hour: int = 10, clock=tim
         return request.remote_addr or "?"
 
     def limited() -> bool:
-        now, ip = clock(), client_ip()
+        now, ip = clock(), rate_key(client_ip())
         with hits_lock:
             for k in [k for k, q in hits.items() if not q or q[-1] < now - WINDOW_S]:
                 del hits[k]                       # keep the table from growing without bound
+            if ip not in hits and len(hits) >= max_buckets:
+                # Full (many sources inside one hour): drop the least recently seen bucket rather than refuse
+                # everyone new. Worst case an attacker resets someone else's quota; it never locks buyers out.
+                del hits[min(hits, key=lambda k: hits[k][-1])]
             q = hits[ip]
             while q and q[0] < now - WINDOW_S:
                 q.popleft()

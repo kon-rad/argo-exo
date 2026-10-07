@@ -181,6 +181,7 @@ async function renderSale() {
     if (r.ok) sale = validSale(await r.json());
   } catch { sale = null; }
   if (!sale) { closeAll(say('states', 'unavailable')); setBusy(busy); return; }
+  if (sale.deployed === false) { setBusy(busy); return; }   // API has no contract yet: "opening soon" stands
   const soldOut = sale.minted >= sale.max_supply;
   for (const b of buttons()) {
     const tier = Number(b.dataset.buy);

@@ -37,7 +37,7 @@ def test_sale_state_open_and_cached():
     rpc, now = FakeRpc(), [1000.0]
     s = Sale(rpc, CONTRACT, [1, 2], ttl_s=30, clock=lambda: now[0])
     st = s.state()
-    assert st == {"open": True, "paused": False, "minted": 41, "max_supply": 500,
+    assert st == {"deployed": True, "open": True, "paused": False, "minted": 41, "max_supply": 500,
                   "tiers": [{"tier": 1, "price_units": 499_000_000, "price": "499.00"}, {"tier": 2, "price_units": 0, "price": None}]}
     s.state(); assert rpc.calls == 1
     now[0] += 31; s.state(); assert rpc.calls == 2
@@ -50,17 +50,40 @@ def test_sale_state_closed():
     # Not deployed yet (zero address in preorder.json): closed, no RPC call, no error.
     rpc = FakeRpc()
     st = Sale(rpc, ZERO, [1, 2]).state()
-    assert st["open"] is False and rpc.calls == 0
+    assert st["open"] is False and st["deployed"] is False and rpc.calls == 0
     assert [t["price"] for t in st["tiers"]] == [None, None]
 
 
-def test_sale_state_rpc_failure_raises_unavailable_not_cached():
-    rpc = FakeRpc(fail="network: boom")
-    s = Sale(rpc, CONTRACT, [1, 2])
+def test_sale_state_rpc_failure_cached_briefly():
+    rpc, now = FakeRpc(fail="network: boom"), [1000.0]
+    s = Sale(rpc, CONTRACT, [1, 2], clock=lambda: now[0])
     with pytest.raises(SaleUnavailable):
         s.state()
     rpc.fail = None
+    now[0] += 4                                   # inside the 5 s failure window: no new RPC, still unavailable
+    with pytest.raises(SaleUnavailable):
+        s.state()
+    assert rpc.calls == 1
+    now[0] += 2
+    assert s.state()["open"] is True and rpc.calls == 2
+
+
+def test_sale_state_busy_lock_is_unavailable_not_a_queue():
+    s = Sale(FakeRpc(), CONTRACT, [1, 2], lock_wait_s=0.05)
+    s._lock.acquire()                             # another request is mid-refresh on a slow RPC
+    try:
+        with pytest.raises(SaleUnavailable):
+            s.state()
+    finally:
+        s._lock.release()
     assert s.state()["open"] is True
+
+
+def test_state_rpc_is_separate_from_owner_rpc():
+    slow, fresh = FakeRpc(), FakeRpc()
+    s = Sale(fresh, CONTRACT, [1, 2], state_rpc=slow)
+    s.state(); s.owner_of(1)
+    assert slow.calls == 1 and fresh.calls == 1
 
 
 def test_price_formatting():
