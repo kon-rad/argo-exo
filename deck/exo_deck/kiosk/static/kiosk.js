@@ -6,10 +6,16 @@ export const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&a
 export const encPath = (rel) => String(rel).split('/').map(encodeURIComponent).join('/');
 export const ago = (ts) => { const s = Math.max(0, Date.now() / 1000 - ts); return s < 90 ? `${s | 0}s` : s < 5400 ? `${(s / 60) | 0}m` : s < 172800 ? `${(s / 3600) | 0}h` : `${(s / 86400) | 0}d`; };
 
+const COLSTAT = { queued: ['triage', 'todo', 'blocked'], ready: ['ready'], running: ['running'], done: ['done'] };
+
 export const RENDER = {
   talk: (j) => `<h1>Talk to Hermes</h1>` + (j.turns.length ? j.turns.map((t) =>
     `<div class="turn ${esc(t.role)}"><span class="who">${t.role === 'you' ? 'You' : t.role === 'hermes' ? 'Hermes' : '·'}</span>${esc(t.text)}</div>`).join('')
     : `<p class="muted">Hold Talk and speak.</p>`),
+  agents: (j) => !j.online ? `<h1>Agents</h1><p class="bad big">Hermes offline</p>` :
+    `<h1>Agents</h1><div class="cols">${['queued', 'ready', 'running', 'done'].map((c) =>
+      `<div><p class="${c === 'running' ? 'warn' : c === 'done' ? 'ok' : 'muted'}"><b>${c.toUpperCase()} ${COLSTAT[c].reduce((n, k) => n + (j.counts[k] || 0), 0)}</b></p><ul class="rows tight">${(j.cols[c] || []).map((t) =>
+        `<li><span class="clamp"><b>${esc(t.assignee || '-')}</b> <span class="muted">${t.created_at ? ago(t.created_at) : ''}</span><br>${esc(t.title)}</span></li>`).join('') || '<li class="muted">none</li>'}</ul></div>`).join('')}</div>`,
   approvals: (j) => {
     const row = (t) => `<li><span class="clamp">${esc(t.summary)}<br><span class="muted">${esc(t.explanation || '')}</span></span>
       <span class="tag ${t.risk === 'low' ? 'ok' : t.risk === 'high' ? 'bad' : 'warn'}">${esc(t.risk || '?')}${t.auto_eligible === true ? ' · auto' : ''}</span></li>`;

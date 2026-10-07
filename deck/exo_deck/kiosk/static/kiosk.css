@@ -34,7 +34,9 @@ h1 { font: 500 48px var(--head); margin: 0 0 16px; color: var(--accent); }
 .accent { color: var(--accent); }
 .rows.tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
 .ok { color: var(--ok); } .bad { color: var(--danger); } .warn { color: var(--accent); }
-.cols { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+.cols { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
+.cols .rows li { display: block; }
+.cols .clamp { display: block; }
 .grid9 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px 16px; margin-top: 8px; }
 .grid9 figure { margin: 0; background: var(--bg); border: 3px solid var(--edge); border-radius: 12px; padding: 6px; }
 .thumb { position: relative; height: 130px; background: var(--card); border-radius: 8px; overflow: hidden; display: grid; place-items: center; }
