@@ -8,7 +8,7 @@ CODES = [
   ("website", "Website", "https://exo.myargoquest.com"),
   ("token2049", "TOKEN2049 page", "https://exo.myargoquest.com/token2049/"),
   ("github", "GitHub repo", G),
-  ("video", "Demo video", "https://www.youtube.com/watch?v=yyxsdwOJtts"),
+  ("video", "Demo video", "https://www.youtube.com/watch?v=xZ9dDkm9N3Y"),
   ("slides", "Slide deck", "https://docs.google.com/presentation/d/1jMS6c9_Qkjl9TIvXBBCmAikPJLPxmV9X_ygEas1I3mg/edit?usp=sharing"),
   ("cre-evidence", "Chainlink CRE evidence", G + "/blob/main/docs/hackathon-evidence.md#chainlink-cre-the-transaction-guardian-workflow"),
   ("cre-runs", "CRE simulator runs (raw output)", G + "/tree/main/docs/evidence/cre"),

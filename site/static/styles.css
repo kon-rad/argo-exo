@@ -170,10 +170,10 @@ footer.colophon nav a { margin: 0 6px; }
 
 /* evening reading: engraved line art inverted so it stays legible on --surface */
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .plate-frame img,
+  :root:not([data-theme="light"]) .plate-frame:not(.photo) img,
   :root:not([data-theme="light"]) footer.colophon img.endpiece { filter: invert(0.88) sepia(0.2); }
 }
-:root[data-theme="dark"] .plate-frame img,
+:root[data-theme="dark"] .plate-frame:not(.photo) img,
 :root[data-theme="dark"] footer.colophon img.endpiece { filter: invert(0.88) sepia(0.2); }
 
 @media (max-width: 520px) {

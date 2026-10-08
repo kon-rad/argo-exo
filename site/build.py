@@ -5,6 +5,7 @@ and the blog from content/blog/*.md into dist/blog/.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import shutil
@@ -92,6 +93,9 @@ def build(root: Path, out: Path, release: bool = False, pages: tuple = PAGES) ->
         if problems:
             raise SystemExit("release blocked, fill these first: " + ", ".join(problems))
     env = Environment(loader=FileSystemLoader(root / "templates"), autoescape=select_autoescape(["html", "j2"]))
+    # ?v=<content hash> on the stylesheet and scripts, so a browser never pairs new pages with a cached old file.
+    env.globals["asset_v"] = {p.name: hashlib.sha256(p.read_bytes()).hexdigest()[:10]
+                              for p in (root / "static").iterdir() if p.suffix in (".css", ".mjs", ".js")}
     preorder = load_preorder(root)
     posts = load_posts(root)
     out.mkdir(parents=True, exist_ok=True)

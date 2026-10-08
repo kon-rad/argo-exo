@@ -195,7 +195,7 @@
     "token2049_link": "TOKEN2049",
     "token2049_title": "TOKEN2049 Origins",
     "token2049_intro": "Exo was built at the TOKEN2049 Origins hackathon in Singapore in October 2026, for the main track, Chainlink CRE and NOWNodes. Everything for the judges is here: the demo, the slides, the code, and the raw evidence from the live runs.",
-    "token2049_video_alt": "Video thumbnail: Konrad presenting the Chainlink CRE Transaction Guardian slide, with two people wearing Exo on an orange background.",
+    "token2049_video_alt": "Video thumbnail: Konrad presenting the Who It's For slide, beside a render of a man walking while wearing Exo.",
     "token2049_watch": "Watch the demo on YouTube",
     "token2049_links_heading": "Links",
     "token2049_qr_heading": "Scan",
@@ -205,6 +205,6 @@
   "colophon": "Argo Exo was built at the TOKEN2049 Origins hackathon in Singapore, October 2026. Set in Newsreader. Nothing here is financial advice.",
   "links": {
     "deck": "https://docs.google.com/presentation/d/1jMS6c9_Qkjl9TIvXBBCmAikPJLPxmV9X_ygEas1I3mg/edit?usp=sharing",
-    "video": "https://www.youtube.com/watch?v=yyxsdwOJtts"
+    "video": "https://www.youtube.com/watch?v=xZ9dDkm9N3Y"
   }
 }
