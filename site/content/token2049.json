@@ -1,0 +1,52 @@
+{
+  "video_id": "yyxsdwOJtts",
+  "video_url": "https://www.youtube.com/watch?v=yyxsdwOJtts",
+  "video_title": "Token2049 Demo, 8 October 2026",
+  "codes": [
+    {
+      "slug": "website",
+      "name": "Website",
+      "url": "https://exo.myargoquest.com"
+    },
+    {
+      "slug": "token2049",
+      "name": "TOKEN2049 page",
+      "url": "https://exo.myargoquest.com/token2049/"
+    },
+    {
+      "slug": "github",
+      "name": "GitHub repo",
+      "url": "https://github.com/kon-rad/argo-exo"
+    },
+    {
+      "slug": "video",
+      "name": "Demo video",
+      "url": "https://www.youtube.com/watch?v=yyxsdwOJtts"
+    },
+    {
+      "slug": "slides",
+      "name": "Slide deck",
+      "url": "https://docs.google.com/presentation/d/1jMS6c9_Qkjl9TIvXBBCmAikPJLPxmV9X_ygEas1I3mg/edit?usp=sharing"
+    },
+    {
+      "slug": "cre-evidence",
+      "name": "Chainlink CRE evidence",
+      "url": "https://github.com/kon-rad/argo-exo/blob/main/docs/hackathon-evidence.md#chainlink-cre-the-transaction-guardian-workflow"
+    },
+    {
+      "slug": "cre-runs",
+      "name": "CRE simulator runs (raw output)",
+      "url": "https://github.com/kon-rad/argo-exo/tree/main/docs/evidence/cre"
+    },
+    {
+      "slug": "nownodes-evidence",
+      "name": "NOWNodes evidence",
+      "url": "https://github.com/kon-rad/argo-exo/blob/main/docs/hackathon-evidence.md#nownodes-which-endpoint-powers-what"
+    },
+    {
+      "slug": "nownodes-live-check",
+      "name": "NOWNodes live check (raw output)",
+      "url": "https://github.com/kon-rad/argo-exo/blob/main/docs/evidence/nownodes/live-check.txt"
+    }
+  ]
+}

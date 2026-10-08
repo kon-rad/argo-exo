@@ -58,5 +58,6 @@ def load(env=os.environ) -> dict:
         raise SystemExit(f"refusing to bind {host}: the sale API listens on loopback only, behind Caddy")
     return {"contract": contract, "tiers": tiers, "countries": countries,
             "db": env.get("EXO_CLAIMS_DB", "/var/lib/exo-presale/claims.db"),
+            "waitlist": env.get("EXO_WAITLIST_MD", "/var/lib/exo-presale/waitlist.md"),
             "rate": int(env.get("EXO_PRESALE_RATE", "10")),
             "host": host, "port": int(env.get("EXO_PRESALE_PORT", "5310"))}

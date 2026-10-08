@@ -127,3 +127,13 @@ sudo -u exosite exo-presale-admin summary
 ```
 
 The export includes a claim only while its signer still holds the receipt. A receipt that was sold on shows `stale-owner` with its details blank, and a burned one shows `burned`. Cells starting with `= + - @` are quoted.
+
+## Waitlist (the page's only form while there's no sale)
+
+Since 2026-10-07 the landing page has no pre-order: the buy buttons, prices, checkout script and the `terms.html` / `receipt.html` pages are left out of the build (`build.DORMANT_PAGES`; the templates and contracts stay in the repo for when sales open). The page posts emails to `POST /api/waitlist`, which appends one line per email to a Markdown file:
+
+```bash
+sudo -u exosite cat /var/lib/exo-presale/waitlist.md     # path set by EXO_WAITLIST_MD; file is 600 (UMask=0077)
+```
+
+Duplicates (any case) are written once, and the page gets the same answer either way. Emails are never logged. The waitlist has its own rate limit (60 per hour per IP, so a conference hall on one IP can still sign up), separate from the shipping-claim limit. `EXO_PREORDER` can stay empty in `/etc/exo-presale/env`; `/api/sale` then answers "not deployed" and nothing on the page reads it.

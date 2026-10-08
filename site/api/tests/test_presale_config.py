@@ -48,7 +48,8 @@ def test_waitress_body_cap(monkeypatch, tmp_path):
     import exo_presale.__main__ as m
     seen = {}
     monkeypatch.setattr(m.config, "load", lambda: {"contract": "0x" + "00" * 20, "tiers": [1], "countries": (),
-                                                  "db": str(tmp_path / "c.db"), "rate": 10, "host": "127.0.0.1", "port": 5310})
+                                                  "db": str(tmp_path / "c.db"), "waitlist": str(tmp_path / "w.md"),
+                                                  "rate": 10, "host": "127.0.0.1", "port": 5310})
     monkeypatch.setattr(m, "serve", lambda app, **kw: seen.update(kw))
     m.main()
     assert seen["max_request_body_size"] == 8192 and seen["host"] == "127.0.0.1"

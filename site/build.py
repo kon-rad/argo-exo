@@ -18,7 +18,10 @@ from markupsafe import Markup
 
 TODO = "TODO(konrad)"
 _TODO_RE = re.compile(re.escape(TODO), re.IGNORECASE)
-PAGES = ("index.html", "receipt.html", "terms.html")
+PAGES = ("index.html",)
+# The pre-order pages (receipt.html, terms.html) and checkout scripts stay in the repo but aren't published
+# while the site runs a waitlist instead of a sale. Add them back here when sales open.
+DORMANT_PAGES = ("receipt.html", "terms.html")
 POST_FIELDS = ("title", "slug", "date", "summary")
 _SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
@@ -51,7 +54,7 @@ def load_posts(root: Path) -> list[dict]:
 
 def load_content(root: Path) -> dict:
     c = root / "content"
-    return {k: json.loads((c / f"{k}.json").read_text(encoding="utf-8")) for k in ("copy", "features", "tiers")}
+    return {k: json.loads((c / f"{k}.json").read_text(encoding="utf-8")) for k in ("copy", "features", "tiers", "renders", "token2049")}
 
 
 def todo_slots(node, path="") -> list[str]:
@@ -82,7 +85,7 @@ def _tier_problems(tiers: list) -> list[str]:
     return []
 
 
-def build(root: Path, out: Path, release: bool = False) -> list[Path]:
+def build(root: Path, out: Path, release: bool = False, pages: tuple = PAGES) -> list[Path]:
     content = load_content(root)
     if release:
         problems = [s.replace("copy.", "", 1) for s in todo_slots(content)] + _tier_problems(content["tiers"])
@@ -93,9 +96,13 @@ def build(root: Path, out: Path, release: bool = False) -> list[Path]:
     posts = load_posts(root)
     out.mkdir(parents=True, exist_ok=True)
     written = []
-    for page in PAGES:
+    for page in pages:
         (out / page).write_text(env.get_template(page + ".j2").render(**content, posts=posts, preorder=preorder, release=release), encoding="utf-8")
         written.append(out / page)
+    t2049 = out / "token2049"
+    t2049.mkdir(exist_ok=True)
+    (t2049 / "index.html").write_text(env.get_template("token2049.html.j2").render(**content, posts=posts, release=release), encoding="utf-8")
+    written.append(t2049 / "index.html")
     blog = out / "blog"
     if blog.exists():
         shutil.rmtree(blog)

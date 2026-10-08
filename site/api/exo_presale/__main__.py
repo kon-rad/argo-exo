@@ -8,6 +8,7 @@ from .app import create_app
 from .chain import Sale
 from .claims import ClaimStore
 from .rpc import base_rpc
+from .waitlist import Waitlist
 
 STATE_TIMEOUT_S = 4
 MAX_BODY_BYTES = 8192   # waitress refuses bigger bodies before buffering them (Flask then caps at 4 KB)
@@ -20,7 +21,7 @@ def main() -> None:
         logging.getLogger("exo-presale").warning("EXO_BASE_RPC_URL set: reading a LOCAL FORK, not Base mainnet")
     sale = Sale(base_rpc(os.environ, usage=True), c["contract"], c["tiers"],
                 state_rpc=base_rpc(os.environ, timeout=STATE_TIMEOUT_S, usage=True))
-    app = create_app(sale, ClaimStore(c["db"]), c["countries"], c["rate"])
+    app = create_app(sale, ClaimStore(c["db"]), c["countries"], c["rate"], waitlist=Waitlist(c["waitlist"]))
     serve(app, host=c["host"], port=c["port"], threads=4, max_request_body_size=MAX_BODY_BYTES)
 
 

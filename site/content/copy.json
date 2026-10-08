@@ -4,28 +4,22 @@
     "kicker": "A wearable computer, run by agents you own",
     "headline": "Your agents can propose anything. Only your rules and your finger move the money.",
     "lede": "Exo is a computer you wear: display glasses, earbuds and a few keys on a sling. Hold a button and speak to your own open-source agents. Every transaction they propose is simulated, checked against your rules by a Chainlink CRE workflow, explained in your ear, and sent only when you press the approve key.",
-    "cta": "Pre-order"
+    "cta": "Join the waitlist"
   },
   "contents_heading": "Contents",
   "sections": {
     "features": {
       "numeral": "I",
       "heading": "The Apparatus",
-      "intro": "Twelve parts of one idea: hand the routine to AI agents without handing over your keys, and without being stuck at a screen. Some of it you wear, some of it runs on a server you own, and some of it lives onchain where no one can quietly change it."
+      "intro": "Eleven parts of one idea: hand the routine to AI agents without handing over your keys, and without being stuck at a screen. Some of it you wear, some of it runs on a server you own, and some of it lives onchain where no one can quietly change it."
     },
     "kit": {
-      "numeral": "II",
-      "heading": "The Kits",
-      "intro": "Exo ships fully assembled, tested button by button, and numbered. Choose the deck alone if you already own compatible glasses, or the complete kit. Prices are set in the pre-order contract and appear here the moment it opens. Until then, nothing on this page is a price."
-    },
-    "preorder": {
       "numeral": "III",
-      "heading": "The Pre-order",
-      "intro": "Pay in USDC on Base from your own wallet. In the same transaction you receive an onchain receipt, Argo Exo · Apparatus No. N, where N is your device number, in the order the pre-orders arrive. Your wallet signs a maximum price, so the price can't change under you between the click and the block.",
-      "agree": "I've read the terms and understand Exo is new hardware, still in development, and that its Guardian runs in Chainlink's CRE simulator today."
+      "heading": "The Kits",
+      "intro": "Exo is planned as a fully assembled kit, tested button by button. The deck alone if you already own compatible glasses, or the complete kit. Nothing is for sale yet; join the waitlist to hear when it is."
     },
     "faq": {
-      "numeral": "IV",
+      "numeral": "V",
       "heading": "Questions",
       "items": [
         {
@@ -46,17 +40,33 @@
         },
         {
           "q": "What else do I need?",
-          "a": "Your own Hermes agent server (a small cloud server is enough), a Deepgram key for speech, display glasses that take a USB-C DisplayPort signal (or the complete kit, which includes them) and a wallet with USDC on Base."
+          "a": "Your own Hermes agent server (a small cloud server is enough), a Deepgram key for speech, and display glasses that take a USB-C DisplayPort signal, or the complete kit, which includes them."
         },
         {
           "q": "Is it open source?",
-          "a": "Yes. The deck, the Guardian workflow, the Safe module, the pre-order contract and the wiring guide are MIT-licensed on GitHub. You can read every line that touches your wallet, and run all of it without us."
+          "a": "Yes. The deck, the Guardian workflow, the Safe module and the wiring guide are MIT-licensed on GitHub. You can read every line that touches your wallet, and run all of it without us."
         },
         {
           "q": "When does it ship?",
-          "a": "Exo is built by hand in small batches. We'll email every holder a shipping window before their batch is built. We won't promise a date we can't keep."
+          "a": "Exo is built by hand in small batches, and isn't for sale yet. Everyone on the waitlist hears first, with a real date. We won't promise one we can't keep."
         }
       ]
+    },
+    "prototype": {
+      "numeral": "II",
+      "heading": "The Prototype",
+      "intro": "What exists today, photographed on the hackathon table in Singapore: the Raspberry Pi deck, the display glasses, the breadboard of keys and the recording light, the camera clip and the Pi Zero that holds the cold key. Below them, the dashboard as it appears in the glasses."
+    },
+    "waitlist": {
+      "numeral": "IV",
+      "heading": "The Waitlist",
+      "intro": "Leave your email and we'll write when the first kits are ready. One email, no newsletter, and we never share the list.",
+      "placeholder": "Your email",
+      "button": "Join",
+      "thanks": "Thank you. You're on the list.",
+      "invalid": "Please enter a valid email address.",
+      "busy": "Too many sign-ups from this network just now. Please try again in a little while.",
+      "failed": "We couldn't save that just now. Please try again shortly."
     }
   },
   "states": {
@@ -137,7 +147,7 @@
     "source_link": "Source",
     "argo_link": "Argo",
     "emblem_alt": "Argo",
-    "terms_emblem_alt": "Argo, back to the pre-order",
+    "terms_emblem_alt": "Argo, back to the front page",
     "receipt_title": "Receipt",
     "claim_number": "No.",
     "name": "Name",
@@ -158,7 +168,43 @@
     "blog_back": "All field notes",
     "renders_heading": "Concept renders",
     "renders_note": "How the printed parts are meant to look. These are generated renders, not photographs; the people are invented.",
-    "renders_link": "Read about the design"
+    "renders_link": "Read about the design",
+    "photos_heading": "On the bench",
+    "photo_bench": "The working prototype: Raspberry Pi 4 deck, display glasses, folding keyboard, power bank, and the breadboard with the talk, camera, memo and approve keys.",
+    "photo_bench_alt": "Overhead photo of a wooden table with a Raspberry Pi 4 connected by a grey ribbon cable to a breadboard of push buttons and wires, black display glasses, a folding keyboard, a power bank and a USB hub.",
+    "photo_portrait": "The same rig from the other side, as it sat on the hackathon table.",
+    "photo_portrait_alt": "Photo from above of the prototype laid out lengthwise: folding keyboard, breadboard with red and blue wires, display glasses, the Raspberry Pi and a power bank.",
+    "photo_clip": "The camera clip, a XIAO ESP32S3, with its red light on. It records only when you press.",
+    "photo_clip_alt": "Close-up of a tiny camera board with a lens and a glowing red LED, held on a black USB-C cable.",
+    "photo_zero": "The Pi Zero that becomes the cold key. It has no radio and never goes online.",
+    "photo_zero_alt": "A bare Raspberry Pi Zero circuit board with a microSD card, on a wooden table.",
+    "kiosk_heading": "In the glasses",
+    "kiosk_note": "The kiosk in demo mode, with sample data, as it renders on the glasses.",
+    "kiosk_agents": "Agents: tasks moving across the kanban board, delegated by voice.",
+    "kiosk_agents_alt": "Dark dashboard titled Agents with queued, ready, running and done columns of task cards from the researcher, hermes, portfolio, librarian and wallet agents.",
+    "kiosk_transactions": "Transactions: every proposal with the Guardian's verdict, including a refused memecoin swap.",
+    "kiosk_transactions_alt": "Dark dashboard titled Transactions listing executed, refused and waiting transactions with reasons such as outside mandate and over cap.",
+    "kiosk_wallets": "Wallets: the agents' hot wallet, savings and the cold key, watch-only.",
+    "kiosk_wallets_alt": "Dark dashboard titled Wallets showing three wallets, hot, savings and cold, with ETH and USDC balances.",
+    "kiosk_sensors": "Sensors: the deck, the camera clip and the agent server at a glance.",
+    "kiosk_sensors_alt": "Dark dashboard titled Sensors with tiles for deck temperature, disk, camera clip status, Hermes reachability and environment readings.",
+    "kiosk_media": "Media: photos, clips and memos, and whether each is backed up.",
+    "kiosk_media_alt": "Dark dashboard titled Media showing a grid of nine numbered photo, video and audio tiles with sync status.",
+    "deck_link": "Slide deck",
+    "video_link": "Demo video",
+    "token2049_link": "TOKEN2049",
+    "token2049_title": "TOKEN2049 Origins",
+    "token2049_intro": "Exo was built at the TOKEN2049 Origins hackathon in Singapore in October 2026, for the main track, Chainlink CRE and NOWNodes. Everything for the judges is here: the demo, the slides, the code, and the raw evidence from the live runs.",
+    "token2049_video_alt": "Video thumbnail: Konrad presenting the Chainlink CRE Transaction Guardian slide, with two people wearing Exo on an orange background.",
+    "token2049_watch": "Watch the demo on YouTube",
+    "token2049_links_heading": "Links",
+    "token2049_qr_heading": "Scan",
+    "token2049_qr_note": "Each code opens the link under it.",
+    "header_nav": "Site"
   },
-  "colophon": "Argo Exo was built at the TOKEN2049 Origins hackathon in Singapore, October 2026. Set in Newsreader. Nothing here is financial advice."
+  "colophon": "Argo Exo was built at the TOKEN2049 Origins hackathon in Singapore, October 2026. Set in Newsreader. Nothing here is financial advice.",
+  "links": {
+    "deck": "https://docs.google.com/presentation/d/1jMS6c9_Qkjl9TIvXBBCmAikPJLPxmV9X_ygEas1I3mg/edit?usp=sharing",
+    "video": "https://www.youtube.com/watch?v=yyxsdwOJtts"
+  }
 }

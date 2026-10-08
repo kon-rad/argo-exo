@@ -2,20 +2,21 @@
 {% macro section_head(key) %}{% set s = copy.sections[key] %}<h2 id="{{ key }}-title"><span class="numeral">§ {{ s.numeral }}.</span><span class="heading">{{ s.heading }}</span></h2>{% endmacro %}
 {% block body %}
 <header class="titlepage">
-  <div class="emblem-mount"><img src="/static/img/argo-emblem.png" alt="{{ copy.labels.emblem_alt }}" width="120" height="150"></div>
+  <img class="logo" src="/static/img/argo-logo.png" alt="{{ copy.labels.emblem_alt }}" width="88" height="146">
   <hr class="rule-double">
   <p class="kicker">{{ copy.hero.kicker }}</p>
   <h1>{{ copy.title }}</h1>
   <p class="headline">{{ copy.hero.headline }}</p>
   <p class="lede">{{ copy.hero.lede }}</p>
   <hr class="rule-double">
-  <a class="bookplate" href="#preorder">{{ copy.hero.cta }}</a>
+  <a class="bookplate" href="#waitlist">{{ copy.hero.cta }}</a>
+  <p class="deck-link"><a href="{{ copy.links.video }}" rel="noopener">{{ copy.labels.video_link }}</a> · <a href="{{ copy.links.deck }}" rel="noopener">{{ copy.labels.deck_link }}</a> · <a href="https://github.com/kon-rad/argo-exo" rel="noopener">{{ copy.labels.source_link }}</a></p>
 </header>
 
 <nav class="toc" aria-labelledby="toc-title">
   <h2 id="toc-title">{{ copy.contents_heading }}</h2>
   <ol class="contents">
-    {% for key in ["features", "kit", "preorder", "faq"] %}{% set s = copy.sections[key] %}
+    {% for key in ["features", "prototype", "kit", "waitlist", "faq"] %}{% set s = copy.sections[key] %}
     <li><span class="num">§ {{ s.numeral }}</span><a class="name" href="#{{ key }}">{{ s.heading }}</a></li>
     {% endfor %}
   </ol>
@@ -28,7 +29,7 @@
   <div class="figures">
     {% for f in features %}
     <figure id="fig-{{ f.fig }}" class="with-margin">
-      <div class="plate-frame"><img src="/static/img/{{ f.img | default('plates/' ~ f.id ~ '.svg') }}" alt="{{ f.alt }}" width="400" height="300" loading="lazy"></div>
+      <div class="plate-frame{{ ' photo' if f.img else '' }}{{ ' fit-contain' if f.fit == 'contain' else '' }}"><img src="/static/img/{{ f.img | default('plates/' ~ f.id ~ '.svg') }}" alt="{{ f.alt }}" width="{{ f.w | default(400) }}" height="{{ f.h | default(300) }}" loading="lazy"></div>
       <figcaption><span class="fig">Fig. {{ f.fig }}. {{ f.name }}.</span>
         <p class="blurb">{{ f.blurb }}</p>
         <span class="margin-note">cf. §{{ f.section }}</span></figcaption>
@@ -38,13 +39,34 @@
 </section>
 
 <hr class="rule-hair">
+<section id="prototype" aria-labelledby="prototype-title">
+  {{ section_head("prototype") }}
+  <p class="dropcap">{{ copy.sections.prototype.intro }}</p>
+  <h3>{{ copy.labels.photos_heading }}</h3>
+  <div class="photo-grid">
+    <figure class="photo-wide"><img src="/static/img/photos/bench-overhead.webp" alt="{{ copy.labels.photo_bench_alt }}" width="1600" height="1200" loading="lazy"><figcaption>{{ copy.labels.photo_bench }}</figcaption></figure>
+    <figure><img src="/static/img/photos/bench-portrait.webp" alt="{{ copy.labels.photo_portrait_alt }}" width="1200" height="1600" loading="lazy"><figcaption>{{ copy.labels.photo_portrait }}</figcaption></figure>
+    <div class="photo-stack">
+      <figure><img src="/static/img/photos/camera-clip.webp" alt="{{ copy.labels.photo_clip_alt }}" width="652" height="758" loading="lazy"><figcaption>{{ copy.labels.photo_clip }}</figcaption></figure>
+      <figure><img src="/static/img/photos/pi-zero-cold-key.webp" alt="{{ copy.labels.photo_zero_alt }}" width="416" height="194" loading="lazy"><figcaption>{{ copy.labels.photo_zero }}</figcaption></figure>
+    </div>
+  </div>
+  <h3>{{ copy.labels.kiosk_heading }}</h3>
+  <p class="note">{{ copy.labels.kiosk_note }}</p>
+  <div class="kiosk-grid">
+    {% for k in ["agents", "transactions", "wallets", "sensors", "media"] %}
+    <figure class="{{ 'kiosk-wide' if loop.first else '' }}"><img src="/static/img/kiosk/{{ k }}.webp" alt="{{ copy.labels['kiosk_' ~ k ~ '_alt'] }}" width="1600" height="900" loading="lazy"><figcaption>{{ copy.labels['kiosk_' ~ k] }}</figcaption></figure>
+    {% endfor %}
+  </div>
+</section>
+
+<hr class="rule-hair">
 <section id="renders" class="renders" aria-labelledby="renders-title">
   <h2 id="renders-title"><span class="heading">{{ copy.labels.renders_heading }}</span></h2>
   <p>{{ copy.labels.renders_note }} <a href="/blog/design-language.html">{{ copy.labels.renders_link }}</a></p>
   <div class="render-grid">
-    <img class="render-wide" src="/static/img/blog/design/m1-hero-still-life.webp" alt="The complete kit laid out on pale grey: Pi case and power sled, glasses case, remote panel with an orange talk key and green approve key, camera clip and strap." width="1600" height="893" loading="lazy">
-    <img src="/static/img/blog/design/m4-approve-key-macro.webp" alt="A fingertip about to press the green-lit approve keyswitch on the chest-mounted panel." width="1289" height="1600" loading="lazy">
-    <img src="/static/img/blog/design/m2-woman-talk-portrait.webp" alt="A woman wearing display glasses and the sling, pressing the orange talk key while she speaks." width="1289" height="1600" loading="lazy">
+    {% for r in renders %}<img class="{{ 'render-wide' if r.wide else '' }}" src="/static/img/blog/design/{{ r.file }}.webp" alt="{{ r.alt }}" width="{{ r.w }}" height="{{ r.h }}" loading="lazy">
+    {% endfor %}
   </div>
 </section>
 
@@ -55,23 +77,34 @@
   {% for t in tiers %}
   <article class="plate" data-tier="{{ t.tier }}" aria-labelledby="plate-{{ t.tier }}">
     <h3 id="plate-{{ t.tier }}"><span class="plate-no">Plate {{ t.plate }}.</span>{{ t.name }}</h3>
-    <p class="price" data-price-for="{{ t.tier }}">{{ copy.states.opening_soon }}</p>
     <table>
       <tbody>{% for item in t.includes %}<tr><th scope="row">{{ loop.index }}.</th><td>{{ item }}</td></tr>{% endfor %}</tbody>
     </table>
-    <button class="bookplate buy" type="button" data-buy="{{ t.tier }}" disabled>{{ copy.hero.cta }}</button>
   </article>
   {% endfor %}
 </section>
 
 <hr class="rule-hair">
-<section id="preorder" aria-labelledby="preorder-title">
-  {{ section_head("preorder") }}
-  <p class="dropcap">{{ copy.sections.preorder.intro }}</p>
-  <p class="edition" id="edition"></p>
-  <p class="status-line" id="checkout-status" role="status"></p>
-  <p class="error" id="checkout-error" role="alert" hidden></p>
-  <p class="agree"><input type="checkbox" id="agree"><label for="agree">{{ copy.sections.preorder.agree }}</label> <a href="/terms.html">{{ copy.labels.terms_link }}</a></p>
+<section id="waitlist" aria-labelledby="waitlist-title">
+  {{ section_head("waitlist") }}
+  <p class="dropcap">{{ copy.sections.waitlist.intro }}</p>
+  <form class="waitlist" id="waitlist-form" novalidate data-msg='{{ {"thanks": copy.sections.waitlist.thanks, "invalid": copy.sections.waitlist.invalid, "busy": copy.sections.waitlist.busy, "failed": copy.sections.waitlist.failed} | tojson }}'>
+    <label for="waitlist-email" class="visually-hidden">{{ copy.labels.email }}</label>
+    <input type="email" id="waitlist-email" name="email" required maxlength="120" autocomplete="email" placeholder="{{ copy.sections.waitlist.placeholder }}">
+    <button class="bookplate" type="submit">{{ copy.sections.waitlist.button }}</button>
+  </form>
+  <p class="status-line" id="waitlist-status" role="status"></p>
+</section>
+
+<hr class="rule-hair">
+<section id="scan" aria-labelledby="scan-title">
+  <h2 id="scan-title"><span class="heading">{{ copy.labels.token2049_title }}</span></h2>
+  <p>{{ copy.labels.token2049_qr_note }} <a href="/token2049/">{{ copy.labels.token2049_link }}</a></p>
+  <div class="qr-grid">
+    {% for c in token2049.codes if c.slug in ["video", "slides", "github", "cre-evidence", "nownodes-evidence"] %}
+    <figure><a href="{{ c.url }}" rel="noopener"><img src="/static/img/qr/{{ c.slug }}.svg" alt="QR code: {{ c.name }}" width="200" height="200" loading="lazy"></a><figcaption>{{ c.name }}</figcaption></figure>
+    {% endfor %}
+  </div>
 </section>
 
 <hr class="rule-hair">
@@ -89,6 +122,5 @@
   </ol>
 </section>
 {% endif %}
-<script type="application/json" id="checkout-copy">{{ {"states": {"paused": copy.states.paused, "sold_out": copy.states.sold_out, "unavailable": copy.states.unavailable}, "checkout": copy.checkout, "receipt": copy.receipt} | tojson }}</script>
-<script type="module" src="/static/checkout.js"></script>
+<script type="module" src="/static/waitlist.mjs"></script>
 {% endblock %}

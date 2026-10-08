@@ -2,7 +2,7 @@
 {% block title %}{{ copy.title }} · {{ copy.labels.terms_title }}{% endblock %}
 {% block body %}
 <header class="terms-head">
-  <a href="/"><div class="emblem-mount"><img src="/static/img/argo-emblem.png" alt="{{ copy.labels.terms_emblem_alt }}" width="120" height="150"></div></a>
+  <a href="/"><img class="logo" src="/static/img/argo-logo.png" alt="{{ copy.labels.terms_emblem_alt }}" width="88" height="146"></a>
   <hr class="rule-double">
   {% set words = copy.labels.terms_title.rsplit(" ", 1) %}<h1>{% if words | length == 2 %}{{ words[0] }} <span class="nowrap">{{ words[1] }}</span>{% else %}{{ words[0] }}{% endif %}</h1>
   <hr class="rule-double">

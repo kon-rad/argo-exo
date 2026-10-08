@@ -61,9 +61,6 @@ img { max-width: 100%; }
 
 /* title page */
 .titlepage { text-align: center; padding: 56px 0 24px; }
-.emblem-mount { display: inline-block; padding: 14px; background: var(--paper);
-  border: 1px solid var(--rule-soft); outline: 1px solid var(--rule-soft); outline-offset: 4px; }
-.emblem-mount img { display: block; width: 120px; height: auto; border-radius: 12px; }
 .titlepage .kicker { font-style: italic; color: var(--muted); margin: 18px auto 0; }
 .titlepage h1 { font-weight: 500; font-variant: small-caps; letter-spacing: 0.14em;
   font-size: clamp(40px, 7vw, 76px); line-height: 1.05; margin: 8px 0 14px; }
@@ -230,3 +227,56 @@ footer.colophon nav a { margin: 0 6px; }
 .renders .render-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 18px; }
 .renders .render-grid img { display: block; width: 100%; height: 100%; object-fit: cover; border: 1px solid var(--rule-soft); }
 .renders .render-grid .render-wide { grid-column: 1 / -1; height: auto; }
+
+/* the prototype: real photographs and kiosk screenshots, never inverted in the evening scheme */
+#prototype h3 { font-variant: small-caps; letter-spacing: 0.08em; font-weight: 500; margin: 32px 0 6px; }
+#prototype .note { color: var(--muted); font-style: italic; margin: 0 0 12px; }
+#prototype figure { margin: 0; }
+#prototype figure img { display: block; width: 100%; height: auto; border: 1px solid var(--rule-soft); }
+#prototype figcaption { font-size: 16px; color: var(--muted); margin-top: 6px; max-width: none; }
+.photo-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 12px; }
+.photo-grid .photo-wide { grid-column: 1 / -1; }
+.photo-stack { display: grid; gap: 16px; align-content: start; }
+.kiosk-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.kiosk-grid .kiosk-wide { grid-column: 1 / -1; }
+.kiosk-grid img { background: #000; }
+@media (max-width: 640px) { .photo-grid, .kiosk-grid { grid-template-columns: 1fr; } }
+
+/* concept renders: 3 across, cropped to one shape; the hero spans the row */
+.renders .render-grid { grid-template-columns: repeat(3, 1fr); }
+.renders .render-grid img:not(.render-wide) { aspect-ratio: 4 / 3; }
+@media (max-width: 640px) { .renders .render-grid { grid-template-columns: 1fr 1fr; } }
+
+/* the waitlist form */
+.waitlist { display: flex; flex-wrap: wrap; gap: 12px; align-items: stretch; margin: 18px 0 8px; max-width: 560px; }
+.waitlist input { flex: 1 1 260px; min-width: 0; padding: 12px 14px; font: 400 18px/1.3 var(--serif);
+  color: var(--text); background: var(--surface); border: 1px solid var(--rule); border-radius: 0; }
+.waitlist .bookplate { margin-top: 0; }
+.waitlist .bookplate[disabled] { opacity: 0.6; cursor: wait; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* feature figures that show the real product: photos, screenshots and renders fill the frame and are never inverted */
+.plate-frame.photo { padding: 0; background: #000; }
+.plate-frame.photo img { object-fit: cover; filter: none !important; }
+.titlepage .deck-link { margin: 18px auto 0; font-variant: small-caps; letter-spacing: 0.08em; }
+.plate-frame.photo.fit-contain img { object-fit: contain; }
+
+/* the Argo mark and name, cut out of the old card: no mount, no frame */
+.titlepage .logo, .logo { display: block; margin: 0 auto; width: 88px; height: auto; }
+
+/* top navigation: one quiet line above the title page */
+.topnav { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 14px 0 0;
+  font-variant: small-caps; letter-spacing: 0.08em; font-size: 16px; }
+.topnav a { text-decoration: none; }
+.topnav a:hover { text-decoration: underline; }
+
+/* the TOKEN2049 page and the QR band */
+.video-card { margin: 28px 0; }
+.video-card img { display: block; width: 100%; height: auto; border: 1px solid var(--rule-soft); }
+.video-card figcaption { margin-top: 8px; color: var(--muted); }
+.small-head { font-variant: small-caps; letter-spacing: 0.08em; font-weight: 500; margin: 36px 0 8px; }
+.link-list { padding-left: 1.2em; }
+.qr-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 20px; margin-top: 14px; }
+.qr-grid figure { margin: 0; text-align: center; }
+.qr-grid img { display: block; width: 100%; height: auto; background: #fff; padding: 6px; border: 1px solid var(--rule-soft); }
+.qr-grid figcaption { font-size: 15px; color: var(--muted); margin-top: 6px; }

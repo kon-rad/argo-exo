@@ -16,6 +16,10 @@
 <body>
 <a class="skip" href="#main">{{ copy.labels.skip }}</a>
 <div class="volume">
+<nav class="topnav" aria-label="{{ copy.labels.header_nav }}">
+  <a href="/">{{ copy.title }}</a>
+  <span class="topnav-right"><a href="/token2049/">{{ copy.labels.token2049_link }}</a> · <a href="{{ copy.links.video }}" rel="noopener">{{ copy.labels.video_link }}</a> · <a href="/blog/">{{ copy.labels.blog_link }}</a></span>
+</nav>
 <main id="main">
 {% block body %}{% endblock %}
 </main>
@@ -24,7 +28,7 @@
   <img class="endpiece" src="/static/img/colophon-endpiece.png" alt="" width="240" height="48">
   <p>{{ copy.colophon }}</p>
   <nav aria-label="{{ copy.labels.footer_nav }}">
-    <a href="/blog/">{{ copy.labels.blog_link }}</a> · <a href="/terms.html">{{ copy.labels.terms_link }}</a> · <a href="https://github.com/kon-rad/argo-exo">{{ copy.labels.source_link }}</a> · <a href="https://myargoquest.com">{{ copy.labels.argo_link }}</a>
+    <a href="/token2049/">{{ copy.labels.token2049_link }}</a> · <a href="/blog/">{{ copy.labels.blog_link }}</a> · <a href="{{ copy.links.video }}" rel="noopener">{{ copy.labels.video_link }}</a> · <a href="{{ copy.links.deck }}" rel="noopener">{{ copy.labels.deck_link }}</a> · <a href="https://github.com/kon-rad/argo-exo">{{ copy.labels.source_link }}</a> · <a href="https://myargoquest.com">{{ copy.labels.argo_link }}</a>
   </nav>
 </footer>
 </div>

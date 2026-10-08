@@ -14,6 +14,7 @@ from werkzeug.exceptions import HTTPException
 
 from .chain import SaleUnavailable
 from .claims import ClaimError, verify_claim
+from .waitlist import WAITLIST_EMAIL_RE
 
 log = logging.getLogger("exo-presale")
 
@@ -24,6 +25,7 @@ MAX_DEVICE = 2 ** 32
 MAX_TIME = 2 ** 40
 WINDOW_S = 3600
 MAX_BUCKETS = 10_000
+WAITLIST_RATE = 60
 # Cc control, Cs surrogate, Zl/Zp line/paragraph separators, Cf format (bidi overrides, zero-width joiners, BOM):
 # none belong in a name or an address label, and Cf ones can make an export row read differently from what it holds.
 BAD_CATEGORIES = ("Cc", "Cs", "Zl", "Zp", "Cf")
@@ -73,13 +75,16 @@ def rate_key(addr: str) -> str:
 
 
 def create_app(sale, store, countries: tuple, rate_per_hour: int = 10, clock=time.time,
-               max_buckets: int = MAX_BUCKETS) -> Flask:
+               max_buckets: int = MAX_BUCKETS, waitlist=None, waitlist_rate_per_hour: int = WAITLIST_RATE) -> Flask:
     app = Flask("exo-presale")
     app.config["MAX_CONTENT_LENGTH"] = MAX_BODY
     countries = tuple(countries)
     hits: dict[str, deque] = defaultdict(deque)
     app.config["EXO_RATE_BUCKETS"] = hits
     hits_lock = threading.Lock()
+    # The waitlist gets its own, looser buckets: a conference hall shares one IP, and signing up there
+    # must not use up the shipping-claim quota (or the other way round).
+    wl_hits: dict[str, deque] = defaultdict(deque)
 
     def client_ip() -> str:
         # Trust X-Forwarded-For only from the local Caddy, and only its rightmost hop (the address Caddy saw);
@@ -90,7 +95,7 @@ def create_app(sale, store, countries: tuple, rate_per_hour: int = 10, clock=tim
                 return xff
         return request.remote_addr or "?"
 
-    def limited() -> bool:
+    def limited(hits=hits, rate=rate_per_hour) -> bool:
         now, ip = clock(), rate_key(client_ip())
         with hits_lock:
             for k in [k for k, q in hits.items() if not q or q[-1] < now - WINDOW_S]:
@@ -102,7 +107,7 @@ def create_app(sale, store, countries: tuple, rate_per_hour: int = 10, clock=tim
             q = hits[ip]
             while q and q[0] < now - WINDOW_S:
                 q.popleft()
-            if len(q) >= rate_per_hour:
+            if len(q) >= rate:
                 return True
             q.append(now)
             return False
@@ -164,5 +169,21 @@ def create_app(sale, store, countries: tuple, rate_per_hour: int = 10, clock=tim
             return err(409, "a newer claim for this receipt is already saved; sign again")
         log.info("claim device=%s outcome=saved", dev)
         return jsonify(ok=True)
+
+    @app.post("/api/waitlist")
+    def join_waitlist():
+        if waitlist is None:
+            return err(404, FIXED[404])
+        b = request.get_json(silent=True)
+        email = _clean(b.get("email"), 120) if isinstance(b, dict) else None
+        if email is None or not WAITLIST_EMAIL_RE.match(email):
+            log.info("waitlist outcome=invalid")
+            return err(400, "check: email")
+        if limited(wl_hits, waitlist_rate_per_hour):
+            log.info("waitlist outcome=rate-limited")
+            return err(429, "too many requests; try again later")
+        added = waitlist.add(email)
+        log.info("waitlist outcome=%s", "added" if added else "already")
+        return jsonify(ok=True)   # same answer either way: the page never reveals who is already on the list
 
     return app

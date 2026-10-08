@@ -7,6 +7,10 @@ import pytest
 import build
 
 SITE = Path(__file__).resolve().parents[1]
+ALL_PAGES = build.PAGES + build.DORMANT_PAGES
+# Labels that only the unpublished pre-order pages (receipt, terms) render.
+DORMANT_LABELS = {"chain_id", "claim_number", "contract", "country", "name", "network", "payment", "price", "receipt",
+                  "receipt_title", "refunds", "shipping", "shipping_countries", "terms_title", "terms_link"}
 
 @pytest.fixture
 def site(tmp_path):
@@ -56,8 +60,8 @@ def test_release_lists_every_feature_and_tier_and_escapes(site, tmp_path):
         assert f'id="fig-{f["fig"]}"' in html
     assert 'data-tier="1"' in html and 'data-tier="2"' in html
     assert "Filled &lt;b&gt;by&lt;/b&gt; Konrad" in html
-    for page in ("terms.html", "receipt.html"):
-        assert (tmp_path / "dist" / page).exists()
+    for page in build.DORMANT_PAGES:   # the pre-order pages aren't published while the waitlist runs
+        assert not (tmp_path / "dist" / page).exists()
     assert 'name="robots"' not in html
 
 
@@ -96,14 +100,15 @@ def test_release_refuses_an_emptied_slot(site, tmp_path):
 def test_draft_renders_the_volume(site, tmp_path):
     build.build(site, tmp_path / "dist")
     html = (tmp_path / "dist" / "index.html").read_text(encoding="utf-8")
-    for key in ("features", "kit", "preorder", "faq"):
+    for key in ("features", "prototype", "kit", "waitlist", "faq"):
         assert f'id="{key}"' in html and f'href="#{key}"' in html
     assert html.count("<h1") == 1
     assert "Fig. 3. On-command camera and memos." in html
     assert "Plate II." in html and "Plate III." in html
-    # no live price yet: every buy button is disabled, prices show the closed state
-    assert html.count("data-buy=") == html.count("disabled>") == 2
-    assert html.count("Subscriptions open shortly") == 2
+    # no sale: no buy buttons, no prices, no checkout script, no pre-order wording; a waitlist form instead
+    assert "data-buy=" not in html and "checkout.js" not in html and "Subscriptions open shortly" not in html
+    assert "pre-order" not in html.lower() and "preorder" not in html.lower()
+    assert 'id="waitlist-form"' in html and 'type="email"' in html and "/static/waitlist.mjs" in html
     for f in json.loads((site / "content" / "features.json").read_text(encoding="utf-8")):
         assert (tmp_path / "dist" / "static" / "img" / "plates" / f"{f['id']}.svg").exists()
     assert (tmp_path / "dist" / "static" / "styles.css").exists()
@@ -112,19 +117,19 @@ def test_draft_renders_the_volume(site, tmp_path):
 def test_every_img_has_an_alt(site, tmp_path):
     import re
     build.build(site, tmp_path / "dist")
-    for page in ("index.html", "receipt.html", "terms.html"):
+    for page in ("index.html",):
         for tag in re.findall(r"<img\b[^>]*>", (tmp_path / "dist" / page).read_text(encoding="utf-8")):
             assert "alt=" in tag, tag
 
 
 def test_terms_show_chain_and_contract_only_from_preorder_json(site, tmp_path):
-    build.build(site, tmp_path / "dist")
+    build.build(site, tmp_path / "dist", pages=ALL_PAGES)
     terms = (tmp_path / "dist" / "terms.html").read_text(encoding="utf-8")
     assert "basescan" not in terms and "8453" not in terms and "Base (chain ID" not in terms
     addr = "0x" + "ab" * 20
     (site / "static" / "preorder.json").write_text(json.dumps(
         {"chainId": 8453, "chainName": "Base", "contract": addr, "explorer": "https://basescan.org"}))
-    build.build(site, tmp_path / "dist")
+    build.build(site, tmp_path / "dist", pages=ALL_PAGES)
     terms = (tmp_path / "dist" / "terms.html").read_text(encoding="utf-8")
     assert f"https://basescan.org/address/{addr}" in terms
     assert "Base (chain ID 8453)" in terms
@@ -132,7 +137,7 @@ def test_terms_show_chain_and_contract_only_from_preorder_json(site, tmp_path):
 
 def test_zero_contract_counts_as_not_deployed(site, tmp_path):
     (site / "static" / "preorder.json").write_text(json.dumps({"chainId": 8453, "contract": "0x" + "0" * 40}))
-    build.build(site, tmp_path / "dist")
+    build.build(site, tmp_path / "dist", pages=ALL_PAGES)
     assert "8453" not in (tmp_path / "dist" / "terms.html").read_text(encoding="utf-8")
 
 
@@ -143,10 +148,10 @@ def test_labels_render_from_copy_and_are_release_gated(site, tmp_path):
         c["labels"][k] = f"L-{k}"
     (site / "content" / "copy.json").write_text(json.dumps(c), encoding="utf-8")
     build.build(site, tmp_path / "dist", release=True)
-    pages = ["index.html", "receipt.html", "terms.html"] + [str(p.relative_to(tmp_path / "dist")) for p in (tmp_path / "dist" / "blog").glob("*.html")]
+    pages = ["index.html", "token2049/index.html"] + [str(p.relative_to(tmp_path / "dist")) for p in (tmp_path / "dist" / "blog").glob("*.html")]
     html = "".join((tmp_path / "dist" / p).read_text(encoding="utf-8") for p in pages)
     for k in c["labels"]:
-        if k not in ("network", "contract", "chain_id"):  # those three need a deployed preorder.json
+        if k not in DORMANT_LABELS:
             assert f"L-{k}" in html, k
     c["labels"]["source_link"] = " "
     (site / "content" / "copy.json").write_text(json.dumps(c), encoding="utf-8")
@@ -215,3 +220,15 @@ def test_blog_post_needs_front_matter_and_a_clean_slug(site, tmp_path):
     (blog / "zz-bad.md").write_text("---\ntitle: T\nslug: ok\ndate: 2026-10-07\n---\nbody")
     with pytest.raises(SystemExit, match="summary"):
         build.load_posts(site)
+
+
+def test_token2049_page_links_video_slides_repo_and_every_qr(site, tmp_path):
+    build.build(site, tmp_path / "dist")
+    page = (tmp_path / "dist" / "token2049" / "index.html").read_text(encoding="utf-8")
+    t = json.loads((site / "content" / "token2049.json").read_text(encoding="utf-8"))
+    assert t["video_url"] in page and "docs.google.com/presentation" in page and "github.com/kon-rad/argo-exo" in page
+    for c in t["codes"]:
+        if c["slug"] != "token2049":
+            assert f'/static/img/qr/{c["slug"]}.svg' in page and (site / "static" / "img" / "qr" / f'{c["slug"]}.svg').exists()
+    home = (tmp_path / "dist" / "index.html").read_text(encoding="utf-8")
+    assert 'href="/token2049/"' in home and t["video_url"] in home

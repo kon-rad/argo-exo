@@ -1,0 +1,31 @@
+{% extends "base.html.j2" %}
+{% block title %}{{ copy.title }} · {{ copy.labels.token2049_title }}{% endblock %}
+{% block description %}{{ copy.labels.token2049_intro }}{% endblock %}
+{% block body %}
+<header class="terms-head">
+  <a href="/"><img class="logo" src="/static/img/argo-logo.png" alt="{{ copy.labels.terms_emblem_alt }}" width="88" height="146"></a>
+  <hr class="rule-double">
+  <h1>{{ copy.labels.token2049_title }}</h1>
+  <hr class="rule-double">
+</header>
+<p class="dropcap">{{ copy.labels.token2049_intro }}</p>
+
+<figure class="video-card">
+  <a href="{{ token2049.video_url }}" rel="noopener"><img src="/static/img/video-thumb.webp" alt="{{ copy.labels.token2049_video_alt }}" width="1280" height="720"></a>
+  <figcaption><a href="{{ token2049.video_url }}" rel="noopener">{{ copy.labels.token2049_watch }}</a> · {{ token2049.video_title }}</figcaption>
+</figure>
+
+<h2 class="small-head">{{ copy.labels.token2049_links_heading }}</h2>
+<ul class="link-list">
+  {% for c in token2049.codes if c.slug != "token2049" %}<li><a href="{{ c.url }}" rel="noopener">{{ c.name }}</a></li>
+  {% endfor %}
+</ul>
+
+<h2 class="small-head">{{ copy.labels.token2049_qr_heading }}</h2>
+<p class="note">{{ copy.labels.token2049_qr_note }}</p>
+<div class="qr-grid">
+  {% for c in token2049.codes if c.slug != "token2049" %}
+  <figure><a href="{{ c.url }}" rel="noopener"><img src="/static/img/qr/{{ c.slug }}.svg" alt="QR code: {{ c.name }}" width="200" height="200" loading="lazy"></a><figcaption>{{ c.name }}</figcaption></figure>
+  {% endfor %}
+</div>
+{% endblock %}
