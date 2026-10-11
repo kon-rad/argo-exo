@@ -7,14 +7,15 @@ from typing import Callable
 
 from flask import Flask, abort, jsonify, send_file, send_from_directory
 
-from .. import media, state as st
+from .. import demo, media, state as st
 
 STATIC = Path(__file__).parent / "static"
 log = logging.getLogger("exo-kiosk")
 
 
 def create_app(settings, providers: dict[str, Callable[[int], dict]], hermes_ok: Callable[[], bool],
-               clock: Callable[[], float] = time.monotonic, hermes_ttl: float = 10.0) -> Flask:
+               clock: Callable[[], float] = time.monotonic, hermes_ttl: float = 10.0,
+               wall: Callable[[], float] = time.time) -> Flask:
     app = Flask("exo-kiosk", static_folder=str(STATIC), static_url_path="/static")
 
     cache: dict = {"at": None, "ok": False}
@@ -36,13 +37,18 @@ def create_app(settings, providers: dict[str, Callable[[int], dict]], hermes_ok:
     @app.get("/api/state")
     def state():
         snap = st.snapshot(settings.state)
+        if demo.enabled(settings.state):
+            return jsonify(demo.overlay_state(snap, wall()))
         snap["hermes"] = hermes_cached()
+        snap["demo"] = False
         return jsonify(snap)
 
     @app.get("/api/panel/<name>")
     def panel(name):
         if name not in providers:
             return jsonify(error="unknown panel"), 404
+        if demo.enabled(settings.state):
+            return jsonify(demo.panel(name, wall()))
         try:
             return jsonify(providers[name](st.snapshot(settings.state)["page"]))
         except Exception as exc:          # one broken source must not blank the kiosk

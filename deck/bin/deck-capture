@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
-"""Switch the XIAO clip's camera and mic. The clip polls this state every ~2 s.
+"""Switch capture: the XIAO clip's camera, video (clip camera + Pi mic, via deck-recorder) and the mic.
+The clip and deck-recorder poll this state.
 
-  deck-capture camera on|off|toggle
+  deck-capture video on|off|toggle    video with sound (the Camera button's double tap)
+  deck-capture camera on|off|toggle   a photo every 30 s
   deck-capture mic on|off|toggle
   deck-capture snap          one photo now (camera does not need to be on)
   deck-capture off           everything off
@@ -13,7 +15,7 @@ from pathlib import Path
 DECK = Path(os.environ.get("DECK_ROOT", "/srv/deck"))
 STATE = DECK / "capture.json"
 CLIP = DECK / "clip-status.json"
-OFF = {"camera": False, "mic": False, "interval": 30, "snap": 0}
+OFF = {"camera": False, "mic": False, "video": False, "interval": 30, "snap": 0}
 
 
 def read(path, default):
@@ -32,7 +34,7 @@ def write(st):
 
 def main(args):
     st = read(STATE, OFF)
-    if len(args) == 2 and args[0] in ("camera", "mic") and args[1] in ("on", "off", "toggle"):
+    if len(args) == 2 and args[0] in ("camera", "mic", "video") and args[1] in ("on", "off", "toggle"):
         st[args[0]] = (not st[args[0]]) if args[1] == "toggle" else args[1] == "on"
     elif args == ["snap"]:
         st["snap"] = int(st["snap"]) + 1
@@ -42,14 +44,14 @@ def main(args):
         clip = read(CLIP, {})
         age = time.time() - clip["seen"] if "seen" in clip else None
         online = age is not None and age < 10
-        print(f"camera={'on' if st['camera'] else 'off'} mic={'on' if st['mic'] else 'off'} snap={st['snap']}")
+        print(f"video={'on' if st['video'] else 'off'} camera={'on' if st['camera'] else 'off'} mic={'on' if st['mic'] else 'off'} snap={st['snap']}")
         print(f"clip={'online' if online else 'offline'}" + (f" (seen {age:.0f}s ago, recording={clip.get('rec')}, rssi={clip.get('rssi')})" if age is not None else ""))
         return 0
     else:
         print(__doc__.strip())
         return 1
     write(st)
-    print(f"camera={'on' if st['camera'] else 'off'} mic={'on' if st['mic'] else 'off'} snap={st['snap']}")
+    print(f"video={'on' if st['video'] else 'off'} camera={'on' if st['camera'] else 'off'} mic={'on' if st['mic'] else 'off'} snap={st['snap']}")
     return 0
 
 

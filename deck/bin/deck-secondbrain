@@ -1,0 +1,23 @@
+#!/bin/bash
+# Open the Second Brain app on the deck as a normal desktop window (mouse, keyboard, cursor).
+# The kiosk (deck-kiosk, :8080) is the voice-first glasses view; this is the
+# full app on the droplet: vault files, B2 media, ring data, wallets.
+# Usage: deck-secondbrain [open|close|status]
+PROFILE="$HOME/.config/deck-secondbrain-profile"   # its own profile, so the login survives and never mixes with the kiosk
+# SECONDBRAIN_URL lives in /srv/deck/.env (kept out of this public repo).
+[ -z "${SECONDBRAIN_URL:-}" ] && [ -r /srv/deck/.env ] && SECONDBRAIN_URL=$(grep -m1 "^SECONDBRAIN_URL=" /srv/deck/.env | cut -d= -f2-)
+URL="${SECONDBRAIN_URL:?set SECONDBRAIN_URL in /srv/deck/.env}"
+running(){ pgrep -u "$USER" -f -- "--user-data-dir=$PROFILE" >/dev/null; }
+open(){
+  export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+  export WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-wayland-0}"
+  # A second call while it is open just focuses or opens a tab in the same window.
+  nohup chromium --user-data-dir="$PROFILE" --ozone-platform=wayland \
+    --no-first-run --password-store=basic --new-window "$URL" >/dev/null 2>&1 &
+}
+case "${1:-open}" in
+  open)   open ;;
+  close)  pkill -u "$USER" -f -- "--user-data-dir=$PROFILE" || true ;;
+  status) running && echo secondbrain-open || echo secondbrain-closed; echo "url: $URL" ;;
+  *) echo "usage: deck-secondbrain [open|close|status]"; exit 1 ;;
+esac

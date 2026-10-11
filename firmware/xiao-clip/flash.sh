@@ -7,7 +7,12 @@ cd "$(dirname "$0")"
 FQBN="esp32:esp32:XIAO_ESP32S3:PSRAM=opi"
 SKETCH=deck-clip
 
-PORT=$(ls /dev/cu.usbmodem* 2>/dev/null | head -1 || true)
+PORTS=$(ls /dev/cu.usbmodem* 2>/dev/null || true)
+if [ -z "${PORT:-}" ] && [ "$(echo "$PORTS" | grep -c .)" -gt 1 ]; then
+  echo "More than one USB serial device (a phone counts):"; echo "$PORTS"
+  echo "Unplug the others, or rerun with PORT=/dev/cu.usbmodemXXXX"; exit 1
+fi
+PORT=${PORT:-$(echo "$PORTS" | head -1)}
 if [ -z "$PORT" ]; then
   echo "No XIAO found on USB. Check the USB-C cable carries data."
   echo "If it still doesn't show: hold BOOT, tap RESET, release BOOT, then rerun."
@@ -19,7 +24,7 @@ if [ "${1:-}" != "monitor" ]; then
   arduino-cli compile --fqbn "$FQBN" "$SKETCH"
   arduino-cli upload --fqbn "$FQBN" -p "$PORT" "$SKETCH"
   sleep 3
-  PORT=$(ls /dev/cu.usbmodem* 2>/dev/null | head -1)
+  PORT=${PORT_AFTER:-$PORT}
 fi
 
 echo "--- serial (90 s). Expect: cam=1 sd=1 mic=1 psram=1 ---"

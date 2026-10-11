@@ -9,15 +9,17 @@ Lights follow state files, so other services (voice loop, CRE, wallet) only need
   Panic    Approve + Mic held together for 2 s = hooks/freeze (ExoModule.freeze() from the deck's hot key)
   Talk     GPIO 26  press = start listening at once (hooks/talk-start), release = send (hooks/talk-stop);
                     a press under 0.3 s = hooks/talk-cancel; two quick taps = hooks/repeat
-  Camera   GPIO 6   tap = one photo (deck-capture snap), double = camera on/off
-  Mic      GPIO 13  tap = memo start/stop (deck-capture mic toggle)
-  Kiosk    GPIO 16  tap = next panel, double-tap = kiosk <-> desktop   [optional button]
+  Camera   GPIO 6   tap = one photo (deck-capture snap), double = video with sound on/off (deck-capture video toggle;
+                    deck-recorder records the clip's stream + the Pi mic)
+  Mic      GPIO 13  tap = audio memo start/stop (deck-capture mic toggle); runs alongside video
+  P1       GPIO 16  programmable; default tap = next panel, double = kiosk <-> desktop
+  P2       GPIO 27  programmable; nothing by default   [optional button]
+                    P1/P2 run the commands in /srv/deck/buttons.json (tap / double / hold), re-read on every
+                    press; set them with deck-button
 
-  LED Key    GPIO 17  in the key: blinks while transactions wait for approval; 3 fast flashes when one is sent
-  LED Rec    GPIO 22  on while the clip reports it is recording
-  LED OK     GPIO 23  flashes when state/verdict changes (approve 1x, cut 2x, refuse 3x)
-  LED Wait   GPIO 24  blinks while state/waiting-key exists (over-cap: needs the cold wallet)
-  LED Listen GPIO 25  on while Talk is held, or while state/listening exists
+  LED Key  GPIO 17  in the key: blinks while transactions wait for approval; 3 fast flashes when one is sent
+  LED Rec  GPIO 22  blinking = video recording; solid = audio only; one short blink = a photo arrived
+                    (listening, verdicts and the cold-key wait show in the glasses; those LEDs were dropped)
 
 Approval queue (state/):
   tx-queue/*.json      transactions CRE has approved, waiting for the human (oldest name first)
@@ -42,6 +44,7 @@ from exo_deck.hookq import HookQueue   # noqa: E402
 
 DECK = Path(os.environ.get("DECK_ROOT", "/srv/deck"))
 HOOKS, STATE = DECK / "hooks", DECK / "state"
+BUTTONS, PHOTOS = DECK / "buttons.json", DECK / "outbox" / "photos"
 QUEUE, APPROVED = STATE / "tx-queue", STATE / "tx-approved"
 HOLD_S, DOUBLE_S, TALK_MIN_S = 0.6, 0.4, 0.3   # hold threshold, double-tap window, shortest real Talk
 APPROVE_GAP_S = 1.0                              # at most one approval per second (bounce, auto mode)
@@ -49,7 +52,31 @@ BIN = {"python": os.environ.get("DECK_PY", "/srv/deck/venv/bin/python"),
        "capture": os.environ.get("DECK_CAPTURE", "/usr/local/bin/deck-capture"),
        "kiosk": os.environ.get("DECK_KIOSK", "/usr/local/bin/deck-kiosk")}
 
+DEFAULT_BUTTONS = {"p1": {"tap": f"{BIN['python']} -m exo_deck.navcli next", "double": f"{BIN['kiosk']} toggle", "hold": ""},
+                   "p2": {"tap": "", "double": "", "hold": ""}}
+
 log = logging.getLogger("deck-buttons")
+
+
+def program(button):
+    try:
+        conf = json.loads(BUTTONS.read_text())
+    except Exception:
+        conf = {}
+    return {**DEFAULT_BUTTONS.get(button, {}), **conf.get(button, {})}
+
+
+def run_programmed(button, gesture):
+    cmd = program(button).get(gesture, "").strip()
+    if not cmd:
+        log.info("%s %s: not programmed", button, gesture)
+        return
+    log.info("%s %s: %s", button, gesture, cmd)
+    try:
+        subprocess.Popen(["/bin/sh", "-c", cmd], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                         env={**os.environ, "PYTHONPATH": os.environ.get("EXO_DECK_PKG", "/srv/deck/app/deck")})
+    except OSError as e:
+        log.error("cannot run %s: %s", cmd, e)
 
 
 def run(*cmd):
@@ -89,10 +116,11 @@ def mtime(path):
 
 
 class Gestures:
-    """Turns press/release into tap and double-tap. A long press is ignored."""
+    """Turns press/release into tap, double-tap and hold. has_double() says whether to wait for a second tap."""
 
-    def __init__(self, button, on_tap=None, on_double=None):
-        self.on_tap, self.on_double = on_tap, on_double
+    def __init__(self, button, on_tap=None, on_double=None, on_hold=None, has_double=None):
+        self.on_tap, self.on_double, self.on_hold = on_tap, on_double, on_hold
+        self.has_double = has_double or (lambda: bool(self.on_double))
         self.taps, self.timer, self.held = 0, None, False
         button.hold_time = HOLD_S
         button.when_pressed = lambda: setattr(self, "held", False)
@@ -103,11 +131,12 @@ class Gestures:
         self.held = True
         self._cancel()
         self.taps = 0
+        self.on_hold and self.on_hold()
 
     def _released(self):
         if self.held:
             return
-        if not self.on_double:           # no double action: fire the tap at once
+        if not self.has_double():        # no double action: fire the tap at once
             self.on_tap and self.on_tap()
             return
         self.taps += 1
@@ -132,28 +161,31 @@ class Gestures:
 class Deck:
     def __init__(self):
         self.key = Button(5, bounce_time=0.05)
-        self.talk, self.camera, self.mic, self.kiosk = Button(26, bounce_time=0.03), Button(6, bounce_time=0.03), \
-            Button(13, bounce_time=0.03), Button(16, bounce_time=0.03)
-        self.led = {k: LED(p) for k, p in
-                    {"key": 17, "rec": 22, "ok": 23, "wait": 24, "listen": 25}.items()}
+        self.talk, self.camera, self.mic = Button(26, bounce_time=0.03), Button(6, bounce_time=0.03), \
+            Button(13, bounce_time=0.03)
+        self.p1, self.p2 = Button(16, bounce_time=0.03), Button(27, bounce_time=0.03)
+        self.led = {k: LED(p) for k, p in {"key": 17, "rec": 22}.items()}
         self.talking, self.talk_down, self.talk_tap_at = False, 0.0, 0.0
         self.talkq = HookQueue(run_wait)   # talk hooks run one at a time, in order
         self.last_approve = 0.0
         self.chord, self.chord_lock = ChordState(), threading.Lock()   # gpiozero callbacks vs tick()
-        self.flashing = {"key": False, "ok": False}
+        self.flashing = {"key": False, "rec": False}
         self.key.when_pressed = self.key_pressed
         self.key.when_released = self.key_released
         self.talk.when_pressed = self.talk_start
         self.talk.when_released = self.talk_released
         Gestures(self.camera, on_tap=lambda: run(BIN["capture"], "snap"),
-                 on_double=lambda: run(BIN["capture"], "camera", "toggle"))
+                 on_double=lambda: run(BIN["capture"], "video", "toggle"))
         Gestures(self.mic, on_tap=lambda: run(BIN["capture"], "mic", "toggle"))
         mic_gesture_press = self.mic.when_pressed
         self.mic.when_pressed = lambda: (mic_gesture_press(), self.mic_pressed())
-        Gestures(self.kiosk, on_tap=lambda: run(BIN["python"], "-m", "exo_deck.navcli", "next"),
-                 on_double=lambda: run(BIN["kiosk"], "toggle"))
-        self.last_verdict = mtime(STATE / "verdict")
+        for name, button in (("p1", self.p1), ("p2", self.p2)):
+            Gestures(button, on_tap=lambda n=name: run_programmed(n, "tap"),
+                     on_double=lambda n=name: run_programmed(n, "double"),
+                     on_hold=lambda n=name: run_programmed(n, "hold"),
+                     has_double=lambda n=name: bool(program(n).get("double", "").strip()))
         self.last_sent = mtime(STATE / "tx-sent")
+        self.last_photo = mtime(PHOTOS)
 
     # --- approval key -------------------------------------------------
     def key_pressed(self):
@@ -207,19 +239,23 @@ class Deck:
             self.talk_tap_at = now
 
     # --- lights -----------------------------------------------------------
-    def clip_recording(self):
+    def clip_audio(self):
+        """The clip's own mic is recording (only used when the Pi mic isn't fitted)."""
         try:
             clip = json.loads((DECK / "clip-status.json").read_text())
-            return time.time() - clip["seen"] < 10 and str(clip.get("rec")) == "1"
+            cap = json.loads((DECK / "capture.json").read_text())
+            return (time.time() - clip["seen"] < 10 and str(clip.get("rec")) == "1"
+                    and bool(cap.get("mic")) and not (STATE / "pi-mic").exists())
         except Exception:
             return False
 
-    def flash(self, led, times):
+    def flash(self, led, times, on_s=0.12):
         def go():
             self.flashing[led] = True
+            was = self.led[led].value
             for _ in range(times):
-                self.led[led].on(); time.sleep(0.12)
-                self.led[led].off(); time.sleep(0.12)
+                self.led[led].value = not was; time.sleep(on_s)   # a blink shows even on a solid LED
+                self.led[led].value = was; time.sleep(0.12)
             self.flashing[led] = False
         threading.Thread(target=go, daemon=True).start()
 
@@ -240,20 +276,21 @@ class Deck:
         blink = int(now * 2) % 2 == 0
         if not self.flashing["key"]:
             self.led["key"].value = waiting and blink
-        self.led["listen"].value = self.talking or (STATE / "listening").exists()
-        self.led["rec"].value = self.clip_recording()
-        self.led["wait"].value = (STATE / "waiting-key").exists() and blink
+        if not self.flashing["rec"]:
+            video = (STATE / "rec-video").exists()
+            audio = (STATE / "rec-audio").exists() or self.clip_audio()
+            self.led["rec"].value = blink if video else audio
+
+        mt = mtime(PHOTOS)
+        if mt and mt != self.last_photo:      # a new photo landed in the outbox
+            self.last_photo = mt
+            self.flash("rec", 1, on_s=0.3)
 
         mt = mtime(STATE / "tx-sent")
         if mt and mt != self.last_sent:
             self.last_sent = mt
             self.flash("key", 3)
 
-        mt = mtime(STATE / "verdict")
-        if mt and mt != self.last_verdict:
-            self.last_verdict = mt
-            text = (STATE / "verdict").read_text().strip().lower()
-            self.flash("ok", {"approve": 1, "cut": 2, "refuse": 3}.get(text.split()[0] if text else "", 1))
 
 
 def main():

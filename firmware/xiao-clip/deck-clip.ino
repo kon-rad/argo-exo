@@ -1,11 +1,14 @@
 // deck-clip.ino: XIAO ESP32S3 Sense on-demand camera + mic clip.
 // Board XIAO_ESP32S3, PSRAM = OPI PSRAM, esp32 core 3.x.
 // Records only while the Pi dashboard says so, and only while the Pi is reachable.
+// Video: an MJPEG stream on :81/stream?t=<token>. The Pi's deck-recorder pulls it only while video is on,
+// and records it together with the Pi's I2S mic.
 #include <WiFi.h>
 #include <WiFiMulti.h>
 #include <HTTPClient.h>
 #include <ESPmDNS.h>
 #include "esp_camera.h"
+#include "esp_http_server.h"
 #include "ESP_I2S.h"
 #include "FS.h"
 #include "SD.h"
@@ -26,6 +29,8 @@ I2SClass i2s;
 IPAddress piIP;
 bool camOK = false, sdOK = false, micOK = false, mdnsUp = false;
 bool wantCam = false, wantMic = false, camWas = false, recording = false, snapPending = false;
+volatile bool streaming = false;               // the Pi is pulling the video stream
+httpd_handle_t streamd = NULL;
 long lastSnap = -1;                            // -1 = not synced with the Pi yet
 uint32_t photoEveryMs = 30000, lastPhoto = 0, lastControlOk = 0;
 
@@ -65,6 +70,9 @@ void ensureNet() {
     if (!mdnsUp) mdnsUp = MDNS.begin("deck-clip");
   }
   if (piIP == IPAddress()) piIP = MDNS.queryHost(PI_HOST, 2000);
+#ifdef DECK_IP_S
+  if (piIP == IPAddress()) piIP.fromString(DECK_IP_S);   // venue Wi-Fi often blocks mDNS
+#endif
 }
 
 String piUrl(const String& path) {
@@ -76,7 +84,7 @@ String piUrl(const String& path) {
 bool pollControl() {
   if (WiFi.status() != WL_CONNECTED || piIP == IPAddress()) return false;
   HTTPClient http;
-  http.begin(piUrl("/control?rec=" + String(recording) + "&cam=" + String(camOK) + "&mic=" + String(micOK) +
+  http.begin(piUrl("/control?rec=" + String(recording) + "&vid=" + String(streaming) + "&cam=" + String(camOK) + "&mic=" + String(micOK) +
                    "&sd=" + String(sdOK) + "&rssi=" + String(WiFi.RSSI())));
   http.setTimeout(2000);
   http.addHeader("X-Deck-Token", TOKEN);
@@ -143,29 +151,91 @@ int flushDir(const char* dir, int maxFiles) {
   return sent;
 }
 
+// MJPEG video stream for the Pi. One frame per multipart part; ends when the Pi disconnects.
+#define BOUNDARY "exoframe"
+static esp_err_t streamHandler(httpd_req_t* req) {
+  char q[200], t[160];
+  if (httpd_req_get_url_query_str(req, q, sizeof q) != ESP_OK ||
+      httpd_query_key_value(q, "t", t, sizeof t) != ESP_OK || strcmp(t, TOKEN) != 0) {
+    httpd_resp_send_err(req, HTTPD_403_FORBIDDEN, "forbidden");
+    return ESP_FAIL;
+  }
+  httpd_resp_set_type(req, "multipart/x-mixed-replace;boundary=" BOUNDARY);
+  sensor_t* s = esp_camera_sensor_get();
+  if (s) s->set_framesize(s, FRAMESIZE_VGA);   // 640x480 keeps the frame rate up over Wi-Fi
+  streaming = true;
+  digitalWrite(LED_PIN, HIGH);
+  Serial.println("video stream ON");
+  char part[96];
+  esp_err_t r = ESP_OK;
+  while (r == ESP_OK) {
+    camera_fb_t* fb = esp_camera_fb_get();
+    if (!fb) { r = ESP_FAIL; break; }
+    int hl = snprintf(part, sizeof part, "\r\n--" BOUNDARY "\r\nContent-Type: image/jpeg\r\nContent-Length: %u\r\n\r\n", fb->len);
+    r = httpd_resp_send_chunk(req, part, hl);
+    if (r == ESP_OK) r = httpd_resp_send_chunk(req, (const char*)fb->buf, fb->len);
+    esp_camera_fb_return(fb);
+  }
+  if (s) s->set_framesize(s, FRAMESIZE_SVGA);
+  streaming = false;
+  Serial.println("video stream off");
+  return r;
+}
+
+void startStream() {
+  httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
+  cfg.server_port = 81;
+  cfg.ctrl_port = 32769;
+  cfg.stack_size = 8192;
+  if (httpd_start(&streamd, &cfg) != ESP_OK) { Serial.println("stream server failed"); return; }
+  httpd_uri_t uri = {};
+  uri.uri = "/stream"; uri.method = HTTP_GET; uri.handler = streamHandler;
+  httpd_register_uri_handler(streamd, &uri);
+}
+
 void setup() {
   Serial.begin(115200);
   pinMode(LED_PIN, OUTPUT);
   digitalWrite(LED_PIN, LOW);
   delay(1500);
-  camOK = initCamera();
+  for (int i = 0; i < 3 && !camOK; i++) {       // the sensor ID read is flaky on a loose stack: retry
+    camOK = initCamera();
+    if (!camOK) { esp_camera_deinit(); delay(300); }
+  }
   sdOK = SD.begin(21);
   if (sdOK) { SD.mkdir("/IMG"); SD.mkdir("/AUD"); }
   i2s.setPinsPdmRx(42, 41);                    // PDM mic: CLK 42, DATA 41
   micOK = i2s.begin(I2S_MODE_PDM_RX, 16000, I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_MONO);
   WiFi.mode(WIFI_STA);
   wifi.addAP(WIFI_SSID, WIFI_PASS);
+#ifdef WIFI2_SSID_S
+  wifi.addAP(WIFI2_SSID_S, WIFI2_PASS_S);           // optional second network (WiFiMulti picks the strongest)
+#endif
+  if (camOK) startStream();
   Serial.printf("cam=%d sd=%d mic=%d psram=%d\n", camOK, sdOK, micOK, psramFound());
 }
 
 void loop() {
+  static uint32_t lastDiag = 0;
+  if (millis() - lastDiag > 5000) {              // one status line every 5 s, for bring-up over USB serial
+    lastDiag = millis();
+    static bool scanned = false;                 // once: list what the 2.4 GHz radio can see
+    if (!scanned && WiFi.status() != WL_CONNECTED) {
+      int n = WiFi.scanNetworks();
+      Serial.printf("scan: %d networks\n", n);
+      scanned = n >= 0;                            // -1/-2: a scan was already running; try again next time
+      for (int i = 0; i < n; i++) Serial.printf("  seen: %s ch%d %ddBm\n", WiFi.SSID(i).c_str(), WiFi.channel(i), WiFi.RSSI(i));
+    }
+    Serial.printf("wifi=%d ssid=%s ip=%s rssi=%d pi=%s linked=%d\n", WiFi.status(), WiFi.SSID().c_str(),
+                  WiFi.localIP().toString().c_str(), WiFi.RSSI(), piIP.toString().c_str(), millis() - lastControlOk < 10000);
+  }
   ensureNet();
   if (pollControl()) lastControlOk = millis();
   bool linked = lastControlOk && millis() - lastControlOk < LINK_TIMEOUT_MS;
   bool cam = linked && wantCam && camOK;
   bool mic = linked && wantMic && micOK;
   bool was = recording;
-  recording = cam || mic;
+  recording = cam || mic || streaming;
   digitalWrite(LED_PIN, recording ? HIGH : LOW);
   if (recording != was) Serial.printf("recording %s (cam=%d mic=%d)\n", recording ? "ON" : "off", cam, mic);
 

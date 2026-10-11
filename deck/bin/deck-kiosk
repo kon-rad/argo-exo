@@ -1,0 +1,26 @@
+#!/bin/bash
+# Toggle the cyberdeck dashboard kiosk vs. the desktop.
+# Usage: deck-kiosk [toggle|on|off|status|boot-on|boot-off]
+PROFILE="$HOME/.config/deck-kiosk-profile"
+FLAG="$HOME/.config/deck-kiosk-on-boot"
+URL="http://localhost:8080"
+running(){ pgrep -u "$USER" -f -- "--user-data-dir=$PROFILE" >/dev/null; }
+on(){
+  running && return 0
+  export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+  export WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-wayland-0}"
+  nohup chromium --user-data-dir="$PROFILE" --ozone-platform=wayland --kiosk \
+    --noerrdialogs --disable-infobars --disable-session-crashed-bubble \
+    --no-first-run --password-store=basic "$URL" >/dev/null 2>&1 &
+}
+off(){ pkill -u "$USER" -f -- "--user-data-dir=$PROFILE" || true; }
+case "${1:-toggle}" in
+  toggle)  if running; then off; else on; fi ;;
+  on)      on ;;
+  off)     off ;;
+  status)  running && echo kiosk-on || echo kiosk-off; [ -f "$FLAG" ] && echo boot:on || echo boot:off ;;
+  boot-on) touch "$FLAG"; echo "kiosk will open at login" ;;
+  boot-off) rm -f "$FLAG"; echo "desktop at login" ;;
+  autostart) sleep 5; [ -f "$FLAG" ] && on ;;
+  *) echo "usage: deck-kiosk [toggle|on|off|status|boot-on|boot-off]"; exit 1 ;;
+esac

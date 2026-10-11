@@ -47,6 +47,8 @@ h1 { font: 500 48px var(--head); margin: 0 0 16px; color: var(--accent); }
 .cols { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
 .cols .rows li { display: block; }
 .cols .clamp { display: block; }
+.cols li.child { border-left: 10px solid var(--accent); }
+.feed { margin-top: 12px; border-top: 3px solid var(--edge); padding-top: 12px; }
 .grid9 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px 16px; margin-top: 8px; }
 .grid9 figure { margin: 0; background: var(--bg); border: 3px solid var(--edge); border-radius: 12px; padding: 6px; }
 .thumb { position: relative; height: 130px; background: var(--card); border-radius: 8px; overflow: hidden; display: grid; place-items: center; }
@@ -62,9 +64,21 @@ h1 { font: 500 48px var(--head); margin: 0 0 16px; color: var(--accent); }
 .ticker .lbl { color: var(--accent); font-weight: bold; margin-left: 12px; }
 .turn { margin-bottom: 14px; } .turn .who { color: var(--accent); font-weight: bold; margin-right: 12px; }
 .turn.you .who { color: var(--muted); }
+/* body panel: stats + score trend left, hypnogram + in-bed HR right. Stage ramp: one amber hue, light→dark by depth (validated ordinal on #000) */
+.body2 { display: grid; grid-template-columns: 600px minmax(0, 1fr); gap: 24px; align-items: start; }
+.body2 .rows li span:last-child { white-space: nowrap; }
+.chart { display: block; width: 100%; height: auto; overflow: visible; }
+.chart text { fill: var(--muted); font: 30px var(--body); }
+.chart text.val { fill: var(--text); font-weight: bold; }
+.chart .grid { stroke: var(--edge); stroke-width: 2; }
+.chart .line { fill: none; stroke: var(--accent); stroke-width: 3; stroke-linejoin: round; }
+.chart .bar { fill: var(--accent); opacity: 0.45; } .chart .bar.on { opacity: 1; }
+.st-awake { fill: #F7D9B5; } .st-rem_sleep { fill: #EDB57A; } .st-light_sleep { fill: #D9893F; } .st-deep_sleep { fill: #A8611F; }
 @media (max-width: 900px) {
   body { margin: 0; max-height: none; font-size: 20px; }   /* phone: exempt from the 30 px glasses minimum */
   #tabs, .chip, .ticker, .grid9 figcaption { font-size: 20px; }
   #tabs .name { display: none; }
   .cols, .grid9 { grid-template-columns: 1fr 1fr; }
+  .body2 { grid-template-columns: 1fr; }
+  .chart text { font-size: 20px; }
 }

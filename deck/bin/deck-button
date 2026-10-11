@@ -1,0 +1,64 @@
+#!/usr/bin/env python3
+"""Program the Exo's P1/P2 buttons. deck-buttons re-reads the file on every press; no restart needed.
+
+  deck-button                              show what each button does
+  deck-button set p2 tap "deck-capture snap"
+  deck-button set p1 hold "deck-capture off"
+  deck-button clear p2 double              unset one gesture
+  deck-button reset                        back to defaults (P1 tap = next panel, double = kiosk toggle; P2 nothing)
+
+Gestures: tap, double, hold (~0.6 s). A command is any shell command run as the deck user.
+Programming a double tap delays that button's single tap by 0.4 s (it waits to see if a second tap comes).
+"""
+import json, os, sys
+from pathlib import Path
+
+DECK = Path(os.environ.get("DECK_ROOT", "/srv/deck"))
+FILE = DECK / "buttons.json"
+PY, KIOSK = os.environ.get("DECK_PY", "/srv/deck/venv/bin/python"), os.environ.get("DECK_KIOSK", "/usr/local/bin/deck-kiosk")
+DEFAULT = {"p1": {"tap": f"{PY} -m exo_deck.navcli next", "double": f"{KIOSK} toggle", "hold": ""},  # same as deck-buttons
+           "p2": {"tap": "", "double": "", "hold": ""}}
+BUTTONS, GESTURES = ("p1", "p2"), ("tap", "double", "hold")
+
+
+def load():
+    try:
+        conf = json.loads(FILE.read_text())
+    except Exception:
+        conf = {}
+    return {b: {**DEFAULT[b], **conf.get(b, {})} for b in BUTTONS}
+
+
+def save(conf):
+    tmp = FILE.with_name(FILE.name + ".tmp")
+    tmp.write_text(json.dumps(conf, indent=2) + "\n")
+    tmp.replace(FILE)
+
+
+def show(conf):
+    for b in BUTTONS:
+        for g in GESTURES:
+            print(f"{b} {g:<6} {conf[b][g] or '-'}")
+
+
+def main(args):
+    conf = load()
+    if not args or args == ["show"]:
+        show(conf)
+        return 0
+    if args[0] == "set" and len(args) >= 4 and args[1] in BUTTONS and args[2] in GESTURES:
+        conf[args[1]][args[2]] = " ".join(args[3:])
+    elif args[0] == "clear" and len(args) == 3 and args[1] in BUTTONS and args[2] in GESTURES:
+        conf[args[1]][args[2]] = ""
+    elif args == ["reset"]:
+        conf = json.loads(json.dumps(DEFAULT))
+    else:
+        print(__doc__.strip())
+        return 1
+    save(conf)
+    show(conf)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

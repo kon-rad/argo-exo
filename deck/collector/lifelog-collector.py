@@ -2,6 +2,8 @@
 """Clip collector: on-demand capture control + uploads into /srv/deck/outbox/{photos,audio}/.
 
 GET  /control         clip polls every ~2 s; reply "camera=0 mic=1 interval=30 snap=4"; records the clip's heartbeat
+                      and IP (deck-recorder pulls the clip's video stream from it). While state/pi-mic exists the
+                      Pi's I2S mic records audio (deck-recorder), so the clip is told mic=0
                       snap is a counter: each increase asks the clip for one photo
 POST /upload/<name>   clip uploads a JPEG or WAV
 State: /srv/deck/capture.json (written by the dashboard or deck-capture), reset to all-off at start.
@@ -16,7 +18,7 @@ STATE = DECK / "capture.json"
 CLIP = DECK / "clip-status.json"
 TOKEN = os.environ["DECK_UPLOAD_TOKEN"]
 NAME = re.compile(r"^(img|aud)_[A-Za-z0-9_]+\.(jpg|wav)$")
-OFF = {"camera": False, "mic": False, "interval": 30, "snap": 0}
+OFF = {"camera": False, "mic": False, "video": False, "interval": 30, "snap": 0}
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 5 * 1024 * 1024
@@ -43,9 +45,11 @@ def check_token():
 @app.get("/control")
 def control():
     check_token()
-    write_json(CLIP, {"seen": time.time(), **{k: request.args.get(k) for k in ("rec", "cam", "mic", "sd", "rssi")}})
+    write_json(CLIP, {"seen": time.time(), "ip": request.remote_addr,
+                      **{k: request.args.get(k) for k in ("rec", "vid", "cam", "mic", "sd", "rssi")}})
     st = read_state()
-    return f"camera={int(bool(st['camera']))} mic={int(bool(st['mic']))} interval={int(st['interval'])} snap={int(st['snap'])}"
+    clip_mic = bool(st["mic"]) and not (DECK / "state" / "pi-mic").exists()
+    return f"camera={int(bool(st['camera']))} mic={int(clip_mic)} interval={int(st['interval'])} snap={int(st['snap'])}"
 
 
 @app.post("/upload/<name>")

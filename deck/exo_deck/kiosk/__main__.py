@@ -28,7 +28,7 @@ def _wallets_provider():
 def build_providers(s: Settings) -> dict:
     providers = {"talk": lambda page: {"turns": st.recent_turns(s.state, 7)}}
     providers["approvals"] = lambda page: approvals.panel(s.state, time.time(), page)
-    providers["body"] = lambda page: ring_view.panel(s.deck_root / "ring.db")
+    providers["body"] = lambda page: ring_view.panel(s.deck_root / "ring.db", page)
     providers["sensors"] = lambda page: system_view.panel(s.deck_root)
     providers["media"] = lambda page: media.panel(s.deck_root, s.state, page)
     bridge = Bridge(s.bridge_url, s.bridge_token)

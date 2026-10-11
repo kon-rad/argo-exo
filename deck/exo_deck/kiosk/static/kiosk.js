@@ -13,9 +13,12 @@ export const RENDER = {
     `<div class="turn ${esc(t.role)}"><span class="who">${t.role === 'you' ? 'You' : t.role === 'hermes' ? 'Hermes' : '·'}</span>${esc(t.text)}</div>`).join('')
     : `<p class="muted">Hold Talk and speak.</p>`),
   agents: (j) => !j.online ? `<h1>Agents</h1><p class="bad big">Hermes offline</p>` :
-    `<h1>Agents</h1><div class="cols">${['queued', 'ready', 'running', 'done'].map((c) =>
+    `<div class="hd"><h1>Agents</h1><p class="muted">${(() => { const k = Object.values(j.cols).flat().filter((t) => t.parent).length;
+      return k ? `<span class="accent">▌</span>${k} delegated by hermes` : ''; })()}</p></div><div class="cols">${['queued', 'ready', 'running', 'done'].map((c) =>
       `<div><p class="${c === 'running' ? 'warn' : c === 'done' ? 'ok' : 'muted'}"><b>${c.toUpperCase()} ${COLSTAT[c].reduce((n, k) => n + (j.counts[k] || 0), 0)}</b></p><ul class="rows tight">${(j.cols[c] || []).map((t) =>
-        `<li><span class="clamp"><b>${esc(t.assignee || '-')}</b> <span class="muted">${t.created_at ? ago(t.created_at) : ''}</span><br>${esc(t.title)}</span></li>`).join('') || '<li class="muted">none</li>'}</ul></div>`).join('')}</div>`,
+        `<li class="${t.parent ? 'child' : ''}"><span class="clamp"><b>${esc(t.assignee || '-')}</b> <span class="muted">${t.created_at ? ago(t.created_at) : ''}</span></span><span class="clamp2">${esc(t.title)}</span></li>`).join('') || '<li class="muted">none</li>'}</ul></div>`).join('')}</div>`
+    + ((j.feed || []).length ? `<ul class="rows dense feed">${j.feed.map((m) =>
+      `<li><span class="clamp"><b class="accent">${esc(m.from)} → ${esc(m.to)}</b> ${esc(m.text)}</span><span class="muted tag">${ago(m.ts)}</span></li>`).join('')}</ul>` : ''),
   wallets: (j) => j.loading ? `<h1>Wallets</h1><p class="muted big">Loading balances…</p>` : `<h1>Wallets</h1><ul class="rows tight">${j.wallets.map((w) =>
     `<li><span class="clamp"><b>${esc(w.label)}</b> <span class="muted">${esc(w.chain)} · ${esc(w.address_short)}${w.stale ? ' · stale' : ''}</span><br>${w.tokens.map((t) => `${esc(t.amount)} ${esc(t.symbol)}`).join(' · ') || '<span class="muted">no tokens</span>'}${w.tokens_more ? ` <span class="muted">+${esc(w.tokens_more)}</span>` : ''}</span>
      <span class="tag big">${esc(w.native)}</span></li>`).join('') || '<li class="muted">No wallets configured</li>'}</ul>`
@@ -56,17 +59,22 @@ export const RENDER = {
   },
   body: (j) => {
     if (!j.last) return `<h1>Body</h1><p class="bad">${esc(j.sync_error || 'No ring data')}</p>`;
-    const l = j.last, v = (x, u = '') => x == null ? '–' : `${esc(x)}${u}`;
-    const h = (m) => m == null ? '–' : `${(m / 60) | 0}h ${m % 60}m`;
-    const bar = (x) => '▮'.repeat(Math.max(0, Math.min(10, Math.round((x || 0) / 10)))).padEnd(10, '▯');
-    return `<h1>Body · night of ${esc(l.day)}</h1>
-      <ul class="rows tight"><li><span>Sleep score</span><span class="big">${v(l.sleep_score)}</span></li>
-      <li><span>Sleep · deep · REM</span><span class="big">${h(l.total_sleep_min)} · ${h(l.deep_min)} · ${h(l.rem_min)}</span></li>
-      <li><span>HRV · resting HR</span><span class="big">${v(l.hrv_avg, ' ms')} · ${v(l.sleep_rhr, ' bpm')}</span></li>
-      <li><span>Recovery · temp dev.</span><span class="big">${v(l.recovery_index)} · ${v(l.temp_deviation_c, '°C')}</span></li></ul>
-      <p class="muted tight">Sleep score, last 7 nights</p>
-      <p class="trend">${j.trend.map((t) => `${esc(String(t.day).slice(5))} <span class="accent">${bar(t.sleep_score)}</span> ${v(t.sleep_score)}`).join('<br>')}</p>
-      <p class="muted tight">synced ${j.synced_at ? ago(j.synced_at) + ' ago' : 'never'}${j.sync_error ? ' · ' + esc(j.sync_error) : ''}</p>`;
+    const l = j.last, v = (x, u = '') => x == null ? '–' : `${esc(Math.round(x * 10) / 10)}${u}`;
+    const stages = j.stages || [], hr = j.sleep_hr || [], trend = j.trend || [], srv = j.server;   // demo data has only last + trend
+    const h = (m) => m == null ? '–' : `${(m / 60) | 0}:${String(m % 60).padStart(2, '0')}`;
+    const clock = (ts) => new Date(ts * 1000).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+    const night = l.bedtime_start ? `${esc(l.day)} · ${clock(l.bedtime_start)} → ${clock(l.bedtime_end)}` : `${esc(l.day)}${l.sleep_score == null ? ' · no sleep' : ''}`;
+    return `<div class="hd"><h1>Body</h1><p class="muted clamp">night of ${night}</p></div>
+      <div class="body2"><div>
+        <ul class="rows tight"><li><span>Sleep score</span><span class="big">${v(l.sleep_score)}</span></li>
+        <li><span>Sleep·deep·REM</span><span>${h(l.total_sleep_min)} · ${h(l.deep_min)} · ${h(l.rem_min)}</span></li>
+        <li><span>HRV · resting HR</span><span>${v(l.sleep_hrv ?? l.hrv_avg, ' ms')} · ${v(l.sleep_rhr, ' bpm')}</span></li>
+        <li><span>Recovery · temp</span><span>${v(l.recovery_index)} · ${l.temp_deviation_c == null ? '–' : (l.temp_deviation_c > 0 ? '+' : '') + l.temp_deviation_c.toFixed(1) + '°C'}</span></li>
+        <li><span>Efficiency · SpO₂</span><span>${v(l.sleep_efficiency_pct, '%')} · ${v(l.spo2_pct, '%')}</span></li></ul>
+        <p class="muted tight">Sleep score, last ${trend.length} days</p>${scoreBars(trend, l.day)}
+      </div><div>${hypnogram(stages, l.bedtime_start, l.bedtime_end)}${hr.length > 1 ? '<p class="muted tight">Heart rate in bed, bpm</p>' : ''}${sleepHr(hr, l.bedtime_start, l.bedtime_end)}</div></div>
+      <p class="muted tight clamp">${j.nights_total ? `night ${j.night_index + 1} of ${j.nights_total} · say "more" for the one before · ` : ''}synced ${j.synced_at ? ago(j.synced_at) + ' ago' : 'never'}${srv
+        ? ` · <span class="${srv.uploaded === srv.total ? 'ok' : 'warn'}">${srv.uploaded}/${srv.total} days on server</span>` : ''}${j.sync_error ? ' · <span class="bad">' + esc(j.sync_error) + '</span>' : ''}</p>`;
   },
   sensors: (j, s) => {
     const d = j.deck, c = j.clip, x = (n, u = '') => n == null ? '–' : `${esc(n)}${u}`;
@@ -99,12 +107,57 @@ export const RENDER = {
   },
 };
 
+// ── body panel charts: inline SVG, viewBox ≈ on-screen px so 30 px text stays 30 px ──
+const STAGES = [['awake', 'Awake'], ['rem_sleep', 'REM'], ['light_sleep', 'Light'], ['deep_sleep', 'Deep']];
+const hhmm = (ts) => new Date(ts * 1000).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+function hourTicks(x, a, b, y) {
+  const out = [], step = (b - a) > 6 * 3600 ? 7200 : 3600;
+  for (let t = Math.ceil(a / step) * step; t <= b; t += step) out.push(`<text x="${x(t)}" y="${y}" text-anchor="middle">${hhmm(t)}</text>`);
+  return out.join('');
+}
+export function hypnogram(stages, a, b) {
+  if (!stages || !stages.length || !a) return '<p class="muted">No sleep stages for this night</p>';
+  const W = 1000, L = 120, R = 40, rowH = 62, x = (t) => (L + (t - a) / (b - a) * (W - L - R)).toFixed(1);
+  const rows = STAGES.map(([k, n], i) => `<text x="0" y="${i * rowH + rowH / 2 + 10}">${n}</text>`
+    + `<line x1="${L}" x2="${W - R}" y1="${(i + 1) * rowH}" y2="${(i + 1) * rowH}" class="grid"/>`).join('');
+  const bars = stages.map((s) => {
+    const i = STAGES.findIndex(([k]) => k === s.stage);
+    if (i < 0) return '';
+    const w = Math.max(2, x(s.end) - x(s.start) - 2);
+    return `<rect x="${x(s.start)}" y="${i * rowH + 6}" width="${w.toFixed(1)}" height="${rowH - 12}" rx="4" class="st-${s.stage}"/>`;
+  }).join('');
+  return `<svg class="chart" viewBox="0 0 ${W} ${4 * rowH + 44}">${rows}${bars}${hourTicks(x, a, b, 4 * rowH + 38)}</svg>`;
+}
+export function sleepHr(hr, a, b) {
+  if (!hr || hr.length < 2 || !a) return '';
+  const W = 1000, H = 190, L = 120, R = 40, T = 14, B = 46;
+  const vals = hr.map((p) => p[1]), lo = Math.floor(Math.min(...vals) / 5) * 5, hi = Math.ceil(Math.max(...vals) / 5) * 5;
+  const x = (t) => (L + (t - a) / (b - a) * (W - L - R)).toFixed(1), y = (v) => (T + (hi - v) / ((hi - lo) || 1) * (H - T - B)).toFixed(1);
+  const path = hr.map((p, i) => `${i ? 'L' : 'M'}${x(p[0])},${y(p[1])}`).join('');
+  return `<svg class="chart" viewBox="0 0 ${W} ${H}">`
+    + [lo, hi].map((v) => `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" class="grid"/><text x="0" y="${+y(v) + 10}">${v}</text>`).join('')
+    + `<path d="${path}" class="line"/>${hourTicks(x, a, b, H - 6)}</svg>`;
+}
+export function scoreBars(trend, sel) {
+  if (!trend || !trend.length) return '';
+  const W = 600, H = 170, T = 40, B = 40, slot = W / trend.length, bw = Math.min(28, slot - 4), y = (v) => T + (100 - v) / 100 * (H - T - B);
+  const last = trend.length - 1;
+  return `<svg class="chart" viewBox="0 0 ${W} ${H}"><line x1="0" x2="${W}" y1="${y(0)}" y2="${y(0)}" class="grid"/>` + trend.map((d, i) => {
+    const cx = slot * i + slot / 2, on = d.day === sel;
+    const bar = d.sleep_score == null ? '' : `<path d="M${cx - bw / 2},${y(0)} V${y(d.sleep_score) + 4} q0,-4 4,-4 H${cx + bw / 2 - 4} q4,0 4,4 V${y(0)} Z" class="${on ? 'bar on' : 'bar'}"/>`
+      + (on ? `<text x="${cx}" y="${y(d.sleep_score) - 8}" text-anchor="middle" class="val">${d.sleep_score}</text>` : '');
+    const lbl = (i === 0 || i === last || on) ? `<text x="${Math.min(W - 20, Math.max(20, cx))}" y="${H - 6}" text-anchor="middle">${String(d.day).slice(8)}</text>` : '';
+    return bar + lbl;
+  }).join('') + '</svg>';
+}
+
 let current = null;
 let busy = false;
 const last = { tabs: '', chips: '' };
 const setHtml = (id, html) => { if (last[id] !== html) { last[id] = html; $(id).innerHTML = html; } };
 function chips(s) {
   return [
+    s.demo ? `<span class="chip warn">DEMO</span>` : '',
     s.listening ? `<span class="chip warn">LISTENING</span>` : '',
     `<span class="chip ${s.mode === 'auto' ? 'warn' : 'ok'}">${s.mode === 'auto' ? 'AUTO' : 'MANUAL'}</span>`,
     s.pending ? `<span class="chip warn blink">${s.pending} PENDING</span>` : '',

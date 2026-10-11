@@ -6,6 +6,9 @@ After=multi-user.target
 Type=simple
 User=deck
 Environment=GPIOZERO_PIN_FACTORY=lgpio
+# lgpio creates its notify pipe in the working directory, which must be writable by deck
+Environment=LG_WD=/srv/deck
+WorkingDirectory=/srv/deck
 Environment=PYTHONPATH=/srv/deck/app/deck
 Environment=XDG_RUNTIME_DIR=/run/user/1000
 Environment=WAYLAND_DISPLAY=wayland-0

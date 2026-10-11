@@ -1,0 +1,35 @@
+#!/usr/bin/env python3
+"""Turn the kiosk's demo mode on or off. The kiosk checks on every refresh; no restart needed.
+
+  exo-demo              show whether demo mode is on
+  exo-demo on|off|toggle
+
+Demo mode shows scripted data on every panel (exo_deck/demo.py) and a DEMO chip.
+EXO_DEMO=1 in the kiosk's environment forces it on regardless of this switch.
+To put it on a button: deck-button set p2 hold "exo-demo toggle"
+"""
+import os, sys
+from pathlib import Path
+
+FLAG = Path(os.environ.get("DECK_ROOT", "/srv/deck")) / "state" / "demo"
+
+
+def main(args):
+    on = FLAG.exists()
+    if args in (["on"], ["off"], ["toggle"]):
+        on = (not on) if args[0] == "toggle" else args[0] == "on"
+        if on:
+            FLAG.parent.mkdir(parents=True, exist_ok=True)
+            FLAG.write_text("on\n")
+            FLAG.chmod(0o644)
+        else:
+            FLAG.unlink(missing_ok=True)
+    elif args:
+        print(__doc__.strip())
+        return 1
+    print(f"demo={'on' if on else 'off'}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

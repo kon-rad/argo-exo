@@ -1,0 +1,16 @@
+[Unit]
+Description=Exo recorder: clip video + Pi I2S mic, at the same time
+After=network-online.target lifelog-collector.service
+
+[Service]
+Type=simple
+User=deck
+EnvironmentFile=/srv/deck/.env
+ExecStart=/srv/deck/venv/bin/python3 /srv/deck/deck-recorder.py
+Restart=on-failure
+RestartSec=3
+KillSignal=SIGTERM
+TimeoutStopSec=60
+
+[Install]
+WantedBy=multi-user.target

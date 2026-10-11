@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Second Brain
+Comment=Vault, B2 files, ring data and wallets on the secondbrain server (mouse and keyboard)
+Exec=/usr/local/bin/deck-secondbrain open
+Icon=web-browser
+Terminal=false
+Categories=Network;Office;

@@ -21,19 +21,34 @@ A=/srv/deck/app/deck
 S apt-get install -y -qq espeak-ng alsa-utils rclone ffmpeg >/dev/null
 S install -m 755 $A/bin/deck-approve /usr/local/bin/deck-approve
 S install -m 755 $A/bin/deck-capture /usr/local/bin/deck-capture
+S install -m 755 $A/bin/deck-button /usr/local/bin/deck-button
 S install -m 755 $A/bin/exo-unlock /usr/local/bin/exo-unlock
+S install -m 755 $A/bin/exo-demo /usr/local/bin/exo-demo
+S install -m 755 $A/bin/deck-kiosk /usr/local/bin/deck-kiosk
+S install -m 755 $A/bin/deck-secondbrain /usr/local/bin/deck-secondbrain
+install -D -m 644 $A/desktop/deck-secondbrain.desktop "$HOME/.local/share/applications/deck-secondbrain.desktop"
 install -m 644 $A/buttons/deck-buttons.py /srv/deck/deck-buttons.py
 install -m 644 $A/collector/lifelog-collector.py /srv/deck/lifelog-collector.py
+install -m 644 $A/recorder/deck-recorder.py /srv/deck/deck-recorder.py
 install -m 644 $A/ring/ring_sync.py /srv/deck/ring_sync.py
 mkdir -p /srv/deck/hooks /srv/deck/state/tx-queue /srv/deck/state/tx-approved /srv/deck/outbox/photos /srv/deck/outbox/audio /srv/deck/media/video
 install -d -m 700 /srv/deck/keys
+[ -f /srv/deck/buttons.json ] || /usr/local/bin/deck-button reset >/dev/null
+# The I2S mic, shared by talk, memos and video. Only once the card exists; until then video records silently.
+if grep -qi adau7002 /proc/asound/cards 2>/dev/null; then
+  [ -f /etc/asound.conf ] && ! grep -q exomic /etc/asound.conf && S cp /etc/asound.conf /etc/asound.conf.pre-exo
+  S install -m 644 $A/alsa/asound-exomic.conf /etc/asound.conf
+  grep -q "^EXO_MIC_DEVICE=exomic" /srv/deck/.env 2>/dev/null || echo "NOTE: set EXO_MIC_DEVICE=exomic in /srv/deck/.env so push-to-talk shares the I2S mic"
+else
+  echo "NOTE: no adau7002 sound card yet: video records without sound until the I2S mic is fitted"
+fi
 for h in talk-start talk-stop talk-cancel repeat approve freeze; do install -m 755 $A/hooks/$h /srv/deck/hooks/$h; done
 for u in $A/systemd/*.service $A/systemd/*.timer; do S install -m 644 "$u" /etc/systemd/system/; done
 S systemctl disable --now cyberdeck-voice 2>/dev/null || true
 S rm -f /etc/systemd/system/cyberdeck-voice.service
 S usermod -aG gpio,audio deck || true
 S systemctl daemon-reload
-S systemctl enable deck-buttons lifelog-collector cyberdeck-dashboard
+S systemctl enable deck-buttons lifelog-collector cyberdeck-dashboard deck-recorder
 for t in $A/systemd/*.timer; do S systemctl enable --now "$(basename "$t")"; done
 if [ ! -f /srv/deck/.env ]; then
   echo "ERROR: /srv/deck/.env is missing on the Pi. Create it from .env.example (deck section), then rerun." >&2
@@ -42,10 +57,9 @@ fi
 for k in EXO_BRIDGE_URL EXO_BRIDGE_TOKEN GEMINI_API_KEY EXO_MIC_DEVICE DECK_UPLOAD_TOKEN ULTRAHUMAN_API_TOKEN; do
   grep -q "^$k=" /srv/deck/.env || echo "MISSING in /srv/deck/.env: $k"
 done
-[ -x /usr/local/bin/deck-kiosk ] || echo "WARNING: /usr/local/bin/deck-kiosk is missing; the Kiosk double-tap will do nothing until it is installed on the Pi"
 echo "NOTE: deck-queue-sync.service is installed but not enabled. Once EXO_MODULE_ADDRESS and NOWNODES_API_KEY are in /srv/deck/.env, the hot keystore is at /srv/deck/keys/hot.json and exo-unlock has run, run: sudo systemctl enable --now deck-queue-sync"
 echo "NOTE: deck-confirm.service is installed but not enabled. Once NOWNODES_API_KEY, EXO_WATCH_ADDRESSES and EXO_MODULE_ADDRESS are in /srv/deck/.env, run: sudo systemctl enable --now deck-confirm"
-S systemctl restart deck-buttons lifelog-collector cyberdeck-dashboard
-systemctl is-active deck-buttons lifelog-collector cyberdeck-dashboard
+S systemctl restart deck-buttons lifelog-collector cyberdeck-dashboard deck-recorder
+systemctl is-active deck-buttons lifelog-collector cyberdeck-dashboard deck-recorder
 R
 } | ssh "$HOST" 'IFS= read -r PW; export PW; bash -s'

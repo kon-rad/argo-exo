@@ -12,8 +12,10 @@ Run:    python3 /srv/deck/ring_sync.py            # sync
         python3 /srv/deck/ring_sync.py --status   # counts + pending uploads
         python3 /srv/deck/ring_sync.py --from 2026-09-24
 Timer:  ring-sync.timer (hourly)
+        python3 /srv/deck/ring_sync.py --push     # only push pending days to the droplet
 Env:    ULTRAHUMAN_API_TOKEN (required), DECK_ROOT, RING_DB,
-        RING_BACKFILL_FROM (default 2026-09-24), RING_REFETCH_DAYS (default 3)
+        RING_BACKFILL_FROM (default 2026-09-24), RING_REFETCH_DAYS (default 3),
+        RING_SERVER_URL + RING_INGEST_TOKEN (push to the droplet's ring_ingest.py; skipped if unset)
 Design: Projects/wearable-body-track/ring-sync-design.md
 """
 import argparse, hashlib, json, os, sqlite3, sys, time, urllib.error, urllib.parse, urllib.request
@@ -27,6 +29,7 @@ BACKFILL_FROM = os.environ.get("RING_BACKFILL_FROM", "2026-09-24")
 REFETCH_DAYS  = int(os.environ.get("RING_REFETCH_DAYS", "3"))
 CHUNK_DAYS    = 5           # 5 days + 12 h padding each side = 6-day window, under the 7-day cap
 PAD_S         = 12 * 3600
+PUSH_BATCH    = 5
 
 SAMPLE_TYPES = ("hr", "hrv", "temp", "steps", "spo2")
 SLEEP_GRAPHS = {"hr_graph": "sleep_hr", "hrv_graph": "sleep_hrv", "temp_graph": "sleep_temp"}
@@ -205,6 +208,39 @@ def pending_upload(con):
     )]
 
 
+# ─── push to the secondbrain server ────────────────────────────────────────────
+
+def post_days(url, token, days, timeout=60):
+    body = json.dumps({"days": days}).encode()
+    req = urllib.request.Request(f"{url.rstrip('/')}/ring/days", data=body, method="POST", headers={
+        "Authorization": f"Bearer {token}", "Content-Type": "application/json",
+    })
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return json.loads(r.read().decode())
+    except urllib.error.HTTPError as e:
+        raise ApiError(f"ingest HTTP {e.code}: {e.read().decode(errors='replace')[:200]}")
+
+
+def push(con, url, token, post=post_days, now=None, log=print):
+    """Send every day due for upload; mark the ones the server acknowledged."""
+    due = pending_upload(con)
+    acked = 0
+    for i in range(0, len(due), PUSH_BATCH):
+        batch = due[i:i + PUSH_BATCH]
+        rows = con.execute(
+            f"SELECT day, payload, payload_sha256 FROM ring_raw WHERE day IN ({','.join('?' * len(batch))})", batch
+        ).fetchall()
+        resp = post(url, token, [{"day": d, "payload": p, "sha256": h} for d, p, h in rows])
+        ok = set(resp.get("stored", [])) | set(resp.get("unchanged", []))
+        stamp = int(now if now is not None else time.time())
+        with con:
+            con.executemany("UPDATE ring_raw SET uploaded_at = ? WHERE day = ?", [(stamp, d) for d in batch if d in ok])
+        acked += len(ok & set(batch))
+    log(f"ring-sync: pushed {acked}/{len(due)} days to {url}")
+    return acked
+
+
 # ─── planning + fetching ───────────────────────────────────────────────────────
 
 def plan_days(last_stored, today, backfill_from=BACKFILL_FROM, refetch=REFETCH_DAYS, force_from=None):
@@ -285,6 +321,7 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[1])
     ap.add_argument("--status", action="store_true", help="print counts and pending uploads")
     ap.add_argument("--from", dest="force_from", metavar="YYYY-MM-DD", help="re-fetch from this date")
+    ap.add_argument("--push", action="store_true", help="only push pending days to the server")
     args = ap.parse_args(argv)
 
     con = connect()
@@ -292,26 +329,41 @@ def main(argv=None):
         status(con)
         return 0
 
-    token = os.environ.get("ULTRAHUMAN_API_TOKEN", "").strip()
-    if not token:
-        print("ring-sync: ULTRAHUMAN_API_TOKEN not set (expected in /srv/deck/.env)", file=sys.stderr)
-        return 2
-
+    errors, code = [], 0
     days = changed = 0
-    err, code = None, 0
-    try:
-        days, changed = sync(con, token, force_from=args.force_from)
-    except TokenRejected as e:
-        err, code = f"token rejected — regenerate in the Ultrahuman developer portal ({e})", 2
-    except (ApiError, urllib.error.URLError, TimeoutError, OSError) as e:
-        err, code = f"{type(e).__name__}: {e}", 1
+    if not args.push:
+        token = os.environ.get("ULTRAHUMAN_API_TOKEN", "").strip()
+        if not token:
+            print("ring-sync: ULTRAHUMAN_API_TOKEN not set (expected in /srv/deck/.env)", file=sys.stderr)
+            return 2
+        try:
+            days, changed = sync(con, token, force_from=args.force_from)
+        except TokenRejected as e:
+            errors.append(f"token rejected — regenerate in the Ultrahuman developer portal ({e})")
+            code = 2
+        except (ApiError, urllib.error.URLError, TimeoutError, OSError) as e:
+            errors.append(f"fetch {type(e).__name__}: {e}")
+            code = 1
+
+    url = os.environ.get("RING_SERVER_URL", "").strip()
+    ingest_token = os.environ.get("RING_INGEST_TOKEN", "").strip()
+    if url and ingest_token:
+        try:
+            push(con, url, ingest_token)
+        except (ApiError, urllib.error.URLError, TimeoutError, OSError, ValueError) as e:
+            errors.append(f"push {type(e).__name__}: {e}")
+            code = code or 1
+    elif args.push:
+        errors.append("push: RING_SERVER_URL / RING_INGEST_TOKEN not set")
+        code = 2
+
+    err = "; ".join(errors) or None
     with con:
         con.execute("INSERT INTO ring_sync_log (ran_at, days, changed, error) VALUES (?, ?, ?, ?)",
                     (int(time.time()), days, changed, err))
     if err:
         print(f"ring-sync: {err}", file=sys.stderr)
     return code
-
 
 if __name__ == "__main__":
     sys.exit(main())

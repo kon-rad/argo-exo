@@ -110,5 +110,45 @@ class Store(unittest.TestCase):
         self.assertEqual(days, ["2026-10-03", "2026-10-04"])
 
 
+class Push(unittest.TestCase):
+    def setUp(self):
+        self.con = rs.connect(":memory:")
+        for d in ("2026-10-03", "2026-10-04"):
+            rs.store_day(self.con, d, METRICS[d], now=100)
+
+    def test_push_marks_acked_days_only(self):
+        sent = []
+
+        def fake_post(url, token, days):
+            sent.extend(days)
+            return {"stored": ["2026-10-03"], "unchanged": []}   # server dropped 10-04
+
+        acked = rs.push(self.con, "http://x", "t", post=fake_post, now=200, log=lambda *_: None)
+        self.assertEqual(acked, 1)
+        self.assertEqual(rs.pending_upload(self.con), ["2026-10-04"])
+        import hashlib
+        for d in sent:   # payload + sha the server will verify
+            self.assertEqual(hashlib.sha256(d["payload"].encode()).hexdigest(), d["sha256"])
+
+    def test_push_nothing_due(self):
+        self.con.execute("UPDATE ring_raw SET uploaded_at = 150")
+        calls = []
+        acked = rs.push(self.con, "http://x", "t", post=lambda *a: calls.append(a), log=lambda *_: None)
+        self.assertEqual((acked, calls), (0, []))
+
+    def test_push_batches(self):
+        for i in range(1, 8):
+            rs.store_day(self.con, f"2026-09-{20 + i}", [], now=100)
+        batches = []
+
+        def fake_post(url, token, days):
+            batches.append(len(days))
+            return {"stored": [d["day"] for d in days], "unchanged": []}
+
+        rs.push(self.con, "http://x", "t", post=fake_post, log=lambda *_: None)
+        self.assertEqual(batches, [5, 4])
+        self.assertEqual(rs.pending_upload(self.con), [])
+
+
 if __name__ == "__main__":
     unittest.main()
