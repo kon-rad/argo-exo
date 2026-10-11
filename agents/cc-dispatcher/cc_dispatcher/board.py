@@ -53,10 +53,25 @@ class Board:
         return (data.get("task") or data).get("status", "")
 
     def comment(self, task_id: str, text: str, author: str) -> None:
-        self._call("comment", "--author", author, task_id, text)
+        self._call("comment", "--author", author, "--", task_id, text)   # "--": a comment can start with "-"
 
     def block(self, task_id: str, reason: str, kind: str = "transient") -> None:
-        self._call("block", "--kind", kind, task_id, reason)
+        self._call("block", "--kind", kind, "--", task_id, reason)
+
+    # -- used by agent-hub (the Second Brain app's Agents page) -------------------------------------------------
+    def all_tasks(self) -> list[dict]:
+        rows = self._json("list", "--json")
+        return rows if isinstance(rows, list) else []
+
+    def show(self, task_id: str) -> dict:
+        return self._json("show", task_id, "--json")
+
+    def create(self, title: str, body: str, assignee: str, created_by: str) -> dict:
+        # Options first, then "--", then the title, and the body as ONE argv item: text never becomes a flag.
+        args = ["create", "--assignee", assignee, "--created-by", created_by, "--json"]
+        if body:
+            args.insert(1, f"--body={body}")
+        return self._json(*args, "--", title)
 
     def attach(self, task_id: str, path: str, author: str) -> None:
         self._call("attach", "--author", author, "--content-type", "application/x-ndjson", task_id, path)
