@@ -1,0 +1,26 @@
+[Unit]
+Description=Claude Code Remote Control server in the vault (drive droplet sessions from claude.ai/code and the Claude app)
+After=network-online.target
+Wants=network-online.target
+
+# Plan 10, Phase 1 (Areas/argo/argo-exo/plans/10-claude-code-agents.md in the vault). Runs as hermes in the vault
+# checkout, on the claude.ai subscription login in ~/.claude; never loads ~/.hermes/.env. The folder trust and the
+# one-time "Enable Remote Control?" answer are stored by claude, so this starts without a TTY. tmux gives it the
+# terminal it wants; look in with: sudo -iu hermes tmux attach -t rc  (detach: Ctrl-b d).
+# same-dir: sessions edit the vault in place, so auto-sync commits their work. Capacity 2: about 260 MB per
+# session, next to cc-dispatcher's two workers, on a 4 GB box shared with production.
+[Service]
+Type=forking
+User=hermes
+Group=hermes
+WorkingDirectory=/home/hermes/secondBrain
+Environment=HOME=/home/hermes
+Environment=PATH=/home/hermes/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/usr/bin/tmux new-session -d -s rc -x 160 -y 50 -c /home/hermes/secondBrain "/home/hermes/.local/bin/claude remote-control --spawn same-dir --capacity 2 --remote-control-session-name-prefix droplet --permission-mode acceptEdits"
+ExecStop=/usr/bin/tmux kill-session -t rc
+Restart=on-failure
+RestartSec=60
+MemoryMax=1200M
+
+[Install]
+WantedBy=multi-user.target
