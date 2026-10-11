@@ -27,7 +27,16 @@ def test_refuses_missing_api_key():
 
 
 def test_agents_default_is_exact():
-    assert Config.from_env(BASE).agents == ("librarian", "trader", "portfolio", "wallet", "builder", "researcher")
+    assert Config.from_env(BASE).agents == ("librarian", "trader", "portfolio", "wallet", "builder", "researcher",
+                                            "cc-coder", "cc-research", "cc-writer", "cc-reviewer")
+
+
+def test_default_cc_lanes_match_lanes_toml():
+    # Voice delegation to Claude Code lanes: the bridge's list must name exactly the lanes cc-dispatcher runs.
+    import tomllib
+    from pathlib import Path
+    lanes = tomllib.loads((Path(__file__).resolve().parents[2] / "cc-lanes/lanes.toml").read_text())["lanes"]
+    assert {a for a in Config.from_env(BASE).agents if a.startswith("cc-")} == set(lanes)
 
 
 @pytest.mark.parametrize("host", ["127.0.0.1", "100.64.0.5", "fd7a:115c:a1e0::1"], ids=["loopback", "v4", "v6"])  # public-ok

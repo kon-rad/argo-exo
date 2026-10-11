@@ -64,3 +64,18 @@ def test_custom_agent_list():
 ])
 def test_nav_and_control(said, expected):
     assert route(said) == expected
+
+
+def test_claude_code_lanes_by_spoken_name():
+    # Spoken words can't carry the "cc-" prefix: "coder", "writer" and "reviewer" name the Claude Code lanes.
+    assert route("Have the coder fix the kiosk clock") == Route("delegate", "fix the kiosk clock", "cc-coder")
+    assert route("ask the writer to draft the dev log") == Route("delegate", "draft the dev log", "cc-writer")
+    assert route("tell the reviewer to check branch cc/t_1") == Route("delegate", "check branch cc/t_1", "cc-reviewer")
+    # The Hermes researcher keeps its name; the Claude research lane is reached from the board or the app.
+    assert route("have the researcher find X") == Route("delegate", "find X", "researcher")
+
+
+def test_router_lanes_are_bridge_agents():
+    from exo_deck.router import SPOKEN_LANES
+    from exo_bridge.config import DEFAULT_AGENTS
+    assert set(SPOKEN_LANES.values()) <= set(DEFAULT_AGENTS.split(","))

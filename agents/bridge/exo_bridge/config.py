@@ -5,7 +5,8 @@ from dataclasses import dataclass
 from typing import Mapping
 
 DEFAULT_MANIFEST = "/srv/exo-guard/argo-exo/chain/cre/workflow-manifest.json"   # exoguard's checkout
-DEFAULT_AGENTS = "librarian,trader,portfolio,wallet,builder,researcher"
+# Hermes profiles, then the Claude Code lanes run by agents/cc-dispatcher (agents/cc-lanes/lanes.toml).
+DEFAULT_AGENTS = "librarian,trader,portfolio,wallet,builder,researcher,cc-coder,cc-research,cc-writer,cc-reviewer"
 
 
 @dataclass(frozen=True)

@@ -1,0 +1,54 @@
+# Claude Code lanes on the Hermes kanban board. Read by agents/cc-dispatcher.
+#
+# A lane is an assignee name that is NOT a Hermes profile, so the Hermes dispatcher skips its tasks
+# (hermes_cli/kanban_db.py, "skipped_nonspawnable") and cc-dispatcher claims them instead. The description is the
+# lane's job ad, the same role a Hermes profile's description.txt plays. The role prompt is <lane>.md next to this file.
+# Plan: Areas/argo/argo-exo/plans/10-claude-code-agents.md in the vault.
+
+[dispatcher]
+boards = ["exo"]
+max_in_progress = 2          # concurrent claude workers; about 3 GB free on the droplet, shared with production
+daily_cap = 20               # spawns per local day; the Max plan's limits are shared with the Mac sessions
+poll_seconds = 30
+runs_dir = "/home/hermes/cc-runs"        # <task>.jsonl stream logs + state.json
+work_dir = "/home/hermes/cc-work"        # git worktrees for lanes with worktree = true
+pause_file = "/home/hermes/cc-runs/PAUSE" # touch to stop new spawns; running workers finish
+rate_limit_pause_minutes = 60
+claude_bin = "/home/hermes/.local/bin/claude"
+hermes_bin = "/home/hermes/.local/bin/hermes"
+
+[defaults]
+cwd = "/home/hermes/secondBrain"
+model = "sonnet"
+max_runtime_minutes = 45
+permission_mode = "acceptEdits"
+allowed_tools = ["Read", "Grep", "Glob", "Edit", "Write",
+                 "Bash(git status *)", "Bash(git diff *)", "Bash(git log *)", "Bash(ls *)"]
+# Deny wins over allow. The workers run as hermes, so these keep the box's secrets and the trader's signer out.
+denied_tools = ["Bash(sudo *)", "Bash(git push *)", "Bash(ssh *)", "Bash(systemctl *)",
+                "Read(**/.env)", "Read(**/.env.*)", "Read(/home/hermes/.hermes/.env)",
+                "Read(/home/hermes/.hermes/auth.json)", "Read(/home/hermes/.claude/.credentials.json)",
+                "Read(/home/trader/**)", "Read(/srv/exo-guard/**)"]
+
+[lanes.cc-coder]
+description = "Writes and fixes code in its own git worktree, runs the tests, and leaves a branch for review. Never pushes."
+model = "opus"
+cwd = "/home/hermes/argo-exo"
+worktree = true
+max_runtime_minutes = 60
+allowed_tools = ["Bash(git add *)", "Bash(git commit *)", "Bash(git checkout *)",
+                 "Bash(python3 -m pytest *)", "Bash(npm test *)", "Bash(npx vitest *)"]
+
+[lanes.cc-research]
+description = "Researches a question from primary sources and writes a vault research note in house style; answers in the task result."
+model = "opus"
+allowed_tools = ["WebSearch", "WebFetch"]
+
+[lanes.cc-writer]
+description = "Drafts and edits vault notes (plans, dev logs, docs) in the vault's house style. No code."
+model = "sonnet"
+
+[lanes.cc-reviewer]
+description = "Reviews another task's branch, diff or note and comments findings on the task. Never edits or commits."
+model = "sonnet"
+permission_mode = "default"

@@ -3,7 +3,8 @@
 Rules, in order:
   nav / control phrases ("show approvals", "panel 3", "more", "auto approve off", "turn off auto approve",
   "open 4")                                          → handled locally
-  "have|ask|tell|get [the] <agent> [agent] [to] …"  → delegate to <agent>, if it's a known agent
+  "have|ask|tell|get [the] <agent> [agent] [to] …"  → delegate to <agent>, if it's a known agent, or to a Claude
+                                                       Code lane by its spoken name (coder, writer, reviewer)
   "note|journal|remember …"                         → delegate to the librarian
   "build me …"                                       → delegate to the builder (whole sentence kept)
   anything else                                      → talk (answered at once by the default profile)
@@ -15,6 +16,8 @@ from dataclasses import dataclass
 from typing import Sequence
 
 AGENTS: tuple[str, ...] = ("librarian", "trader", "portfolio", "wallet", "builder", "researcher")
+# Claude Code lanes (agents/cc-lanes/lanes.toml), by the word you'd say. Never a money agent.
+SPOKEN_LANES: dict[str, str] = {"coder": "cc-coder", "writer": "cc-writer", "reviewer": "cc-reviewer"}
 
 _ADDRESS = re.compile(r"^(?:have|ask|tell|get)\s+(?:the\s+)?(?P<agent>\w+)(?:\s+agent)?\s+(?:to\s+)?(?P<rest>.+)$", re.I)
 _NOTE = re.compile(r"^(?:note|journal|remember)\b[\s,:;.-]*(?P<rest>.+)$", re.I)
@@ -82,6 +85,8 @@ def route(transcript: str, agents: Sequence[str] = AGENTS) -> Route:
     m = _ADDRESS.match(text)
     if m and m["agent"].lower() in agents:
         return Route("delegate", m["rest"].strip(), m["agent"].lower())
+    if m and m["agent"].lower() in SPOKEN_LANES:
+        return Route("delegate", m["rest"].strip(), SPOKEN_LANES[m["agent"].lower()])
     m = _NOTE.match(text)
     if m:
         return Route("delegate", m["rest"].strip(), "librarian")

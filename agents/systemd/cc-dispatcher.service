@@ -1,0 +1,32 @@
+[Unit]
+Description=cc-dispatcher: Claude Code workers for the cc-* lanes on the Hermes kanban board
+After=network-online.target
+Wants=network-online.target
+
+# Runs as hermes from the hermes checkout (~/argo-exo), like the Hermes agents: a Claude worker gets the same file
+# access a Hermes agent already has, and no more. It never loads ~/.hermes/.env: workers authenticate with the
+# claude.ai subscription login in ~/.claude, and an ANTHROPIC_API_KEY would override it (the dispatcher refuses to
+# start if one is set). Lanes, limits and the pause file: agents/cc-lanes/lanes.toml.
+# Plan: Areas/argo/argo-exo/plans/10-claude-code-agents.md in the vault.
+[Service]
+Type=simple
+User=hermes
+Group=hermes
+WorkingDirectory=/home/hermes/argo-exo/agents/cc-dispatcher
+Environment=HOME=/home/hermes
+Environment=PATH=/home/hermes/.local/bin:/usr/local/bin:/usr/bin:/bin
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/usr/bin/python3 -m cc_dispatcher
+# mixed: SIGTERM goes to the dispatcher only, which SIGINTs its workers so each ends its turn cleanly.
+KillMode=mixed
+TimeoutStopSec=45
+Restart=on-failure
+RestartSec=30
+Nice=5
+# The whole cgroup: the dispatcher plus up to max_in_progress claude workers. Per-worker memory is not yet
+# measured on the droplet (plan §3, Phase 0); revisit once it is.
+MemoryHigh=1400M
+MemoryMax=1800M
+
+[Install]
+WantedBy=multi-user.target

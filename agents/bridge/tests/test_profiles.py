@@ -30,7 +30,8 @@ def test_no_profile_holds_a_dsn_or_secret():
 
 def test_router_and_bridge_agree_on_names():
     from exo_bridge.config import DEFAULT_AGENTS
-    assert set(DEFAULT_AGENTS.split(",")) == EXPECTED
+    names = set(DEFAULT_AGENTS.split(","))
+    assert {n for n in names if not n.startswith("cc-")} == EXPECTED   # the cc- lanes are Claude Code, not profiles
 
 
 def test_scripts_keep_the_constraints():
