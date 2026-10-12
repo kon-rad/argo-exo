@@ -25,10 +25,11 @@ permission_mode = "acceptEdits"
 allowed_tools = ["Read", "Grep", "Glob", "Edit", "Write",
                  "Bash(git status *)", "Bash(git diff *)", "Bash(git log *)", "Bash(ls *)"]
 # Deny wins over allow. The workers run as hermes, so these keep the box's secrets and the trader's signer out.
+# Absolute paths need a double slash (//home/...); a single slash is relative to the project and never matched.
 denied_tools = ["Bash(sudo *)", "Bash(git push *)", "Bash(ssh *)", "Bash(systemctl *)",
-                "Read(**/.env)", "Read(**/.env.*)", "Read(/home/hermes/.hermes/.env)",
-                "Read(/home/hermes/.hermes/auth.json)", "Read(/home/hermes/.claude/.credentials.json)",
-                "Read(/home/trader/**)", "Read(/srv/exo-guard/**)"]
+                "Read(**/.env)", "Read(**/.env.*)", "Read(//home/hermes/.hermes/.env)",
+                "Read(//home/hermes/.hermes/auth.json)", "Read(//home/hermes/.claude/.credentials.json)",
+                "Read(//home/trader/**)", "Read(//srv/exo-guard/**)"]
 
 [lanes.cc-coder]
 description = "Writes and fixes code in its own git worktree, runs the tests, and leaves a branch for review. Never pushes."

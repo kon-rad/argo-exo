@@ -1,4 +1,5 @@
 import json
+import re
 import signal
 import subprocess
 from pathlib import Path
@@ -104,7 +105,9 @@ def test_repo_lanes_file_loads():
     s = load(REPO_LANES)
     assert set(s.lanes) == {"cc-coder", "cc-research", "cc-writer", "cc-reviewer"}
     for lane in s.lanes.values():
-        assert "Bash(sudo *)" in lane.denied_tools and "Read(/home/trader/**)" in lane.denied_tools
+        assert "Bash(sudo *)" in lane.denied_tools and "Read(//home/trader/**)" in lane.denied_tools
+        # A single leading slash is relative to the project, so an absolute rule written that way never matches.
+        assert not [r for r in lane.denied_tools if re.match(r"\w+\(/[^/]", r)]
         assert "Kanban worker protocol" in lane.prompt
     assert s.lanes["cc-coder"].worktree and "WebSearch" in s.lanes["cc-research"].allowed_tools
 
