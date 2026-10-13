@@ -231,6 +231,8 @@ def test_repo_lanes_file_loads():
         assert not [r for r in lane.denied_tools if re.match(r"\w+\(/[^/]", r)]
         assert "Kanban worker protocol" in lane.prompt
     assert s.lanes["cc-coder"].worktree and "WebSearch" in s.lanes["cc-research"].allowed_tools
+    assert set(s.verifiers) == {"argo-exo-tests", "cc-dispatcher-tests"}
+    assert s.max_attempts == 3
 
 
 def test_lane_tools_add_to_defaults(tmp_path):

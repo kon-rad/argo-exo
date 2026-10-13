@@ -16,6 +16,7 @@ pause_file = "/home/hermes/cc-runs/PAUSE" # touch to stop new spawns; running wo
 rate_limit_pause_minutes = 60
 claude_bin = "/home/hermes/.local/bin/claude"
 hermes_bin = "/home/hermes/.local/bin/hermes"
+max_attempts = 3             # verify failures before a card is blocked for Konrad
 
 [defaults]
 cwd = "/home/hermes/secondBrain"
@@ -53,3 +54,17 @@ model = "sonnet"
 description = "Reviews another task's branch, diff or note and comments findings on the task. Never edits or commits."
 model = "sonnet"
 permission_mode = "default"
+
+# Checks the dispatcher runs after a worker completes a card whose body has `verify: <name>`.
+# Commands live only here. "worker" = the worker's cwd (cc-coder: its worktree).
+[verifiers.argo-exo-tests]
+cmd = ["python3", "-m", "pytest", "-q", "-p", "no:cacheprovider"]
+cwd = "worker"
+timeout_seconds = 600
+metric_regex = "(\\d+) passed"
+
+[verifiers.cc-dispatcher-tests]
+cmd = ["python3", "-m", "pytest", "-q", "-p", "no:cacheprovider", "agents/cc-dispatcher/tests"]
+cwd = "worker"
+timeout_seconds = 300
+metric_regex = "(\\d+) passed"
