@@ -7,7 +7,19 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 LANE_NAME = re.compile(r"^cc-[a-z0-9-]{1,30}$")   # never a Hermes profile name: the cc- prefix is the contract
+VERIFIER_NAME = re.compile(r"^[a-z0-9-]{1,40}$")
 MODES = {"default", "acceptEdits", "plan", "auto", "dontAsk"}
+
+
+@dataclass(frozen=True)
+class Verifier:
+    """A check the dispatcher runs after a worker completes. Named here, never taken from a card: cards come from
+    agents, the bridge and voice, and a command from a card body would run as hermes."""
+    name: str
+    cmd: tuple[str, ...]
+    cwd: str                       # "worker" = the worker's cwd (its worktree for worktree lanes), else an absolute path
+    timeout_seconds: int
+    metric_regex: str | None
 
 
 @dataclass(frozen=True)
@@ -37,6 +49,8 @@ class Settings:
     claude_bin: str
     hermes_bin: str
     lanes: dict[str, Lane] = field(default_factory=dict)
+    verifiers: dict[str, Verifier] = field(default_factory=dict)
+    max_attempts: int = 3
 
 
 def load(path: str | Path) -> Settings:
@@ -69,7 +83,33 @@ def load(path: str | Path) -> Settings:
         )
     if not lanes:
         raise ValueError("no lanes configured")
+    verifiers: dict[str, Verifier] = {}
+    for vname, vcfg in raw.get("verifiers", {}).items():
+        if not VERIFIER_NAME.match(vname):
+            raise ValueError(f"verifier {vname!r}: names must match {VERIFIER_NAME.pattern}")
+        cmd = vcfg.get("cmd")
+        if not isinstance(cmd, list) or not cmd or not all(isinstance(x, str) and x for x in cmd):
+            raise ValueError(f"verifier {vname}: cmd must be a non-empty list of strings")
+        cwd = str(vcfg.get("cwd", "worker"))
+        if cwd != "worker" and not Path(cwd).is_absolute():
+            raise ValueError(f"verifier {vname}: cwd must be 'worker' or an absolute path, got {cwd!r}")
+        timeout_seconds = int(vcfg.get("timeout_seconds", 600))
+        if timeout_seconds <= 0:
+            raise ValueError(f"verifier {vname}: timeout_seconds must be > 0, got {timeout_seconds}")
+        metric_regex = vcfg.get("metric_regex")
+        if metric_regex is not None:
+            try:
+                re.compile(metric_regex)
+            except re.error as e:
+                raise ValueError(f"verifier {vname}: metric_regex is invalid: {e}")
+        verifiers[vname] = Verifier(
+            name=vname, cmd=tuple(cmd), cwd=cwd,
+            timeout_seconds=timeout_seconds, metric_regex=metric_regex,
+        )
     runs_dir = Path(d.get("runs_dir", "/home/hermes/cc-runs"))
+    max_attempts = int(d.get("max_attempts", 3))
+    if max_attempts < 1:
+        raise ValueError(f"max_attempts must be >= 1, got {max_attempts}")
     return Settings(
         boards=tuple(d.get("boards", ["exo"])), max_in_progress=int(d.get("max_in_progress", 2)),
         daily_cap=int(d.get("daily_cap", 20)), poll_seconds=int(d.get("poll_seconds", 30)),
@@ -77,5 +117,5 @@ def load(path: str | Path) -> Settings:
         pause_file=Path(d.get("pause_file", runs_dir / "PAUSE")),
         rate_limit_pause_minutes=int(d.get("rate_limit_pause_minutes", 60)),
         claude_bin=d.get("claude_bin", "claude"), hermes_bin=d.get("hermes_bin", "hermes"),
-        lanes=lanes,
+        lanes=lanes, verifiers=verifiers, max_attempts=max_attempts,
     )

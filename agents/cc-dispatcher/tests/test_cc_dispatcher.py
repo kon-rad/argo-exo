@@ -16,6 +16,7 @@ REPO_LANES = Path(__file__).resolve().parents[2] / "cc-lanes" / "lanes.toml"
 
 # -- fixtures ------------------------------------------------------------------------------------------------------
 def lanes_dir(tmp_path, extra="", mode="acceptEdits", name="cc-test"):
+    tmp_path.mkdir(parents=True, exist_ok=True)
     d = tmp_path / "lanes"
     d.mkdir()
     (d / "worker-protocol.md").write_text("PROTOCOL")
@@ -346,3 +347,48 @@ def test_auth_failure_pauses_instead_of_draining_the_queue(tmp_path):
     d.tick()
     assert [p[0] for p in procs] == ["t_1"]
     assert "not logged in" in board.blocks[0][1].lower() and "/login" in board.blocks[0][1]
+
+
+# -- verifiers ----------------------------------------------------------------------------------------------------
+VERIFIERS = '''
+[verifiers.unit]
+cmd = ["python3", "-m", "pytest", "-q"]
+timeout_seconds = 120
+metric_regex = "(\\\\d+) passed"
+'''
+
+
+def test_verifiers_load_with_defaults(tmp_path):
+    path = lanes_dir(tmp_path)
+    path.write_text(path.read_text() + VERIFIERS)
+    s = load(path)
+    v = s.verifiers["unit"]
+    assert v.cmd == ("python3", "-m", "pytest", "-q") and v.cwd == "worker" and v.timeout_seconds == 120
+    assert v.metric_regex == r"(\d+) passed"
+    assert s.max_attempts == 3
+
+
+def test_verifier_needs_a_command_and_a_safe_name(tmp_path):
+    path = lanes_dir(tmp_path)
+    path.write_text(path.read_text() + '\n[verifiers.unit]\ncmd = []\n')
+    with pytest.raises(ValueError, match="cmd"):
+        load(path)
+    path = lanes_dir(tmp_path / "b")
+    path.write_text(path.read_text() + '\n[verifiers."Bad Name"]\ncmd = ["true"]\n')
+    with pytest.raises(ValueError, match="verifier"):
+        load(path)
+
+
+def test_verifier_validates_regex_timeout_and_cwd(tmp_path):
+    path = lanes_dir(tmp_path)
+    path.write_text(path.read_text() + '\n[verifiers.bad]\ncmd = ["true"]\nmetric_regex = "(?P<bad"\n')
+    with pytest.raises(ValueError, match="metric_regex is invalid"):
+        load(path)
+    path = lanes_dir(tmp_path / "c")
+    path.write_text(path.read_text() + '\n[verifiers.bad]\ncmd = ["true"]\ntimeout_seconds = 0\n')
+    with pytest.raises(ValueError, match="timeout_seconds must be > 0"):
+        load(path)
+    path = lanes_dir(tmp_path / "d")
+    path.write_text(path.read_text() + '\n[verifiers.bad]\ncmd = ["true"]\ncwd = "relative/path"\n')
+    with pytest.raises(ValueError, match="cwd must be"):
+        load(path)
