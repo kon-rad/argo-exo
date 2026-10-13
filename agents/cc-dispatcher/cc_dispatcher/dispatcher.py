@@ -164,6 +164,19 @@ class Dispatcher:
                        f"Claude worker {why}. Last output:\n{worker.tail(r.log_path)}"[:3500], "transient")
 
     def _verify(self, r: Running, board: Board, task_id: str) -> None:
+        """Never raises: a crash in the check must not take the dispatcher loop down with it."""
+        try:
+            self._verify_inner(r, board, task_id)
+        except Exception as exc:
+            log.exception("verify crashed for %s", task_id)
+            try:
+                outcome = verify.Outcome("unknown", None, False, None, f"verify crashed: {exc}"[:500], 0.0)
+                verify.record(r.log_path, outcome, task_id, r.lane.name)
+                self._safe(board.comment, task_id, f"Verify crashed: {exc}"[:500], AUTHOR)
+            except Exception:
+                log.exception("could not report the verify crash for %s", task_id)
+
+    def _verify_inner(self, r: Running, board: Board, task_id: str) -> None:
         """A completed card that names a verifier is checked by code, never by the worker's own word."""
         task = self._safe(board.task, task_id) or {}
         body = task.get("body") or ""
@@ -186,15 +199,19 @@ class Dispatcher:
             self._safe(board.comment, task_id, f"Verified: {name} passed{metric}.", AUTHOR)
             return
         k, n = verify.attempt(body) or (1, self.settings.max_attempts)
+        n = min(n, self.settings.max_attempts)
         title = verify.base_title(task.get("title") or task_id)
         if v is not None and k < n:
-            self._safe(board.create, f"[retry {k + 1}/{n}] {title}", verify.retry_body(body, outcome, k + 1, n),
-                       r.lane.name, AUTHOR, (task_id,), None)
-            self._safe(board.comment, task_id, f"Verify {name} failed{metric}; opened retry {k + 1}/{n}.", AUTHOR)
+            made = self._safe(board.create, f"[retry {k + 1}/{n}] {title}", verify.retry_body(body, outcome, k + 1, n),
+                              r.lane.name, AUTHOR, (task_id,), None)
+            said = (f"Verify {name} failed{metric}; opened retry {k + 1}/{n}." if made
+                    else f"Verify {name} failed{metric}; could not open the retry card.")
         else:
-            self._safe(board.create, f"[needs Konrad] {title}", verify.escalation_body(body, outcome, k, n),
-                       r.lane.name, AUTHOR, (task_id,), "blocked")
-            self._safe(board.comment, task_id, f"Verify {name} failed{metric}; blocked for Konrad.", AUTHOR)
+            made = self._safe(board.create, f"[needs Konrad] {title}", verify.escalation_body(body, outcome, k, n),
+                              r.lane.name, AUTHOR, (task_id,), "blocked")
+            said = (f"Verify {name} failed{metric}; blocked for Konrad." if made
+                    else f"Verify {name} failed{metric}; could not open the escalation card.")
+        self._safe(board.comment, task_id, said, AUTHOR)
 
     def _enforce_runtime(self, now: float) -> None:
         for r in self.running.values():

@@ -90,3 +90,14 @@ def test_board_create_with_parent_and_blocked_status():
 def test_board_task_reads_title_and_body():
     r = Runner('{"task":{"title":"T","body":"verify: unit","status":"done"}}')
     assert Board("h", "exo", run=r).task("t_1") == {"title": "T", "body": "verify: unit", "status": "done"}
+
+
+def test_run_survives_non_utf8_output_and_kills_the_group_on_timeout():
+    import sys
+    bad = Verifier("bad", (sys.executable, "-c", "import sys; sys.stdout.buffer.write(b'ok \\xff\\xfe 7 passed')"),
+                   "/tmp", 30, r"(\d+) passed")
+    out = verify.run(bad, "/tmp", {})
+    assert out.passed and out.metric == 7
+    hang = Verifier("hang", ("sh", "-c", "sleep 30 & wait"), "/tmp", 1, None)
+    out = verify.run(hang, "/tmp", {})
+    assert not out.passed and "timed out" in out.output and out.seconds < 10

@@ -175,6 +175,38 @@ def test_unknown_verifier_escalates_without_running_anything(tmp_path):
     assert card["status"] == "blocked" and "not in lanes.toml" in card["body"]
 
 
+def test_verifier_crash_is_contained_and_dispatch_continues(tmp_path):
+    board = FakeBoard(ready=[{"id": "t_1"}, {"id": "t_2"}], body="verify: unit")
+    d, procs, _ = make_verified(tmp_path, board, PASS)
+    d.run_verifier = lambda *a: (_ for _ in ()).throw(RuntimeError("boom"))
+    d.tick()
+    procs[0][2].code = 0
+    d.tick()
+    assert any("crashed" in c[1] and "boom" in c[1] for c in board.comments)
+    last = json.loads((tmp_path / "runs" / "t_1.jsonl").read_text().splitlines()[-1])
+    assert last["type"] == "cc_verify" and last["passed"] is False
+    board.ready.append({"id": "t_3"})
+    d.tick()
+    assert "t_3" in [p[0] for p in procs]
+
+
+def test_failed_card_creation_is_not_reported_as_opened(tmp_path):
+    board = FakeBoard(ready=[{"id": "t_1"}], body="verify: unit")
+    board.create = lambda *a: (_ for _ in ()).throw(BoardError("nope"))
+    d, procs, _ = make_verified(tmp_path, board, FAIL)
+    finish(d, procs)
+    assert any("could not open the retry card" in c[1] for c in board.comments)
+    assert not any("opened retry" in c[1] for c in board.comments)
+
+
+def test_attempt_limit_is_clamped_to_max_attempts(tmp_path):
+    board = FakeBoard(ready=[{"id": "t_1"}], body="verify: unit\ncc-attempt: 3/99")
+    d, procs, _ = make_verified(tmp_path, board, FAIL)
+    finish(d, procs)
+    [card] = board.created
+    assert card["status"] == "blocked"
+
+
 def test_no_verify_line_means_no_check(tmp_path):
     board = FakeBoard(ready=[{"id": "t_1"}], body="just do it")
     d, procs, _ = make_verified(tmp_path, board, FAIL)
@@ -479,4 +511,11 @@ def test_verifier_validates_regex_timeout_and_cwd(tmp_path):
     path = lanes_dir(tmp_path / "d")
     path.write_text(path.read_text() + '\n[verifiers.bad]\ncmd = ["true"]\ncwd = "relative/path"\n')
     with pytest.raises(ValueError, match="cwd must be"):
+        load(path)
+
+
+def test_verifier_timeout_above_ten_minutes_is_rejected(tmp_path):
+    path = lanes_dir(tmp_path)
+    path.write_text(path.read_text() + '\n[verifiers.slow]\ncmd = ["true"]\ntimeout_seconds = 601\n')
+    with pytest.raises(ValueError, match="timeout_seconds"):
         load(path)

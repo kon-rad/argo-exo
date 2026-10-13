@@ -11,6 +11,9 @@ VERIFIER_NAME = re.compile(r"^[a-z0-9-]{1,40}$")
 MODES = {"default", "acceptEdits", "plan", "auto", "dontAsk"}
 
 
+MAX_VERIFIER_SECONDS = 600
+
+
 @dataclass(frozen=True)
 class Verifier:
     """A check the dispatcher runs after a worker completes. Named here, never taken from a card: cards come from
@@ -96,6 +99,8 @@ def load(path: str | Path) -> Settings:
         timeout_seconds = int(vcfg.get("timeout_seconds", 600))
         if timeout_seconds <= 0:
             raise ValueError(f"verifier {vname}: timeout_seconds must be > 0, got {timeout_seconds}")
+        if timeout_seconds > MAX_VERIFIER_SECONDS:   # verifiers run inside the dispatcher loop; keep claims alive
+            raise ValueError(f"verifier {vname}: timeout_seconds must be <= {MAX_VERIFIER_SECONDS}, got {timeout_seconds}")
         metric_regex = vcfg.get("metric_regex")
         if metric_regex is not None:
             try:

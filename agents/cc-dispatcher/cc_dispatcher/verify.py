@@ -7,7 +7,9 @@ ledger reads (Projects/secondbrain-app/usage-ledger-plan.md, Part B).
 from __future__ import annotations
 
 import json
+import os
 import re
+import signal
 import subprocess
 import time
 from dataclasses import dataclass
@@ -55,12 +57,28 @@ def _metric(regex: str | None, text: str) -> float | None:
         return None
 
 
-def run(v: Verifier, worker_cwd: str, env: dict, runner=subprocess.run, clock=time.monotonic) -> Outcome:
+def _run_in_group(cmd, cwd, env, timeout, **_):
+    """Like subprocess.run, but the command gets its own process group so a timeout kills grandchildren too."""
+    proc = subprocess.Popen(cmd, cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                            encoding="utf-8", errors="replace", stdin=subprocess.DEVNULL, start_new_session=True)
+    try:
+        out, err = proc.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except OSError:
+            pass
+        proc.communicate()
+        raise
+    return subprocess.CompletedProcess(cmd, proc.returncode, out, err)
+
+
+def run(v: Verifier, worker_cwd: str, env: dict, runner=_run_in_group, clock=time.monotonic) -> Outcome:
     cwd = worker_cwd if v.cwd == "worker" else v.cwd
     start = clock()
     try:
         p = runner(list(v.cmd), cwd=cwd, env=env, capture_output=True, text=True, timeout=v.timeout_seconds,
-                   stdin=subprocess.DEVNULL)
+                   encoding="utf-8", errors="replace", stdin=subprocess.DEVNULL)
     except subprocess.TimeoutExpired:
         return Outcome(v.name, None, False, None, f"timed out after {v.timeout_seconds} s", clock() - start)
     except OSError as exc:
