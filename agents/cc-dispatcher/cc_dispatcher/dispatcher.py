@@ -3,13 +3,15 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import signal
 import time
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
 
-from . import worker
+from . import verify, worker
 from .board import Board, BoardError
 from .config import Lane, Settings
 
@@ -28,6 +30,7 @@ class Running:
     started: float
     interrupted_at: float | None = None
     timed_out: bool = False
+    cwd: str = ""                 # where the worker ran; verifiers with cwd = "worker" run here
 
 
 @dataclass
@@ -58,6 +61,7 @@ class Dispatcher:
     spawn: Callable = worker.spawn
     prepare_cwd: Callable = worker.prepare_cwd
     clock: Callable[[], float] = time.time
+    run_verifier: Callable = verify.run
     running: dict[str, Running] = field(default_factory=dict)
 
     def __post_init__(self):
@@ -108,12 +112,16 @@ class Dispatcher:
         log_path = self.settings.runs_dir / f"{task_id}.jsonl"
         try:
             cwd = self.prepare_cwd(self.settings, lane, task_id)
+            self.settings.runs_dir.mkdir(parents=True, exist_ok=True)
+            with open(log_path, "a") as f:     # frames this run in the log; the Second Brain ledger reads it
+                f.write(json.dumps({"type": "cc_dispatch", "task_id": task_id, "board": board_name, "lane": lane.name,
+                                    "model": lane.model, "at": datetime.now(timezone.utc).isoformat()}) + "\n")
             proc = self.spawn(self.settings, lane, board_name, task_id, cwd, log_path)
         except Exception as exc:   # worktree or exec failure: the task must not sit claimed until the TTL ends
             log.exception("spawn failed for %s", task_id)
             self._safe(board.block, task_id, f"cc-dispatcher could not start the worker: {exc}"[:500], "capability")
             return
-        self.running[task_id] = Running(board_name, task_id, lane, proc, log_path, now)
+        self.running[task_id] = Running(board_name, task_id, lane, proc, log_path, now, cwd=cwd)
         self.state.spawned_today += 1
         self.state.save(self.state_path)
         self._safe(board.comment, task_id, f"Claude Code worker started ({lane.name}, {lane.model}). "
@@ -141,6 +149,8 @@ class Dispatcher:
             status = self._safe(board.status, task_id)
             if status != "running":
                 log.info("%s finished: %s (exit %s)", task_id, status, code)
+                if status == "done":
+                    self._verify(r, board, task_id)
                 continue
             # The worker exited without complete/block: the same rule Hermes calls a protocol violation.
             if no_login:
@@ -152,6 +162,39 @@ class Dispatcher:
                 why = f"exited (code {code}) without complete or block"
             self._safe(board.block, task_id,
                        f"Claude worker {why}. Last output:\n{worker.tail(r.log_path)}"[:3500], "transient")
+
+    def _verify(self, r: Running, board: Board, task_id: str) -> None:
+        """A completed card that names a verifier is checked by code, never by the worker's own word."""
+        task = self._safe(board.task, task_id) or {}
+        body = task.get("body") or ""
+        name = verify.requested(body)
+        if name is None:
+            return
+        v = self.settings.verifiers.get(name)
+        if v is None:
+            outcome = verify.Outcome(name, None, False, None,
+                                     f"verifier {name!r} is not in lanes.toml (known: {sorted(self.settings.verifiers)})", 0.0)
+        else:
+            env = worker.worker_env(dict(os.environ), self.settings, r.lane, r.board, task_id)
+            outcome = self.run_verifier(v, r.cwd or r.lane.cwd, env)
+        try:
+            verify.record(r.log_path, outcome, task_id, r.lane.name)
+        except OSError:
+            log.exception("could not record the verify outcome for %s", task_id)
+        metric = "" if outcome.metric is None else f" ({outcome.metric:g})"
+        if outcome.passed:
+            self._safe(board.comment, task_id, f"Verified: {name} passed{metric}.", AUTHOR)
+            return
+        k, n = verify.attempt(body) or (1, self.settings.max_attempts)
+        title = verify.base_title(task.get("title") or task_id)
+        if v is not None and k < n:
+            self._safe(board.create, f"[retry {k + 1}/{n}] {title}", verify.retry_body(body, outcome, k + 1, n),
+                       r.lane.name, AUTHOR, (task_id,), None)
+            self._safe(board.comment, task_id, f"Verify {name} failed{metric}; opened retry {k + 1}/{n}.", AUTHOR)
+        else:
+            self._safe(board.create, f"[needs Konrad] {title}", verify.escalation_body(body, outcome, k, n),
+                       r.lane.name, AUTHOR, (task_id,), "blocked")
+            self._safe(board.comment, task_id, f"Verify {name} failed{metric}; blocked for Konrad.", AUTHOR)
 
     def _enforce_runtime(self, now: float) -> None:
         for r in self.running.values():

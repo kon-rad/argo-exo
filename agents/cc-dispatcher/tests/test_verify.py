@@ -48,6 +48,15 @@ def test_record_appends_a_line_the_ledger_reads(tmp_path):
                     "exit_code": 1, "metric": 900.0, "output": "3 failed", "seconds": 1.5, "at": "2026-10-14T00:00:00+00:00"}
 
 
+def test_record_starts_a_new_line_after_a_torn_one(tmp_path):
+    log = tmp_path / "t_1.jsonl"
+    log.write_text('{"type":"assistant","mess')
+    out = verify.Outcome("unit", 0, True, None, "ok", 0.5)
+    verify.record(log, out, "t_1", "cc-coder")
+    lines = log.read_text().splitlines()
+    assert lines[0] == '{"type":"assistant","mess' and json.loads(lines[1])["type"] == "cc_verify"
+
+
 def test_retry_and_escalation_bodies():
     out = verify.Outcome("unit", 1, False, None, "E   assert 1 == 2", 2.0)
     body = "Fix the parser.\nverify: unit\ncc-attempt: 1/3\n"

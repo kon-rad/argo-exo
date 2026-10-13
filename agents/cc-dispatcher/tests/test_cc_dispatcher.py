@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from cc_dispatcher import worker
+from cc_dispatcher import verify, worker
 from cc_dispatcher.board import Board, BoardError
 from cc_dispatcher.config import load
 from cc_dispatcher.dispatcher import Dispatcher
@@ -46,10 +46,18 @@ max_runtime_minutes = 10
 
 
 class FakeBoard:
-    def __init__(self, ready=(), running=(), status="done"):
+    def __init__(self, ready=(), running=(), status="done", body=""):
         self.ready, self.running_tasks, self.final = list(ready), list(running), status
         self.claims, self.comments, self.blocks, self.attached = [], [], [], []
         self.claimable = True
+        self.body, self.created = body, []
+
+    def task(self, task_id):
+        return {"title": "Fix the parser", "body": self.body, "status": self.final}
+
+    def create(self, title, body, assignee, created_by, parents=(), initial_status=None):
+        self.created.append({"title": title, "body": body, "assignee": assignee, "parents": parents, "status": initial_status})
+        return {"id": f"t_new{len(self.created)}"}
 
     def tasks(self, assignee, status):
         rows = self.ready if status == "ready" else self.running_tasks
@@ -85,20 +93,100 @@ class FakeProc:
         self.signals.append(sig)
 
 
-def make(tmp_path, board, **kw):
-    settings = load(lanes_dir(tmp_path, **kw))
+def make_from(path, board):
+    settings = load(path)
     procs = []
 
     def spawn(settings, lane, board_name, task_id, cwd, log_path):
         p = FakeProc()
         procs.append((task_id, cwd, p))
         log_path.parent.mkdir(parents=True, exist_ok=True)
-        log_path.write_text("")
+        log_path.touch()
         return p
     clock = {"t": 1_800_000_000.0}
     d = Dispatcher(settings, {"exo": board}, spawn=spawn, prepare_cwd=lambda s, l, t: l.cwd,
                    clock=lambda: clock["t"])
     return d, procs, clock
+
+
+def make(tmp_path, board, **kw):
+    return make_from(lanes_dir(tmp_path, **kw), board)
+
+
+def make_verified(tmp_path, board, outcome):
+    path = lanes_dir(tmp_path)
+    path.write_text(path.read_text() + '\n[verifiers.unit]\ncmd = ["true"]\n')
+    d, procs, clock = make_from(path, board)
+    d.run_verifier = lambda v, cwd, env: outcome
+    return d, procs, clock
+
+
+def finish(d, procs):
+    d.tick()
+    procs[0][2].code = 0
+    d.tick()
+
+
+PASS = verify.Outcome("unit", 0, True, 905.0, "905 passed", 1.0)
+FAIL = verify.Outcome("unit", 1, False, 900.0, "3 failed", 1.0)
+
+
+def test_dispatch_line_comes_first_in_the_log(tmp_path):
+    board = FakeBoard(ready=[{"id": "t_1"}])
+    d, procs, _ = make(tmp_path, board)
+    d.tick()
+    first = json.loads((tmp_path / "runs" / "t_1.jsonl").read_text().splitlines()[0])
+    assert first["type"] == "cc_dispatch" and first["task_id"] == "t_1" and first["lane"] == "cc-test"
+
+
+def test_passing_verify_comments_and_records(tmp_path):
+    board = FakeBoard(ready=[{"id": "t_1"}], body="Do it\nverify: unit")
+    d, procs, _ = make_verified(tmp_path, board, PASS)
+    finish(d, procs)
+    assert any("Verified: unit passed (905" in c[1] for c in board.comments)
+    assert board.created == []
+    lines = [json.loads(l) for l in (tmp_path / "runs" / "t_1.jsonl").read_text().splitlines()]
+    assert lines[-1]["type"] == "cc_verify" and lines[-1]["passed"] is True
+
+
+def test_failing_verify_opens_a_retry_card_on_the_same_lane(tmp_path):
+    board = FakeBoard(ready=[{"id": "t_1"}], body="Do it\nverify: unit")
+    d, procs, _ = make_verified(tmp_path, board, FAIL)
+    finish(d, procs)
+    [card] = board.created
+    assert card["title"] == "[retry 2/3] Fix the parser" and card["assignee"] == "cc-test"
+    assert card["parents"] == ("t_1",) and card["status"] is None and "cc-attempt: 2/3" in card["body"]
+
+
+def test_last_failed_attempt_escalates_as_a_blocked_card(tmp_path):
+    board = FakeBoard(ready=[{"id": "t_1"}], body="Do it\nverify: unit\ncc-attempt: 3/3")
+    d, procs, _ = make_verified(tmp_path, board, FAIL)
+    finish(d, procs)
+    [card] = board.created
+    assert card["title"] == "[needs Konrad] Fix the parser" and card["status"] == "blocked"
+
+
+def test_unknown_verifier_escalates_without_running_anything(tmp_path):
+    board = FakeBoard(ready=[{"id": "t_1"}], body="verify: nope")
+    d, procs, _ = make_verified(tmp_path, board, PASS)
+    d.run_verifier = lambda *a: (_ for _ in ()).throw(AssertionError("must not run"))
+    finish(d, procs)
+    [card] = board.created
+    assert card["status"] == "blocked" and "not in lanes.toml" in card["body"]
+
+
+def test_no_verify_line_means_no_check(tmp_path):
+    board = FakeBoard(ready=[{"id": "t_1"}], body="just do it")
+    d, procs, _ = make_verified(tmp_path, board, FAIL)
+    finish(d, procs)
+    assert board.created == [] and not any("Verified" in c[1] for c in board.comments)
+
+
+def test_blocked_worker_is_not_verified(tmp_path):
+    board = FakeBoard(ready=[{"id": "t_1"}], body="verify: unit", status="blocked")
+    d, procs, _ = make_verified(tmp_path, board, FAIL)
+    finish(d, procs)
+    assert board.created == []
 
 
 # -- config --------------------------------------------------------------------------------------------------------

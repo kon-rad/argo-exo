@@ -73,8 +73,14 @@ def record(log_path: Path, outcome: Outcome, task_id: str, lane: str, now: datet
     line = {"type": "cc_verify", "task_id": task_id, "lane": lane, "name": outcome.name, "passed": outcome.passed,
             "exit_code": outcome.exit_code, "metric": outcome.metric, "output": outcome.output,
             "seconds": round(outcome.seconds, 3), "at": (now or datetime.now(timezone.utc)).isoformat()}
+    try:
+        with open(log_path, "rb") as f:
+            f.seek(-1, 2)
+            torn = f.read(1) != b"\n"
+    except OSError:                  # missing or empty file: nothing to separate from
+        torn = False
     with open(log_path, "a") as f:
-        f.write(json.dumps(line) + "\n")
+        f.write(("\n" if torn else "") + json.dumps(line) + "\n")
 
 
 def base_title(title: str) -> str:
