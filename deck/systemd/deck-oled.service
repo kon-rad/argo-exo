@@ -1,0 +1,16 @@
+[Unit]
+Description=Exo chest OLED: programmable screens (deck-oled)
+After=multi-user.target cyberdeck-dashboard.service
+
+[Service]
+Type=simple
+User=deck
+WorkingDirectory=/srv/deck
+Environment=PYTHONPATH=/srv/deck/app/deck
+EnvironmentFile=/srv/deck/.env
+ExecStart=/srv/deck/venv/bin/python3 -m exo_deck.oled run
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,16 @@
+[Unit]
+Description=Exo NFC reader: tag read/write and lifelog tap log (deck-nfc)
+After=multi-user.target
+
+[Service]
+Type=simple
+User=deck
+WorkingDirectory=/srv/deck
+Environment=PYTHONPATH=/srv/deck/app/deck
+EnvironmentFile=/srv/deck/.env
+ExecStart=/srv/deck/venv/bin/python3 -m exo_deck.nfc run
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
