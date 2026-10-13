@@ -66,11 +66,21 @@ class Board:
     def show(self, task_id: str) -> dict:
         return self._json("show", task_id, "--json")
 
-    def create(self, title: str, body: str, assignee: str, created_by: str) -> dict:
+    def task(self, task_id: str) -> dict:
+        data = self._json("show", task_id, "--json")
+        t = data.get("task") or data
+        return {"title": t.get("title", ""), "body": t.get("body") or "", "status": t.get("status", "")}
+
+    def create(self, title: str, body: str, assignee: str, created_by: str,
+               parents: tuple[str, ...] = (), initial_status: str | None = None) -> dict:
         # Options first, then "--", then the title, and the body as ONE argv item: text never becomes a flag.
         args = ["create", "--assignee", assignee, "--created-by", created_by, "--json"]
         if body:
             args.insert(1, f"--body={body}")
+        for p in parents:
+            args += ["--parent", p]
+        if initial_status:
+            args += ["--initial-status", initial_status]
         return self._json(*args, "--", title)
 
     def attach(self, task_id: str, path: str, author: str) -> None:
