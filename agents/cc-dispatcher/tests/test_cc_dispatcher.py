@@ -104,7 +104,7 @@ def make_from(path, board):
         log_path.touch()
         return p
     clock = {"t": 1_800_000_000.0}
-    d = Dispatcher(settings, {"exo": board}, spawn=spawn, prepare_cwd=lambda s, l, t: l.cwd,
+    d = Dispatcher(settings, {"exo": board}, spawn=spawn, prepare_cwd=lambda s, l, t, base=None: l.cwd,
                    clock=lambda: clock["t"])
     return d, procs, clock
 
@@ -115,7 +115,7 @@ def make(tmp_path, board, **kw):
 
 def make_verified(tmp_path, board, outcome):
     path = lanes_dir(tmp_path)
-    path.write_text(path.read_text() + '\n[verifiers.unit]\ncmd = ["true"]\n')
+    path.write_text(path.read_text() + '\n[verifiers.unit]\ncmd = ["true"]\nlanes = ["cc-test"]\n')
     d, procs, clock = make_from(path, board)
     d.run_verifier = lambda v, cwd, env: outcome
     return d, procs, clock
@@ -232,6 +232,10 @@ def test_repo_lanes_file_loads():
         assert "Kanban worker protocol" in lane.prompt
     assert s.lanes["cc-coder"].worktree and "WebSearch" in s.lanes["cc-research"].allowed_tools
     assert set(s.verifiers) == {"argo-exo-tests", "cc-dispatcher-tests"}
+    for v in s.verifiers.values():
+        # The droplet's system python3 has no pytest or the repo's deps; the worker PATH is minimal, so absolute.
+        assert v.cmd[0] == "/home/hermes/.venvs/exo-verify/bin/python" and v.cmd[1:3] == ("-m", "pytest")
+        assert v.lanes == ("cc-coder",)                  # code-running checks only where Bash already runs tests
     assert s.max_attempts == 3
 
 
@@ -475,6 +479,7 @@ def test_auth_failure_pauses_instead_of_draining_the_queue(tmp_path):
 VERIFIERS = '''
 [verifiers.unit]
 cmd = ["python3", "-m", "pytest", "-q"]
+lanes = ["cc-test"]
 timeout_seconds = 120
 metric_regex = "(\\\\d+) passed"
 '''
@@ -521,3 +526,98 @@ def test_verifier_timeout_above_ten_minutes_is_rejected(tmp_path):
     path.write_text(path.read_text() + '\n[verifiers.slow]\ncmd = ["true"]\ntimeout_seconds = 601\n')
     with pytest.raises(ValueError, match="timeout_seconds"):
         load(path)
+
+
+def test_verifier_needs_a_non_empty_list_of_known_lanes(tmp_path):
+    for i, extra in enumerate(["", 'lanes = []\n', 'lanes = "cc-test"\n', 'lanes = ["cc-nope"]\n']):
+        path = lanes_dir(tmp_path / str(i))
+        path.write_text(path.read_text() + '\n[verifiers.unit]\ncmd = ["true"]\n' + extra)
+        with pytest.raises(ValueError, match="lanes"):
+            load(path)
+
+
+def test_verifier_on_a_lane_it_is_not_allowed_on_escalates_without_running(tmp_path):
+    path = lanes_dir(tmp_path)
+    (path.parent / "cc-other.md").write_text("ROLE")
+    path.write_text(path.read_text() + '\n[lanes.cc-other]\ndescription = "other"\n'
+                    '\n[verifiers.unit]\ncmd = ["true"]\nlanes = ["cc-other"]\n')
+    board = FakeBoard(ready=[{"id": "t_1", "assignee": "cc-test"}], body="verify: unit")
+    d, procs, _ = make_from(path, board)
+    d.run_verifier = lambda *a: (_ for _ in ()).throw(AssertionError("must not run"))
+    finish(d, procs)
+    [card] = board.created
+    assert card["status"] == "blocked" and card["title"].startswith("[needs Konrad]")
+    assert "verifier unit is not allowed on lane cc-test" in card["body"]
+    last = json.loads((tmp_path / "runs" / "t_1.jsonl").read_text().splitlines()[-1])
+    assert last["type"] == "cc_verify" and last["passed"] is False and "not allowed" in last["output"]
+
+
+def test_retry_card_names_the_failed_card_it_builds_on(tmp_path):
+    board = FakeBoard(ready=[{"id": "t_1"}], body="Do it\nverify: unit")
+    d, procs, _ = make_verified(tmp_path, board, FAIL)
+    finish(d, procs)
+    [card] = board.created
+    assert verify.retry_of(card["body"]) == "t_1"
+
+
+def test_a_retry_of_a_retry_builds_on_the_card_that_just_failed(tmp_path):
+    board = FakeBoard(ready=[{"id": "t_2"}], body="Do it\nverify: unit\ncc-attempt: 2/3\ncc-retry-of: t_1")
+    d, procs, _ = make_verified(tmp_path, board, FAIL)
+    finish(d, procs)
+    [card] = board.created
+    assert verify.retry_of(card["body"]) == "t_2" and card["body"].count("cc-retry-of:") == 1
+
+
+def test_escalation_card_also_names_the_failed_card(tmp_path):
+    board = FakeBoard(ready=[{"id": "t_3"}], body="verify: unit\ncc-attempt: 3/3\ncc-retry-of: t_2")
+    d, procs, _ = make_verified(tmp_path, board, FAIL)
+    finish(d, procs)
+    [card] = board.created
+    assert card["status"] == "blocked" and verify.retry_of(card["body"]) == "t_3"
+
+
+def test_worktree_retry_is_prepared_from_the_failed_cards_branch(tmp_path):
+    board = FakeBoard(ready=[{"id": "t_r"}], body="Do it\nverify: unit\ncc-retry-of: t_1")
+    d, procs, _ = make(tmp_path, board, extra="worktree = true")
+    seen = []
+    d.prepare_cwd = lambda s, lane, t, base=None: seen.append((t, base)) or "/work"
+    d.tick()
+    assert seen == [("t_r", "cc/t_1")]
+    board2 = FakeBoard(ready=[{"id": "t_n"}], body="fresh card")
+    d2, _, _ = make(tmp_path / "b", board2, extra="worktree = true")
+    seen2 = []
+    d2.prepare_cwd = lambda s, lane, t, base=None: seen2.append((t, base)) or "/work"
+    d2.tick()
+    assert seen2 == [("t_n", None)]
+
+
+def _git(*args, cwd):
+    return subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True, text=True).stdout
+
+
+def _repo_settings(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git("init", "-q", "-b", "main", cwd=repo)
+    _git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "root", cwd=repo)
+    path = lanes_dir(tmp_path, extra=f'worktree = true\ncwd = "{repo}"')
+    s = load(path)
+    return s, s.lanes["cc-test"]
+
+
+def test_prepare_cwd_starts_a_retry_from_the_parent_branch(tmp_path):
+    s, lane = _repo_settings(tmp_path)
+    parent = Path(worker.prepare_cwd(s, lane, "t_1"))
+    (parent / "feature.py").write_text("work = 1\n")
+    _git("add", "feature.py", cwd=parent)
+    _git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "attempt 1", cwd=parent)
+    retry = Path(worker.prepare_cwd(s, lane, "t_2", base="cc/t_1"))
+    assert (retry / "feature.py").read_text() == "work = 1\n"
+    assert _git("rev-parse", "--abbrev-ref", "HEAD", cwd=retry).strip() == "cc/t_2"
+
+
+def test_prepare_cwd_falls_back_to_head_when_the_parent_branch_is_gone(tmp_path):
+    s, lane = _repo_settings(tmp_path)
+    retry = Path(worker.prepare_cwd(s, lane, "t_2", base="cc/t_missing"))
+    assert not (retry / "feature.py").exists()
+    assert _git("rev-parse", "HEAD", cwd=retry) == _git("rev-parse", "main", cwd=tmp_path / "repo")

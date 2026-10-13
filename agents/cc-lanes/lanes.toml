@@ -57,14 +57,20 @@ permission_mode = "default"
 
 # Checks the dispatcher runs after a worker completes a card whose body has `verify: <name>`.
 # Commands live only here. "worker" = the worker's cwd (cc-coder: its worktree).
+# `lanes` lists the lanes whose cards may name the check; a card on any other lane escalates without running it.
+# The interpreter is a venv, not the system python3 (which has no pytest or the repo's deps), and an absolute path
+# because the worker env's PATH is minimal. Created at deploy as hermes:
+#   python3 -m venv /home/hermes/.venvs/exo-verify && /home/hermes/.venvs/exo-verify/bin/pip install -r requirements-dev.txt
 [verifiers.argo-exo-tests]
-cmd = ["python3", "-m", "pytest", "-q", "-p", "no:cacheprovider"]
+cmd = ["/home/hermes/.venvs/exo-verify/bin/python", "-m", "pytest", "-q", "-p", "no:cacheprovider"]
 cwd = "worker"
+lanes = ["cc-coder"]
 timeout_seconds = 600
 metric_regex = "(\\d+) passed"
 
 [verifiers.cc-dispatcher-tests]
-cmd = ["python3", "-m", "pytest", "-q", "-p", "no:cacheprovider", "agents/cc-dispatcher/tests"]
+cmd = ["/home/hermes/.venvs/exo-verify/bin/python", "-m", "pytest", "-q", "-p", "no:cacheprovider", "agents/cc-dispatcher/tests"]
 cwd = "worker"
+lanes = ["cc-coder"]
 timeout_seconds = 300
 metric_regex = "(\\d+) passed"

@@ -66,6 +66,9 @@ def test_retry_and_escalation_bodies():
     esc = verify.escalation_body(body, out, 3, 3)
     assert "failed 3 of 3" in esc and "assert 1 == 2" in esc
     assert verify.base_title("[retry 2/3] Fix the parser") == "Fix the parser"
+    chained = verify.retry_body(body + "cc-retry-of: t_1\n", out, 2, 3, "t_2")
+    assert verify.retry_of(chained) == "t_2" and chained.count("cc-retry-of:") == 1
+    assert verify.retry_of("cc-retry-of: -rf") is None and verify.retry_of("no marker") is None
 
 
 class Runner:

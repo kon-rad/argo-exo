@@ -50,14 +50,21 @@ def command(settings: Settings, lane: Lane, board: str, task_id: str) -> list[st
     ]
 
 
-def prepare_cwd(settings: Settings, lane: Lane, task_id: str, run=subprocess.run) -> str:
-    """The lane's cwd, or a fresh git worktree of it on branch cc/<task> for worktree lanes."""
+def prepare_cwd(settings: Settings, lane: Lane, task_id: str, run=subprocess.run, base: str | None = None) -> str:
+    """The lane's cwd, or a fresh git worktree of it on branch cc/<task> for worktree lanes. The branch starts from
+    `base` (a retry: the failed card's branch, so its commits carry over) when that ref exists, else from HEAD."""
     if not lane.worktree:
         return lane.cwd
     dest = settings.work_dir / task_id
     if not dest.exists():
         settings.work_dir.mkdir(parents=True, exist_ok=True)
-        run(["git", "-C", lane.cwd, "worktree", "add", "-b", f"cc/{task_id}", str(dest)],
+        start: list[str] = []
+        if base and not base.startswith("-"):
+            found = run(["git", "-C", lane.cwd, "rev-parse", "--verify", "--quiet", f"{base}^{{commit}}"],
+                        capture_output=True, text=True, timeout=30)
+            if found.returncode == 0:
+                start = [base]
+        run(["git", "-C", lane.cwd, "worktree", "add", "-b", f"cc/{task_id}", str(dest), *start],
             check=True, capture_output=True, text=True, timeout=60)
     return str(dest)
 

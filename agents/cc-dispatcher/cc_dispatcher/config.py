@@ -23,6 +23,7 @@ class Verifier:
     cwd: str                       # "worker" = the worker's cwd (its worktree for worktree lanes), else an absolute path
     timeout_seconds: int
     metric_regex: str | None
+    lanes: tuple[str, ...] = ()    # lanes whose cards may name this check; any other lane's card escalates unrun
 
 
 @dataclass(frozen=True)
@@ -107,9 +108,15 @@ def load(path: str | Path) -> Settings:
                 re.compile(metric_regex)
             except re.error as e:
                 raise ValueError(f"verifier {vname}: metric_regex is invalid: {e}")
+        allowed = vcfg.get("lanes")
+        if not isinstance(allowed, list) or not allowed or not all(isinstance(x, str) and x for x in allowed):
+            raise ValueError(f"verifier {vname}: lanes must be a non-empty list of lane names")
+        unknown = [x for x in allowed if x not in lanes]
+        if unknown:
+            raise ValueError(f"verifier {vname}: unknown lanes {unknown} (known: {sorted(lanes)})")
         verifiers[vname] = Verifier(
             name=vname, cmd=tuple(cmd), cwd=cwd,
-            timeout_seconds=timeout_seconds, metric_regex=metric_regex,
+            timeout_seconds=timeout_seconds, metric_regex=metric_regex, lanes=tuple(allowed),
         )
     runs_dir = Path(d.get("runs_dir", "/home/hermes/cc-runs"))
     max_attempts = int(d.get("max_attempts", 3))

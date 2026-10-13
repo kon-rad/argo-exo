@@ -1,6 +1,7 @@
 """Check a completed task with a named verifier from lanes.toml, and say what happens next.
 
-A card asks for a check with a line `verify: <name>`; retries carry `cc-attempt: k/N`. The verifier's command comes
+A card asks for a check with a line `verify: <name>`; retries carry `cc-attempt: k/N` and `cc-retry-of: <task>`,
+the card whose branch (cc/<task>) the retry's worktree starts from. The verifier's command comes
 only from lanes.toml. The outcome is appended to the task's run log as a `cc_verify` line, which the Second Brain
 ledger reads (Projects/secondbrain-app/usage-ledger-plan.md, Part B).
 """
@@ -20,6 +21,7 @@ from .config import Verifier
 
 VERIFY_LINE = re.compile(r"^verify:\s*([a-z0-9-]{1,40})\s*$", re.M)
 ATTEMPT_LINE = re.compile(r"^cc-attempt:\s*(\d+)/(\d+)\s*$", re.M)
+RETRY_OF_LINE = re.compile(r"^cc-retry-of:\s*([A-Za-z0-9_][A-Za-z0-9_-]{0,63})\s*$", re.M)
 TITLE_PREFIX = re.compile(r"^\[(?:retry \d+/\d+|needs Konrad)\]\s*")
 OUTPUT_TAIL = 4000
 
@@ -42,6 +44,12 @@ def requested(body: str) -> str | None:
 def attempt(body: str) -> tuple[int, int] | None:
     m = ATTEMPT_LINE.search(body or "")
     return (int(m.group(1)), int(m.group(2))) if m else None
+
+
+def retry_of(body: str) -> str | None:
+    """The task id whose branch a retry builds on. Only the last line counts; ids never start with '-'."""
+    found = RETRY_OF_LINE.findall(body or "")
+    return found[-1] if found else None
 
 
 def _metric(regex: str | None, text: str) -> float | None:
@@ -106,18 +114,25 @@ def base_title(title: str) -> str:
 
 
 def _strip_attempt(body: str) -> str:
-    return ATTEMPT_LINE.sub("", body or "").rstrip()
+    return RETRY_OF_LINE.sub("", ATTEMPT_LINE.sub("", body or "")).rstrip()
 
 
-def retry_body(body: str, outcome: Outcome, attempt_no: int, max_attempts: int) -> str:
-    return (f"{_strip_attempt(body)}\n\ncc-attempt: {attempt_no}/{max_attempts}\n\n"
+def _markers(attempt_no: int, max_attempts: int, failed_task: str | None) -> str:
+    lines = f"cc-attempt: {attempt_no}/{max_attempts}"
+    return lines + (f"\ncc-retry-of: {failed_task}" if failed_task else "")
+
+
+def retry_body(body: str, outcome: Outcome, attempt_no: int, max_attempts: int, failed_task: str | None = None) -> str:
+    """failed_task: the card that just failed; the retry's worktree starts from its branch cc/<failed_task>."""
+    return (f"{_strip_attempt(body)}\n\n{_markers(attempt_no, max_attempts, failed_task)}\n\n"
             f"## Why this is a retry\nThe previous attempt was marked complete, but verifier `{outcome.name}` "
             f"failed (exit {outcome.exit_code}). Make it pass; never edit the verifier or the tests to get there.\n\n"
             f"Last output:\n{outcome.output}\n")
 
 
-def escalation_body(body: str, outcome: Outcome, attempt_no: int, max_attempts: int) -> str:
-    return (f"{_strip_attempt(body)}\n\ncc-attempt: {attempt_no}/{max_attempts}\n\n"
+def escalation_body(body: str, outcome: Outcome, attempt_no: int, max_attempts: int,
+                    failed_task: str | None = None) -> str:
+    return (f"{_strip_attempt(body)}\n\n{_markers(attempt_no, max_attempts, failed_task)}\n\n"
             f"## Needs Konrad\nVerifier `{outcome.name}` failed {attempt_no} of {max_attempts} attempts "
             f"(last exit {outcome.exit_code}). Unblock this card to give it one more try, or archive it.\n\n"
             f"Last output:\n{outcome.output}\n")

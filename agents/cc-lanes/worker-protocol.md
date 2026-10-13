@@ -27,4 +27,7 @@ Rules:
 If the card body has a line `verify: <name>`, cc-dispatcher runs that check after you `complete`, in your working
 directory. Run the same check yourself before completing. If it fails, the dispatcher opens a retry card with the
 output, and after the last attempt a blocked card for Konrad. Never edit a verifier, a test or a fixture to make a
-check pass; fix the code. A card marked `cc-attempt: k/N` is a retry: read the output in its body first.
+check pass; fix the code. A card marked `cc-attempt: k/N` is a retry: read the output in its body first. On a
+worktree lane a retry starts from the failed attempt's branch (`cc-retry-of: <task>` names it), so that work is
+already in your tree. Each check is allowed only on the lanes lanes.toml lists for it; on any other lane the card
+goes to Konrad unchecked.

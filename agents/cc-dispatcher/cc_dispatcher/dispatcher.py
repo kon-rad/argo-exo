@@ -111,7 +111,11 @@ class Dispatcher:
             return
         log_path = self.settings.runs_dir / f"{task_id}.jsonl"
         try:
-            cwd = self.prepare_cwd(self.settings, lane, task_id)
+            base = None
+            if lane.worktree:     # a retry builds on the failed attempt's branch, not on a clean HEAD
+                parent = verify.retry_of((self._safe(board.task, task_id) or {}).get("body") or "")
+                base = f"cc/{parent}" if parent else None
+            cwd = self.prepare_cwd(self.settings, lane, task_id, base=base)
             self.settings.runs_dir.mkdir(parents=True, exist_ok=True)
             with open(log_path, "a") as f:     # frames this run in the log; the Second Brain ledger reads it
                 f.write(json.dumps({"type": "cc_dispatch", "task_id": task_id, "board": board_name, "lane": lane.name,
@@ -184,9 +188,15 @@ class Dispatcher:
         if name is None:
             return
         v = self.settings.verifiers.get(name)
+        # Only lanes listed on the verifier may trigger it: a check runs code as hermes, and a lane without Bash
+        # must not get it by writing a test file and filing a card that names the check.
+        runnable = v is not None and r.lane.name in v.lanes
         if v is None:
             outcome = verify.Outcome(name, None, False, None,
                                      f"verifier {name!r} is not in lanes.toml (known: {sorted(self.settings.verifiers)})", 0.0)
+        elif not runnable:
+            outcome = verify.Outcome(name, None, False, None,
+                                     f"verifier {name} is not allowed on lane {r.lane.name}", 0.0)
         else:
             env = worker.worker_env(dict(os.environ), self.settings, r.lane, r.board, task_id)
             outcome = self.run_verifier(v, r.cwd or r.lane.cwd, env)
@@ -201,13 +211,14 @@ class Dispatcher:
         k, n = verify.attempt(body) or (1, self.settings.max_attempts)
         n = min(n, self.settings.max_attempts)
         title = verify.base_title(task.get("title") or task_id)
-        if v is not None and k < n:
-            made = self._safe(board.create, f"[retry {k + 1}/{n}] {title}", verify.retry_body(body, outcome, k + 1, n),
+        if runnable and k < n:
+            made = self._safe(board.create, f"[retry {k + 1}/{n}] {title}",
+                              verify.retry_body(body, outcome, k + 1, n, task_id),
                               r.lane.name, AUTHOR, (task_id,), None)
             said = (f"Verify {name} failed{metric}; opened retry {k + 1}/{n}." if made
                     else f"Verify {name} failed{metric}; could not open the retry card.")
         else:
-            made = self._safe(board.create, f"[needs Konrad] {title}", verify.escalation_body(body, outcome, k, n),
+            made = self._safe(board.create, f"[needs Konrad] {title}", verify.escalation_body(body, outcome, k, n, task_id),
                               r.lane.name, AUTHOR, (task_id,), "blocked")
             said = (f"Verify {name} failed{metric}; blocked for Konrad." if made
                     else f"Verify {name} failed{metric}; could not open the escalation card.")
