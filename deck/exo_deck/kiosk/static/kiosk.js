@@ -1,6 +1,6 @@
-const PANELS = ['talk', 'agents', 'approvals', 'transactions', 'wallets', 'cre', 'body', 'sensors', 'media'];
+const PANELS = ['talk', 'agents', 'approvals', 'transactions', 'wallets', 'cre', 'body', 'sensors', 'media', 'projects'];
 const NAMES = { talk: 'Talk', agents: 'Agents', approvals: 'Approvals', transactions: 'Transactions',
-  wallets: 'Wallets', cre: 'CRE', body: 'Body', sensors: 'Sensors', media: 'Media' };
+  wallets: 'Wallets', cre: 'CRE', body: 'Body', sensors: 'Sensors', media: 'Media', projects: 'Projects' };
 const $ = (id) => document.getElementById(id);
 export const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 export const encPath = (rel) => String(rel).split('/').map(encodeURIComponent).join('/');
@@ -56,6 +56,30 @@ export const RENDER = {
       + `<ul class="rows tight appr">${j.pending.map(row).join('') || '<li class="muted">Nothing waiting</li>'}</ul>`
       + (j.pending_more ? `<p class="warn tight">+${esc(j.pending_more)} more — say "more"</p>` : '')
       + (sent.length ? `<ul class="rows tight">${sent.map((t) => `<li><span class="clamp">${esc(t.summary)}</span><span class="ok">sent</span></li>`).join('')}</ul>` : '');
+  },
+  projects: (j) => {
+    // Read-only. Bar: ▓ shipped (live/done) · ▒ testing+building+designing · ░ backlog; the counts are in the words too.
+    const STAGE = { idea: 'BACKLOG', designing: 'DESIGN', building: 'BUILD', testing: 'TEST', live: 'LIVE', parked: 'PARKED', done: 'DONE' };
+    const bar = (c) => {
+      const total = Object.entries(c || {}).filter(([k]) => k !== 'parked').reduce((a, [, n]) => a + n, 0);
+      if (!total) return '';
+      const n = (x) => Math.round((x / total) * 10);
+      const done = n((c.live || 0) + (c.done || 0)), work = n((c.testing || 0) + (c.building || 0) + (c.designing || 0));
+      return '▓'.repeat(done) + '▒'.repeat(Math.min(work, 10 - done)) + '░'.repeat(Math.max(0, 10 - done - work));
+    };
+    const age = j.fetched_at ? Math.round((Date.now() / 1000 - j.fetched_at) / 60) : null;
+    const t = j.totals.features || {};
+    const sub = `${t.building || 0} building · ${t.testing || 0} testing · ${t.idea || 0} backlog · ${esc(j.needs.length)} need you`
+      + (j.stale ? ` · <span class="warn">cached ${age ?? '?'} min ago</span>` : '');
+    const head = (title) => `<div class="hd"><h1>${title}</h1><p class="muted clamp">${sub}</p></div>`;
+    const item = (i) => `<li><span class="clamp"><b>${esc(i.feature ? `${i.project} / ${i.title}` : i.title)}</b> ${esc(i.detail)}</span></li>`;
+    if (j.view === 'needs') return head('Needs you') + `<ul class="rows tight">${j.needs.map(item).join('') || '<li class="muted">Nothing waiting on you</li>'}</ul>`
+      + `<p class="muted tight">say "more" for gaps</p>`;
+    if (j.view === 'attention') return head('Attention') + `<ul class="rows tight">${j.attention.map(item).join('') || '<li class="muted">No failing, overdue or stale work</li>'}</ul>`
+      + `<p class="muted tight">goals with no work: ${esc((j.gaps.goals_uncovered || []).join(', ') || 'none')} · say "more" for projects</p>`;
+    return head('Projects') + `<ul class="rows tight">${j.projects.map((p) => `<li><span class="clamp"><b>${esc(p.title)}</b> <span class="muted">${esc(p.next || '')}</span></span>`
+      + `<span class="tag">${STAGE[p.stage] || esc(p.stage)} ${bar(p.counts)}${p.needs_konrad ? ' <span class="warn">⚑</span>' : ''}</span></li>`).join('') || '<li class="muted">No projects</li>'}</ul>`
+      + `<p class="muted tight">⚑ needs you · say "more" for the needs-you list</p>`;
   },
   body: (j) => {
     if (!j.last) return `<h1>Body</h1><p class="bad">${esc(j.sync_error || 'No ring data')}</p>`;

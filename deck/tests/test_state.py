@@ -9,8 +9,8 @@ def test_panel_by_name_number_and_cycle(tmp_path):
     assert st.set_panel(tmp_path, "next") == "cre"
     assert st.set_panel(tmp_path, "previous") == "wallets"
     st.set_panel(tmp_path, "talk")
-    assert st.set_panel(tmp_path, "previous") == "media"      # wraps
-    assert st.set_panel(tmp_path, "weather") is None and st.get_panel(tmp_path) == "media"
+    assert st.set_panel(tmp_path, "previous") == "projects"   # wraps
+    assert st.set_panel(tmp_path, "weather") is None and st.get_panel(tmp_path) == "projects"
 
 
 def test_switching_panel_resets_page(tmp_path):

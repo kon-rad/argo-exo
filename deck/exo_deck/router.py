@@ -37,7 +37,8 @@ PANEL_WORDS = {
     "history": "transactions", "wallets": "wallets", "wallet": "wallets", "assets": "wallets", "portfolio": "wallets",
     "cre": "cre", "guardian": "cre", "workflows": "cre", "body": "body", "ring": "body", "sleep": "body",
     "sensors": "sensors", "deck": "sensors", "media": "media", "camera": "media", "photos": "media",
-    "videos": "media", "library": "media",
+    "videos": "media", "library": "media", "projects": "projects", "project": "projects", "progress": "projects",
+    "roadmap": "projects",
 }
 NUMBERS = {"one": "1", "two": "2", "three": "3", "four": "4", "five": "5", "six": "6", "seven": "7", "eight": "8", "nine": "9"}
 _SHOW = re.compile(r"^(?:show|open|go to|switch to)\s+(?:me\s+)?(?:the\s+)?(?P<what>\w+)(?:\s+(?:panel|view|page))?$", re.I)

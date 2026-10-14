@@ -6,7 +6,7 @@ import time
 import requests
 from waitress import serve
 
-from .. import agents_view, approvals, chain_view, ledger_view, media, ring_view, state as st, system_view
+from .. import agents_view, approvals, chain_view, ledger_view, media, projects_view, ring_view, state as st, system_view
 from ..bridge_client import Bridge
 from ..config import Settings
 from .app import create_app
@@ -31,6 +31,7 @@ def build_providers(s: Settings) -> dict:
     providers["body"] = lambda page: ring_view.panel(s.deck_root / "ring.db", page)
     providers["sensors"] = lambda page: system_view.panel(s.deck_root)
     providers["media"] = lambda page: media.panel(s.deck_root, s.state, page)
+    providers["projects"] = lambda page: projects_view.panel(s.projects_url, s.projects_token, s.state / "projects.json", page)
     bridge = Bridge(s.bridge_url, s.bridge_token)
     providers["agents"] = lambda page: agents_view.panel(bridge)
     try:    # packages/nownodes-py: on the Pi via PYTHONPATH in the kiosk unit. A failure here must not take the kiosk down.

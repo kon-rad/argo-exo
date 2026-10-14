@@ -15,6 +15,8 @@ class Settings:
     bridge_token: str
     arecord_cmd: list
     min_wav_bytes: int
+    projects_url: str = ""          # the Second Brain app's /api/feed/projects (Projects panel, read-only)
+    projects_token: str = ""
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] = os.environ) -> "Settings":
@@ -25,4 +27,5 @@ class Settings:
             bridge_url=env.get("EXO_BRIDGE_URL", ""), bridge_token=env.get("EXO_BRIDGE_TOKEN", ""),
             arecord_cmd=["arecord", "-q", "-D", env.get("EXO_MIC_DEVICE", "default"), *args],
             min_wav_bytes=int(env.get("EXO_MIN_WAV_BYTES", "9600")),
+            projects_url=env.get("EXO_PROJECTS_URL", ""), projects_token=env.get("EXO_PROJECTS_TOKEN", ""),
         )

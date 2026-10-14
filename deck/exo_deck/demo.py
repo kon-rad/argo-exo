@@ -198,9 +198,25 @@ def _media(now: float) -> dict:
     return {"items": items, "page": 0, "total": 47, "sd_only": 6, "cloud_only": 11, "synced_at": now - 900, "open": None}
 
 
+def _projects(now: float) -> dict:
+    c = lambda **k: {"idea": 0, "designing": 0, "building": 0, "testing": 0, "live": 0, "parked": 0, "done": 0, **k}  # noqa: E731
+    projects = [
+        {"title": "Argo app", "stage": "live", "counts": c(building=1, testing=1, live=1, parked=2), "next": "Upload build 11", "needs_konrad": True},
+        {"title": "Body track", "stage": "building", "counts": c(building=2, live=3), "next": "Finish the node", "needs_konrad": True},
+        {"title": "Exo capture", "stage": "building", "counts": c(building=2, live=1, parked=1), "next": "Solder the I2S mic", "needs_konrad": True},
+        {"title": "Second brain", "stage": "live", "counts": c(idea=1, designing=2, building=1, testing=1, live=1), "next": "One-database cutover", "needs_konrad": True},
+        {"title": "argo-lifeos", "stage": "designing", "counts": c(idea=7, done=1), "next": "Phase 1 headless core", "needs_konrad": True},
+    ]
+    needs = [{"project": "argo-app", "feature": None, "title": "Argo app", "detail": "Upload build 11"},
+             {"project": "exo-capture", "feature": "i2s-mic", "title": "I2S mic", "detail": "Solder the mic board"}]
+    return {"view": "projects", "page": 0, "pages": 3, "totals": {"features": c(idea=13, building=7, testing=9, live=19)},
+            "projects": projects, "needs": needs, "attention": [], "gaps": {"goals_uncovered": ["W3", "W4"]},
+            "shipped_7d": 0, "fetched_at": now - 60, "stale": False, "error": None}
+
+
 PANELS = {"talk": _talk, "agents": lambda now: agents_panel(now), "approvals": _approvals,
           "transactions": _transactions, "wallets": _wallets, "cre": _cre, "body": _body,
-          "sensors": _sensors, "media": _media}
+          "sensors": _sensors, "media": _media, "projects": _projects}
 
 
 def panel(name: str, now: float) -> dict | None:
