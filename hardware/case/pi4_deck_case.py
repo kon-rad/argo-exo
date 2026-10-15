@@ -49,7 +49,7 @@ FAN_HOLE = 24.0    # MEASURE: screw spacing
 SELF_TAP_M3 = 2.5  # pilot for an M3 screw straight into plastic
 SELF_TAP_M25 = 2.2
 GRID = 10.0        # hack grid pitch on the lid and the base
-STRAP = 25.0       # MEASURE: webbing width of the shoulder strap (25 mm is the common sling size)
+STRAP = 30.0       # webbing width of the shoulder strap (Konrad's strap: 3 cm, 2026-10-15)
 EAR = 15.0         # strap ear length beyond each end of the case
 
 # --- branding, engraved into the lid ---
