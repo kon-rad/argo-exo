@@ -26,3 +26,5 @@ Each button goes **between its GPIO and GND**, with the Pi's internal pull-ups. 
 Dropped 2026-10-07: the listening (GPIO 25), CRE verdict (GPIO 23) and cold-key (GPIO 24) LEDs. That status shows in the VITURE glasses. GPIO 23, 24 and 25 are spare.
 
 Wiring per LED: **GPIO → resistor → LED long leg (+); short leg (−) → GND** (pins 9, 14, 20, 25). Red, yellow and green LEDs drop ~2 V, so 330 Ω gives ~4 mA. Blue, white and most bright greens drop ~3 V, so they need the smaller 100 Ω to be visible from 3.3 V. Keep each pin under ~10 mA. Take the resistors from the assortment (#14).
+
+Fan (2026-10-15): GPIO 25 (pin 22) drives the official Raspberry Pi 4 Case Fan's blue control wire (`dtoverlay=gpio-fan,gpiopin=25,temp=65000`); red to 5 V, black to GND. GPIO 25 is no longer spare.
