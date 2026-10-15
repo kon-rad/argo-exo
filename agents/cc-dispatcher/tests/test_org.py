@@ -355,3 +355,20 @@ def test_prompt_wording():
     assert text.startswith("You are atlas, Head on the Platform team.")
     assert "a message from konrad (message 5" in text and "weekly-reflection" in text and "kanban" not in text
     assert describe_wakeups([{"reason": "task", "ref": "t_9"}]) == ["kanban task t_9"]
+
+
+def test_a_routine_whose_wake_add_fails_is_retried_next_tick(tmp_path, caplog):
+    t = datetime(2026, 10, 15, 5, 31, tzinfo=TZ).timestamp()
+    d, runner, ob, spawned, clock = make(tmp_path, t=t)
+    ob.fail_claim = True
+
+    def failing_add(agent, reason, ref):
+        raise BoardError("env broken")
+    ob.add = failing_add
+    d.tick()
+    assert "retrying next tick" in caplog.text and "atlas/daily-standup" not in runner.state.routines
+    ob.add = FakeOrgBoard.add.__get__(ob)
+    ob.fail_claim = False
+    d.tick()
+    assert runner.state.routines["atlas/daily-standup"] == "2026-10-15" and ob.added == [("atlas", "routine", "daily-standup")]
+

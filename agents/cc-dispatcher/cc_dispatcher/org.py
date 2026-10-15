@@ -412,8 +412,11 @@ class OrgRunner:
                 key = f"{agent.name}/{name}"
                 if self.state.routines.get(key) == day or not routine_due(routine, local):
                     continue
-                if self._safe(self.org_board.add, agent.name, "routine", name) is None and key not in self.state.routines:
-                    pass   # already open, or the call failed; either way try again next tick
+                try:
+                    self.org_board.add(agent.name, "routine", name)   # None = one is already open; fine
+                except BoardError as exc:
+                    log.warning("routine %s for %s not added (%s); retrying next tick", name, agent.name, exc)
+                    continue
                 self.state.routines[key] = day
                 self.state.save(self.state_path)
                 log.info("routine %s fired for %s", name, agent.name)
