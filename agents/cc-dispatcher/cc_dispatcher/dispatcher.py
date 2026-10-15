@@ -64,6 +64,7 @@ class Dispatcher:
     clock: Callable[[], float] = time.time
     run_verifier: Callable = verify.run
     running: dict[str, Running] = field(default_factory=dict)
+    _capped_day: str = ""
 
     org: OrgRunner | None = None
 
@@ -116,7 +117,15 @@ class Dispatcher:
         if s.pause_file.exists() or now < self.state.paused_until:
             return False
         in_progress = len(self.running) + (len(self.org.running) if self.org is not None else 0)
-        return in_progress < s.max_in_progress and self.state.spawned_today < s.daily_cap
+        if self.state.spawned_today >= s.daily_cap:
+            # Once per capped day, so a capped dispatcher never looks like a dead one (2026-10-15: a bot's first
+            # card sat `ready` for hours behind a silent cap).
+            if self._capped_day != self.state.day:
+                self._capped_day = self.state.day
+                log.warning("daily cap reached (%d spawns on %s); nothing starts until the day rolls over at 00:00 local",
+                            s.daily_cap, self.state.day)
+            return False
+        return in_progress < s.max_in_progress
 
     def _start(self, board_name: str, board: Board, lane: Lane, task_id: str, now: float) -> None:
         ttl = lane.max_runtime_minutes * 60 + 900   # outlives our own runtime limit, so only we end the run

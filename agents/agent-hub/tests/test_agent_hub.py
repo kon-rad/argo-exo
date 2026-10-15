@@ -288,3 +288,58 @@ def test_chat_routes(tmp_path, fake_claude):
     _, feed = h.handle("GET", f"/chats/{chat['id']}/events", {"offset": "0"}, None, AUTH)
     assert feed["events"][-1]["result"] == "echo hey"
     assert h.handle("GET", "/chats/zzz/events", {}, None, AUTH)[0] == 404
+
+
+# -- cards for bots (the work graph) --------------------------------------------------------------------------------
+class OrgRunner(Runner):
+    """`hermes profile list` answers with profiles; `cli-org task create` answers with the created card."""
+
+    def __call__(self, cmd, **kw):
+        self.calls.append(cmd)
+        if cmd[0].endswith("cli-org"):
+            assert kw["env"]["ORG_AGENT"] == "konrad" and kw["env"]["ORG_KANBAN_CMD"] == "hermes"
+            if "fail-me" in cmd:
+                return subprocess.CompletedProcess(cmd, 1, "", "no feature \"secondbrain-app/nope\" in the tracker")
+            return subprocess.CompletedProcess(cmd, 0, json.dumps({"task_id": "t_bot0001", "link": {"task_id": "t_bot0001", "assignee": "rune", "project_slug": "secondbrain-app", "feature_slug": "org-page"}}) + "\n", "")
+        return subprocess.CompletedProcess(cmd, 0, PROFILES, "")
+
+
+def org_hub(tmp_path, fake_claude):
+    import dataclasses
+    agents = tmp_path / "org-agents.json"
+    agents.write_text(json.dumps({"agents": {"konrad": {"runtime": "human", "role": "CEO"},
+                                              "rune": {"role": "Platform engineer", "team": "platform", "model": "sonnet"},
+                                              "lena": {"role": "Writer", "team": "media", "model": "sonnet"}}}))
+    from cc_dispatcher.config import OrgSettings
+    # On the Mac load() switches [org] off (the droplet paths are missing), so build the section by hand.
+    lanes = dataclasses.replace(load(REPO_LANES), org=OrgSettings(vault=tmp_path, agents_file=agents, skill_file=tmp_path / "skill.md", cli_org="/x/cli-org"))
+    board = FakeBoard()
+    runner = OrgRunner(PROFILES)
+    h = Hub(token=TOKEN, lanes=lanes, chats=ChatManager(settings(tmp_path, fake_claude)),
+            telegram_script="/x/telegram-agent.sh", hermes_bin="hermes", run=runner, board_factory=lambda name: board)
+    return h, board, runner
+
+
+def test_agents_lists_the_bots(tmp_path, fake_claude):
+    h, _, _ = org_hub(tmp_path, fake_claude)
+    _, out = h.handle("GET", "/agents", {}, None, AUTH)
+    assert [(b["name"], b["team"], b["family"]) for b in out["bots"]] == [("rune", "platform", "org"), ("lena", "media", "org")]
+
+
+def test_create_task_for_a_bot_goes_through_cli_org(tmp_path, fake_claude):
+    h, board, runner = org_hub(tmp_path, fake_claude)
+    code, out = h.handle("POST", "/tasks", {}, {"title": "Add the tasks route", "body": "GET /api/org/tasks", "assignee": "rune",
+                                                 "project": "secondbrain-app", "feature": "org-page"}, AUTH)
+    assert code == 200, out
+    assert out["id"] == "t_bot0001" and out["link"]["assignee"] == "rune"
+    cmd = [c for c in runner.calls if c[0] == "/x/cli-org"][0]
+    assert cmd[:5] == ["/x/cli-org", "task", "create", "rune", "Add the tasks route"]
+    assert cmd[cmd.index("--project") + 1] == "secondbrain-app" and cmd[cmd.index("--feature") + 1] == "org-page"
+    assert cmd[cmd.index("--body") + 1] == "GET /api/org/tasks" and cmd[cmd.index("--board") + 1] == "exo"
+    assert board.created == []          # never the direct kanban path for a bot
+    # A bot needs a project; cli-org's refusal comes back as a 400 with its words.
+    assert h.handle("POST", "/tasks", {}, {"title": "x", "assignee": "rune"}, AUTH)[0] == 400
+    code, out = h.handle("POST", "/tasks", {}, {"title": "fail-me", "assignee": "rune", "project": "secondbrain-app", "feature": "nope"}, AUTH)
+    assert code == 400 and "no feature" in out["error"]
+    # Lanes keep the direct path.
+    assert h.handle("POST", "/tasks", {}, {"title": "lane work", "assignee": "cc-writer"}, AUTH)[0] == 200 and board.created

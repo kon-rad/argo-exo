@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hmac
 import json
+import os
 import re
 import subprocess
 import time
@@ -22,6 +23,7 @@ from .chats import ChatError, ChatManager, read_from
 
 TASK_ID = re.compile(r"^t_[0-9a-f]{6,32}$")
 BOARD = re.compile(r"^[a-z0-9][a-z0-9-]{0,40}$")
+SLUG = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
 PROFILE_ROW = re.compile(r"^\s*[◆*]?\s*([a-z0-9][a-z0-9_-]*)\s")
 
 
@@ -129,7 +131,9 @@ class Hub:
     def agents(self) -> dict:
         lanes = [{"name": l.name, "description": l.description, "model": l.model, "family": "claude"}
                  for l in self.lanes.lanes.values()]
-        return {"lanes": lanes, "profiles": [{"name": p, "family": "hermes"} for p in self.profiles()]}
+        bots = [{"name": n, "description": a.get("role") or "", "team": a.get("team"), "model": a.get("model"), "family": "org"}
+                for n, a in self.bots().items()]
+        return {"lanes": lanes, "profiles": [{"name": p, "family": "hermes"} for p in self.profiles()], "bots": bots}
 
     def profiles(self) -> list[str]:
         at, cached = self._profiles
@@ -152,6 +156,17 @@ class Hub:
             raise HttpError(502, "kanban boards: not JSON") from exc
         return [{"slug": r["slug"], "name": r.get("name") or r["slug"]} for r in rows if not r.get("archived")]
 
+    def bots(self) -> dict[str, dict]:
+        """The org roster from the compiled org file (name → caps); empty when the org is off or the file is missing."""
+        org = self.lanes.org
+        if org is None:
+            return {}
+        try:
+            doc = json.loads(Path(org.agents_file).read_text())
+        except (OSError, json.JSONDecodeError):
+            return {}
+        return {n: a for n, a in (doc.get("agents") or {}).items() if a.get("runtime", "claude-code") != "human"}
+
     def create_task(self, b: dict) -> dict:
         title = " ".join(str(b.get("title", "")).split())
         body = str(b.get("body", "")).strip()
@@ -160,9 +175,45 @@ class Hub:
             raise HttpError(400, "title must be 1–200 characters")
         if len(body) > 8000:
             raise HttpError(400, "body too long (8,000 characters max)")
+        board = b.get("board", self.lanes.boards[0])
+        if assignee in self.bots():
+            return self.create_bot_task(board, title, body, assignee, b)
         known = set(self.lanes.lanes) | set(self.profiles())
         if assignee not in known:
             raise HttpError(400, f"unknown agent {assignee!r}")
         if assignee in ("trader", "portfolio", "wallet"):
             raise HttpError(400, "money agents take work from the wearer's approve key path, not from the app")
-        return self.board(b.get("board", self.lanes.boards[0])).create(title, body, assignee, "secondbrain-app")
+        return self.board(board).create(title, body, assignee, "secondbrain-app")
+
+    def create_bot_task(self, board: str, title: str, body: str, bot: str, b: dict) -> dict:
+        """A card for a bot goes through `cli-org task create` as konrad: it tags the card with the tracker
+        project and feature (task_links), sets the feature's owner and mentions the bot on the board."""
+        org = self.lanes.org
+        assert org is not None
+        project = str(b.get("project", "")).strip()
+        feature = str(b.get("feature", "")).strip()
+        if not SLUG.match(project):
+            raise HttpError(400, "a card for a bot needs a tracker project (slug)")
+        if feature and not SLUG.match(feature):
+            raise HttpError(400, "bad feature slug")
+        if not BOARD.match(board or ""):
+            raise HttpError(400, "bad board name")
+        args = [org.cli_org, "task", "create", bot, title, "--project", project, "--board", board, "--json"]
+        if feature:
+            args += ["--feature", feature]
+        if body:
+            args += ["--body", body]
+        env = {**os.environ, "ORG_AGENT": "konrad", "ORG_RUN": "app", "ORG_KANBAN_CMD": self.hermes_bin}
+        try:
+            p = self.run(args, capture_output=True, text=True, timeout=60, env=env)
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise HttpError(502, f"cli-org: {exc}") from exc
+        if p.returncode != 0:
+            raise HttpError(400, (p.stderr or p.stdout).strip()[-400:] or "cli-org task create failed")
+        try:
+            created = json.loads(p.stdout.strip().splitlines()[-1])
+        except (IndexError, json.JSONDecodeError) as exc:
+            raise HttpError(502, "cli-org printed no card") from exc
+        task = self.board(board).show(created["task_id"])
+        task = task.get("task") or task
+        return {**task, "link": created.get("link")}
