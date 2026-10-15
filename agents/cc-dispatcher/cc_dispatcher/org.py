@@ -101,6 +101,9 @@ class OrgBoard:
     def session(self, agent: str) -> dict:
         return self._json("session", agent) or {}
 
+    def release(self) -> int:
+        return int((self._json("wake-release") or {}).get("released", 0))
+
     def set_session(self, agent: str, session_id: str | None) -> None:
         self._json("session", agent, *(["--set", session_id] if session_id else ["--clear"]))
 
@@ -269,6 +272,14 @@ class OrgRunner:
         self.state_path = self.settings.runs_dir / "org-state.json"
         self.state = OrgState.load(self.state_path)
         self.tz = ZoneInfo(org.timezone)
+
+    # -- startup -----------------------------------------------------------------------------------------------------
+    def recover(self) -> int:
+        """Wakeups still claimed at startup belong to runs that died with the previous dispatcher; release them."""
+        n = self._safe(self.org_board.release) or 0
+        if n:
+            log.warning("released %d wakeup(s) claimed by a previous dispatcher", n)
+        return n
 
     # -- one pass --------------------------------------------------------------------------------------------------
     def tick(self, now: float, may_spawn: Callable[[], bool]) -> int:

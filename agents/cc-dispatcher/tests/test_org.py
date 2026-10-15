@@ -118,6 +118,15 @@ class FakeOrgBoard:
     def session(self, agent):
         return self.sessions.get(agent, {"session_id": None, "session_started": None})
 
+    def release(self):
+        n = 0
+        for w in self.wakeups:
+            if w.get("claimed_at") and not w.get("done_at"):
+                w["claimed_at"] = None
+                n += 1
+        self.released = n
+        return n
+
     def set_session(self, agent, session_id):
         self.session_sets.append((agent, session_id))
         self.sessions[agent] = {"session_id": session_id, "session_started": datetime.now(TZ).date().isoformat()}
@@ -371,4 +380,13 @@ def test_a_routine_whose_wake_add_fails_is_retried_next_tick(tmp_path, caplog):
     ob.fail_claim = False
     d.tick()
     assert runner.state.routines["atlas/daily-standup"] == "2026-10-15" and ob.added == [("atlas", "routine", "daily-standup")]
+
+
+def test_recover_releases_wakeups_claimed_by_a_dead_dispatcher(tmp_path):
+    d, runner, ob, spawned, clock = make(tmp_path, wakeups=[{"id": 1, "agent_name": "atlas", "reason": "dm", "ref": "1", "claimed_at": "earlier"}])
+    d.tick()
+    assert spawned == []                 # claimed: not ours to start
+    assert d.recover() == [] and ob.released == 1
+    d.tick()
+    assert [s["agent"] for s in spawned] == ["atlas"]
 

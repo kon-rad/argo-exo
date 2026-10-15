@@ -78,6 +78,8 @@ class Dispatcher:
         """Tasks left `running` on a cc lane belong to a dispatcher that died; their workers died with it (systemd
         kills the cgroup). Block them with a reason instead of waiting out a TTL of an hour or more."""
         blocked = []
+        if self.org is not None:
+            self.org.recover()
         for board_name, board in self.boards.items():
             for lane in self.settings.lanes.values():
                 for task in self._safe(board.tasks, lane.name, "running") or []:
