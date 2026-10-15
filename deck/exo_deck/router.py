@@ -35,7 +35,7 @@ PANEL_WORDS = {
     "talk": "talk", "chat": "talk", "terminal": "talk", "agents": "agents", "board": "agents", "kanban": "agents",
     "approvals": "approvals", "queue": "approvals", "pending": "approvals", "transactions": "transactions",
     "history": "transactions", "wallets": "wallets", "wallet": "wallets", "assets": "wallets", "portfolio": "wallets",
-    "cre": "cre", "guardian": "cre", "workflows": "cre", "body": "body", "ring": "body", "sleep": "body",
+    "fund": "fund", "trades": "fund", "committee": "fund", "votes": "fund", "body": "body", "ring": "body", "sleep": "body",
     "sensors": "sensors", "deck": "sensors", "media": "media", "camera": "media", "photos": "media",
     "videos": "media", "library": "media",
 }

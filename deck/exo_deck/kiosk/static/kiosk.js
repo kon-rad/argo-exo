@@ -1,6 +1,6 @@
-const PANELS = ['talk', 'agents', 'approvals', 'transactions', 'wallets', 'cre', 'body', 'sensors', 'media'];
+const PANELS = ['talk', 'agents', 'approvals', 'transactions', 'wallets', 'fund', 'body', 'sensors', 'media'];
 const NAMES = { talk: 'Talk', agents: 'Agents', approvals: 'Approvals', transactions: 'Transactions',
-  wallets: 'Wallets', cre: 'CRE', body: 'Body', sensors: 'Sensors', media: 'Media' };
+  wallets: 'Wallets', fund: 'Fund', body: 'Body', sensors: 'Sensors', media: 'Media' };
 const $ = (id) => document.getElementById(id);
 export const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 export const encPath = (rel) => String(rel).split('/').map(encodeURIComponent).join('/');
@@ -40,6 +40,16 @@ export const RENDER = {
         `<li><span class="clamp"><b>${esc(c.handler)}</b> ${esc(c.reason)}<br><span class="muted">${c.created_at ? ago(c.created_at) : '–'} · ${c.latency_ms == null ? '?' : esc(Math.round(c.latency_ms))} ms</span></span>
         <span class="tag ${c.verdict === 'approve' ? 'ok' : c.verdict === 'refuse' ? 'bad' : 'warn'}">${esc(c.verdict)}</span></li>`).join('') || '<li class="muted">No calls yet</li>'}</ul>`
         + (j.more ? `<p class="warn tight">more calls, say "more"</p>` : ''));
+  },
+  fund: (j) => {
+    const vc = { yes: 'ok', no: 'bad', block: 'bad', abstain: 'muted' };
+    const p = j.proposal;
+    const head = `<div class="hd"><h1>Fund</h1><p class="muted clamp">${esc(String(j.nav || '').replace(/\*/g, ''))}${j.pending_total ? ` · ${esc(j.index + 1)}/${esc(j.pending_total)} pending` : ''}</p></div>`;
+    if (!p) return head + `<p class="muted big">No proposals waiting.</p><p class="clamp2">${esc(j.thesis)}</p>`
+      + `<ul class="rows dense">${j.log.map((l) => `<li><span class="clamp">${esc(l)}</span></li>`).join('') || '<li class="muted">No trades yet</li>'}</ul>`;
+    return head + `<p class="big clamp2"><b>${esc(p.trade)}</b> <span class="tag">${esc(p.tally)}</span></p><p class="muted clamp2">${esc(p.motion)}</p>`
+      + `<ul class="rows dense">${p.votes.map((v) => `<li><span class="clamp"><b>${esc(v.partner)}</b> ${esc(v.reason)}</span><span class="tag ${vc[v.vote] || 'muted'}">${esc(v.vote)}</span></li>`).join('')}</ul>`
+      + `<p class="warn tight">Approve key signs this trade · say "more" for the next one</p>`;
   },
   approvals: (j) => {
     // The first row is ALWAYS the item the key approves (pinned on every page); "more" pages the rest below it.

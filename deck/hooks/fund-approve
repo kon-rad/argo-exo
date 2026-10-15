@@ -1,0 +1,6 @@
+#!/bin/sh
+# deck-buttons runs this when the approve key is pressed on the Fund panel (and the Guardian queue is empty).
+DECK_ROOT="${DECK_ROOT:-/srv/deck}"
+PYTHONPATH="$DECK_ROOT/app/deck:$DECK_ROOT/app/packages/nownodes-py"
+export DECK_ROOT PYTHONPATH
+cd "$DECK_ROOT/app/deck" && exec "$DECK_ROOT/venv/bin/python" -m exo_deck.fund_sign

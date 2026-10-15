@@ -2,7 +2,7 @@
 
 <!-- TODO(konrad): rewrite this prose before the repo goes public. -->
 
-TODO(konrad): Exo is a wearable Raspberry Pi. Push-to-talk speaks to your own Hermes agents, and the wallet agent's transactions are guarded by a Chainlink CRE workflow.
+TODO(konrad): Exo is a wearable Raspberry Pi. Push-to-talk speaks to your own Hermes agents. Its wallet is Argo Fund: five AI partners research and vote on trades, and the deck's approve key is one of the two signatures a trade needs.
 
 ## Repo map
 
@@ -10,8 +10,9 @@ TODO(konrad): Exo is a wearable Raspberry Pi. Push-to-talk speaks to your own He
 |---|---|
 | `deck/` | Pi side: buttons, bin, collector, kiosk, voice, ring |
 | `firmware/xiao-clip/` | Clip firmware |
-| `agents/bridge/` | exo-bridge service on the droplet |
-| `chain/` | ExoModule.sol, agent Safe, CRE Transaction Guardian |
+| `fund/` | **Argo Fund**: five-partner AI investment committee (skills, personas), `fund-trade` CLI, 2-of-3 Safe on Base |
+| `agents/bridge/` | exo-bridge service on the droplet (talk, kanban, fund routes) |
+| `chain/` | Hackathon-era Guardian: ExoModule.sol and the Chainlink CRE workflow (not deployed; superseded by `fund/`) |
 | `packages/` | NOWNodes client libraries |
 | `infra/` | Proxy and deployment config |
 | `site/` | Project site |
@@ -27,13 +28,25 @@ See [docs/architecture.md](docs/architecture.md) for the data flow.
 pip install -r requirements-dev.txt && pytest
 ```
 
+## Argo Fund
+
+The deck's wallet is a small crypto fund run by an AI committee. Details: [fund/README.md](fund/README.md); why we think it can work: [fund/PHILOSOPHY.md](fund/PHILOSOPHY.md).
+
+- **Five partners** with clashing worldviews (macro, onchain data, risk, momentum, contrarian) write independent views, debate once and vote. A trade passes with 3 of 5; the constitution changes with 4 of 5.
+- **Everything in plain English:** a constitution the committee amends, meeting minutes with every vote, and a trade log.
+- **A Safe on Base with three owners, two signatures needed:** the agent (server), the deck's approve key, and the owner's phone. The agent can never move money alone.
+- **Approve on the kiosk:** panel 6 (Fund) shows the waiting trade and how each partner voted; the approve key gets a fresh KyberSwap quote, checks the Safe transaction hash on the deck, and signs it.
+- **Skills, not a service:** `fund-research`, `fund-committee`, `fund-trade`, `fund-review` are SKILL.md files that run under Claude Code (cron on the droplet) or Hermes.
+
 ## Deck notes
 
 - `cyberdeck-dashboard.service` now runs the `exo_deck` kiosk. The unit name is kept so the existing Chromium kiosk needs no change.
 - Pi-side prerequisite: `/usr/local/bin/deck-kiosk` is not in this repo (hand-installed on the Pi). The Kiosk double-tap calls it; `deck/install.sh` warns if it is missing.
 - Testing hooks over SSH: load the env first, or the hooks see no keys and URLs: `set -a; . /srv/deck/.env; set +a`, then run e.g. `/srv/deck/hooks/talk-start`.
 
-## Hackathon evidence
+## Hackathon evidence (TOKEN2049, October 2026)
+
+The CRE Guardian below was the hackathon build. It was never deployed to a Chainlink DON and has been superseded by Argo Fund; the code stays in `chain/` for reference.
 
 Full detail and raw output: [docs/hackathon-evidence.md](docs/hackathon-evidence.md).
 

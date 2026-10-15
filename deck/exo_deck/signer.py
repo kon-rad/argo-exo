@@ -60,6 +60,14 @@ class HotSigner:
     def sign(self, tx: dict) -> bytes:
         return bytes(self._acct.sign_transaction(tx).raw_transaction)
 
+    def sign_hash(self, h: bytes) -> bytes:
+        """r ‖ s ‖ v (v 27/28) over a 32-byte digest: the form a Safe owner signature takes. Only fund_sign calls it,
+        after recomputing the digest itself from the fields it displays."""
+        if len(h) != 32:
+            raise ValueError("digest must be 32 bytes")
+        s = self._acct.unsafe_sign_hash(h)
+        return s.r.to_bytes(32, "big") + s.s.to_bytes(32, "big") + bytes([s.v])
+
 
 def _qty(v) -> int:
     if not isinstance(v, str) or not QTY.match(v):

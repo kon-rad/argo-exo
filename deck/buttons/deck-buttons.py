@@ -38,7 +38,7 @@ from pathlib import Path
 from gpiozero import Button, LED
 
 sys.path.insert(0, os.environ.get("EXO_DECK_PKG", "/srv/deck/app/deck"))
-from exo_deck import approvals   # noqa: E402
+from exo_deck import approvals, state as deck_state   # noqa: E402
 from exo_deck.chord import ChordState   # noqa: E402
 from exo_deck.hookq import HookQueue   # noqa: E402
 
@@ -209,6 +209,11 @@ class Deck:
         now = time.time()
         action, dest = approvals.on_key(STATE, now, self.last_approve)
         if action == "ignored":
+            # Nothing in the Guardian queue: on the Fund panel the key signs the fund proposal shown there.
+            if now - self.last_approve >= 1.0 and deck_state.get_panel(STATE) == "fund":
+                self.last_approve = now
+                log.info("fund approve (key)")
+                hook("fund-approve")
             return
         self.last_approve = now          # covers the press right after a confirmation too
         if action == "confirmed-auto":

@@ -10,7 +10,7 @@ import time
 from contextlib import contextmanager
 from pathlib import Path
 
-PANELS: tuple[str, ...] = ("talk", "agents", "approvals", "transactions", "wallets", "cre", "body", "sensors", "media")
+PANELS: tuple[str, ...] = ("talk", "agents", "approvals", "transactions", "wallets", "fund", "body", "sensors", "media")
 
 
 def _read(path: Path, default: str = "") -> str:

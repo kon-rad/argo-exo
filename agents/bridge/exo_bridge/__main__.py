@@ -7,6 +7,7 @@ from waitress import serve
 
 from .app import create_app
 from .config import Config
+from .fund_routes import cli_runner, fund_blueprint
 from .guardian_routes import guardian_blueprint
 from .kanban import Kanban
 from .ledger import Ledger
@@ -67,7 +68,8 @@ def main() -> int:
     if ledger is None:
         log.info("ledger: EXO_LEDGER_DSN unset, /ledger/* answer 503")
     app = create_app(cfg, Kanban(cfg.hermes_bin, cfg.board), Talker(cfg.api_server_url, cfg.api_server_key),
-                     blueprints=(guardian_blueprint(guardian), ledger_blueprint(ledger, cfg.cre_manifest)))
+                     blueprints=(guardian_blueprint(guardian), ledger_blueprint(ledger, cfg.cre_manifest),
+                                 fund_blueprint(cli_runner(os.environ["FUND_TRADE_CMD"]) if os.environ.get("FUND_TRADE_CMD") else None)))
     serve(app, host=cfg.host, port=cfg.port, threads=4)
     return 0
 

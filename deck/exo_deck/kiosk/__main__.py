@@ -6,7 +6,7 @@ import time
 import requests
 from waitress import serve
 
-from .. import agents_view, approvals, chain_view, ledger_view, media, ring_view, state as st, system_view
+from .. import agents_view, approvals, chain_view, fund_view, ledger_view, media, ring_view, state as st, system_view
 from ..bridge_client import Bridge
 from ..config import Settings
 from .app import create_app
@@ -39,7 +39,7 @@ def build_providers(s: Settings) -> dict:
         logging.getLogger("exo-kiosk").warning("wallets panel disabled: %s", type(exc).__name__)
         providers["wallets"] = lambda page: {"error": "wallets unavailable"}
     providers["transactions"] = lambda page: ledger_view.transactions_panel(bridge, page)
-    providers["cre"] = lambda page: ledger_view.cre_panel(bridge, page)
+    providers["fund"] = lambda page: fund_view.panel(bridge, page)
     # 10.3-10.8 add: agents, transactions, wallets, cre, body, sensors, media (add each one's imports here too)
     return providers
 

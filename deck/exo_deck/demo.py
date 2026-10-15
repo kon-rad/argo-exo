@@ -174,6 +174,19 @@ def _cre(now: float) -> dict:
                       for h, r, a, ms, v in calls]}
 
 
+def _fund(now: float) -> dict:  # noqa: ARG001
+    votes = [("Wren Hollis", "yes", "Stablecoin supply is growing again: the tide is coming in."),
+             ("Kaito Brandt", "yes", "ETH fee revenue up three weeks running."),
+             ("Odalys Fen", "yes", "30% of NAV into the core asset is inside the constitution."),
+             ("Juno Achebe", "abstain", "No catalyst this week; fine either way."),
+             ("Basile Marr", "no", "Everyone is long ETH into the upgrade. Wait for the flush.")]
+    return {"pending_total": 1, "index": 0, "nav": "**NAV:** $100.00", "thesis": "Build the ETH core first; keep 60% in USDC until the tide is clear.",
+            "proposal": {"id": "2026-10-14-1", "motion": "Open the ETH core position with 30% of the fund.",
+                         "tally": "3–1 (Basile against)", "trade": "Sell 30 USDC for WETH", "status": "proposed",
+                         "votes": [{"partner": p, "vote": v, "reason": r} for p, v, r in votes]},
+            "log": ["2026-10-13 · Fund opened with 100 USDC"]}
+
+
 def _body(now: float) -> dict:
     trend = [("2026-10-01", 82), ("2026-10-02", 77), ("2026-10-03", 71), ("2026-10-04", 85),
              ("2026-10-05", 79), ("2026-10-06", 74), ("2026-10-07", 63)]
@@ -199,7 +212,7 @@ def _media(now: float) -> dict:
 
 
 PANELS = {"talk": _talk, "agents": lambda now: agents_panel(now), "approvals": _approvals,
-          "transactions": _transactions, "wallets": _wallets, "cre": _cre, "body": _body,
+          "transactions": _transactions, "wallets": _wallets, "fund": _fund, "body": _body,
           "sensors": _sensors, "media": _media}
 
 
@@ -211,5 +224,5 @@ def panel(name: str, now: float) -> dict | None:
 def overlay_state(snap: dict, now: float) -> dict:
     """The status chips in demo mode: Hermes up, the demo's pending approvals, and the DEMO chip."""
     return dict(snap, demo=True, hermes=True, pending=_approvals(now)["pending_total"],
-                heard=snap.get("heard") or "Brief me on Chainlink CRE before the 3 pm demo.",
-                reply=snap.get("reply") or "On it. Researcher, librarian and wallet are working on it now.")
+                heard=snap.get("heard") or "What did the fund committee decide this morning?",
+                reply=snap.get("reply") or "One trade passed, three to one: thirty USDC into ETH. It's on panel six.")

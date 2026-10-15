@@ -1,0 +1,19 @@
+#!/bin/sh
+# fund-run <fund-research|fund-committee|fund-review>: run one fund skill headless under Claude Code (cron).
+# Needs FUND_DIR; FUND_HOME defaults to this checkout's fund/. Output goes to $FUND_DIR/state/runs/<skill>-<date>.jsonl.
+set -eu
+SKILL="${1:-}"
+case "$SKILL" in fund-research|fund-committee|fund-review) ;; *) echo "usage: fund-run fund-research|fund-committee|fund-review" >&2; exit 2;; esac
+FUND_HOME="${FUND_HOME:-$(cd "$(dirname "$0")/.." && pwd)}"
+: "${FUND_DIR:?FUND_DIR is not set}"
+export FUND_HOME FUND_DIR
+CLAUDE="${CLAUDE_BIN:-$HOME/.local/bin/claude}"
+mkdir -p "$FUND_DIR/state/runs"
+cd "$FUND_DIR"
+exec "$CLAUDE" -p "/$SKILL" \
+  --output-format stream-json --verbose \
+  --model "${FUND_MODEL:-sonnet}" \
+  --permission-mode acceptEdits --permission-prompts none \
+  --allowedTools "Read,Write,Edit,Glob,Grep,WebSearch,WebFetch,Task,Bash($FUND_HOME/bin/fund-trade *)" \
+  --disallowedTools "Bash(sudo *),Bash(ssh *),Read(//home/hermes/.argo-fund/**),Read(**/.env),Read(**/.env.*)" \
+  > "$FUND_DIR/state/runs/$SKILL-$(date +%Y%m%d-%H%M).jsonl" 2>&1

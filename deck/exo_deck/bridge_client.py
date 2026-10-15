@@ -11,6 +11,7 @@ class BridgeError(RuntimeError):
 
 
 PROPOSAL_ID = re.compile(r"^[0-9A-Za-z-]{1,64}$")   # ledger ids are UUIDs; anything else must not reach a URL path
+FUND_ID = re.compile(r"^\d{4}-\d{2}-\d{2}-\d{1,3}$")
 
 
 class Bridge:
@@ -101,3 +102,25 @@ class Bridge:
 
     def workflows(self) -> dict:
         return self._read("/cre/workflows", None, "handlers")
+
+    # --- Argo Fund (plans/11-argo-fund-design §6) ---------------------------------------------------------------
+    def fund_proposals(self) -> list:
+        return self._read("/fund/proposals", None, "proposals")["proposals"]
+
+    def fund_log(self) -> dict:
+        return self._read("/fund/log", None, "entries")
+
+    def fund_prepare(self, pid: str) -> dict:
+        if not isinstance(pid, str) or not FUND_ID.match(pid):
+            raise ValueError("bad fund proposal id")
+        return self._call(self.post, f"/fund/proposals/{pid}/prepare", None, json={}, timeout=(5, 60))
+
+    def fund_approve(self, pid: str, signature: str) -> dict:
+        if not isinstance(pid, str) or not FUND_ID.match(pid):
+            raise ValueError("bad fund proposal id")
+        return self._call(self.post, f"/fund/proposals/{pid}/approve", None, json={"signature": signature}, timeout=(5, 240))
+
+    def fund_refuse(self, pid: str) -> dict:
+        if not isinstance(pid, str) or not FUND_ID.match(pid):
+            raise ValueError("bad fund proposal id")
+        return self._call(self.post, f"/fund/proposals/{pid}/refuse", None, json={}, timeout=(5, 30))

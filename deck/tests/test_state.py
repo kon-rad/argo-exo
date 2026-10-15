@@ -6,7 +6,7 @@ def test_panel_by_name_number_and_cycle(tmp_path):
     assert st.get_panel(tmp_path) == "talk"
     assert st.set_panel(tmp_path, "approvals") == "approvals"
     assert st.set_panel(tmp_path, "5") == "wallets"
-    assert st.set_panel(tmp_path, "next") == "cre"
+    assert st.set_panel(tmp_path, "next") == "fund"
     assert st.set_panel(tmp_path, "previous") == "wallets"
     st.set_panel(tmp_path, "talk")
     assert st.set_panel(tmp_path, "previous") == "media"      # wraps
