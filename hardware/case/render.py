@@ -37,9 +37,11 @@ def scene(name, items, elev, azim):
 
 
 TOP = 27.5
+CAM = (72, 12, TOP)          # camera bracket on the lid holes (62, 8) and (82, 8)
 scene("assembled", [("shell", (0, 0, 0), "#3a3f47"), ("hatch-ribbon", (0, 0, TOP), "#c9a227"),
-                    ("camera-bracket", (65, 24, TOP), "#2f8f5b")], 30, -60)
+                    ("camera-bracket", CAM, "#2f8f5b"), ("strap-plate", (0, 0, -3), "#6b4f2a")], 30, -60)
 scene("ports", [("shell", (0, 0, 0), "#3a3f47"), ("base", (0, 0, 0), "#8a8f99")], 12, -110)
-scene("exploded", [("base", (0, 0, 0), "#8a8f99"), ("shell", (0, 0, 25), "#3a3f47"),
-                   ("hatch-open", (0, 0, 25 + TOP + 12), "#c9a227"), ("camera-bracket", (65, 24, 25 + TOP + 12), "#2f8f5b")], 22, 50)
+scene("exploded", [("strap-plate", (0, 0, -20), "#6b4f2a"), ("base", (0, 0, 0), "#8a8f99"), ("shell", (0, 0, 25), "#3a3f47"),
+                   ("hatch-open", (0, 0, 25 + TOP + 12), "#c9a227"), ("camera-bracket", (72, 12, 25 + TOP + 12), "#2f8f5b")], 22, 50)
 scene("top", [("shell", (0, 0, 0), "#3a3f47")], 90, -90)
+scene("strap", [("strap-plate", (0, 0, 0), "#6b4f2a")], 90, -90)

@@ -7,11 +7,16 @@ Coordinates: board space. Origin at the Pi's SD-card end (x=0) and HDMI edge (y=
 Pi 4 numbers are from the Raspberry Pi 4 mechanical drawing; every value marked MEASURE should be checked with
 calipers on the real board and parts before the full print (print `coupon` first).
 """
+import json
 from pathlib import Path
 
-from build123d import (Box, Cylinder, Compound, Location, Mesher, Pos, export_step, export_stl)
+from build123d import (Align, Box, Compound, Cylinder, Mesher, Polygon, Pos, Rot, Text, export_step, export_stl,
+                       extrude)
 
-OUT = Path(__file__).parent / "out"
+HERE = Path(__file__).parent
+OUT = HERE / "out"
+FONT = "/System/Library/Fonts/Supplemental/Arial Bold.ttf"
+EMBLEM = HERE / "argo_emblem.json"      # traced from Areas/argo/design/argo-emblem-only.png: 3 light + 3 dark facets
 
 # --- Raspberry Pi 4 (mechanical drawing) ---
 BW, BD, PCB = 85.0, 56.0, 1.4
@@ -44,6 +49,12 @@ FAN_HOLE = 24.0    # MEASURE: screw spacing
 SELF_TAP_M3 = 2.5  # pilot for an M3 screw straight into plastic
 SELF_TAP_M25 = 2.2
 GRID = 10.0        # hack grid pitch on the lid and the base
+STRAP = 25.0       # MEASURE: webbing width of the shoulder strap (25 mm is the common sling size)
+
+# --- branding, engraved into the lid ---
+LABEL = "EXO ARGO"
+URL = "exo.myargoquest.com"
+ENGRAVE = 0.6      # text depth; the emblem's light facets go this deep, the dark ones twice as deep
 
 
 def box(x0, x1, y0, y1, z0, z1):
@@ -88,10 +99,10 @@ def shell():
         s -= cyl(x, GPIO_Y - 0.5, TOP - 2.8, TOP + 1, SELF_TAP_M3)
     # lid: camera ribbon slot over the CSI connector
     s -= box(CSI_X - 11, CSI_X + 11, CSI_Y - 2.25, CSI_Y + 2.25, CEIL - 1, TOP + 1)
-    # lid: hack grid (M3 self-tap, blind) for brackets, the camera, sensors
-    for x in lid_grid_x():
-        for y in (20.0, 30.0, 40.0):
-            s -= cyl(x, y, TOP - 2.8, TOP + 1, SELF_TAP_M3)
+    # lid: M3 self-tap holes (blind): two for the camera bracket, a column of three for anything else
+    for x, y in CAMERA_HOLES + LID_HOLES:
+        s -= cyl(x, y, TOP - 2.8, TOP + 1, SELF_TAP_M3)
+    s -= branding()
 
     # posts that clamp the board onto the base standoffs; base screws thread into them
     for x, y in HOLES:
@@ -100,8 +111,40 @@ def shell():
     return s
 
 
-def lid_grid_x():
-    return [55.0, 65.0, 75.0, 84.0]
+CAMERA_HOLES = [(62.0, 8.0), (82.0, 8.0)]      # 20 mm apart, matches camera_bracket()
+LID_HOLES = [(6.0, 20.0), (6.0, 30.0), (6.0, 40.0)]
+
+
+def text_cut(txt, x, y, max_w, size, depth):
+    """Engrave txt (left edge at x, centred on y) into the lid top, shrinking the font until it fits max_w."""
+    while True:
+        t = Text(txt, font_size=size, font_path=FONT, align=(Align.MIN, Align.CENTER))
+        if t.bounding_box().size.X <= max_w or size < 2.5:
+            break
+        size *= 0.95
+    return extrude(Pos(x, y, TOP - depth) * t, amount=depth + 1)
+
+
+def emblem_cut(x, y, height):
+    """The Argo emblem: light facets ENGRAVE deep, dark facets 2 x ENGRAVE, so the pinwheel reads in one colour."""
+    facets = json.loads(EMBLEM.read_text())
+    cut = None
+    for shade, depth in (("light", ENGRAVE), ("dark", 2 * ENGRAVE)):
+        for poly in facets[shade]:
+            pts = [(x + u * height, y + v * height) for u, v in poly]
+            f = extrude(Pos(0, 0, TOP - depth) * Polygon(*pts, align=None), amount=depth + 1)
+            cut = f if cut is None else cut + f
+    return cut
+
+
+def branding():
+    """Emblem + EXO / ARGO top right, the URL along the HDMI edge (the camera bracket covers the bottom right)."""
+    c = emblem_cut(64.0, 37.0, 15.0)
+    first, second = LABEL.split(" ", 1)
+    c += text_cut(first, 72.5, 40.5, 14.5, 6.0, ENGRAVE)
+    c += text_cut(second, 72.5, 33.0, 14.5, 6.0, ENGRAVE)
+    c += text_cut(URL, 0.0, 3.0, 54.0, 4.2, ENGRAVE)
+    return c
 
 
 def hatch_screws():
@@ -135,6 +178,24 @@ def hatch(kind):
     return h
 
 
+def strap_plate():
+    """Screws under the base (four M3 into the underside grid); the shoulder strap threads down through one end
+    slot, runs under the plate and comes up through the other, so the case rides on the strap."""
+    ear = 13.0
+    x0, x1 = OX0 - ear, OX1 + ear
+    w = STRAP + 9.0
+    p = box(x0, x1, BD / 2 - w / 2, BD / 2 + w / 2, 0, 3.0)
+    for xs in (x0 + 3.0, x1 - 3.0 - 4.5):                                # strap slots, 4.5 mm for thick webbing
+        p -= box(xs, xs + 4.5, BD / 2 - (STRAP + 1.5) / 2, BD / 2 + (STRAP + 1.5) / 2, -1, 4)
+    for x, y in STRAP_SCREWS:
+        p -= cyl(x, y, -1, 4, 3.4)
+        p -= cyl(x, y, -1, 1.8, 6.2)                                    # head recess on the strap side
+    return p
+
+
+STRAP_SCREWS = [(10.0, 30.0), (30.0, 30.0), (50.0, 30.0), (70.0, 30.0)]   # the base's middle grid row
+
+
 def camera_bracket():
     """Flat bracket for the Pi Camera Rev 1.3 (25 x 24 mm, M2 holes 21 x 12.5): two M3 screws into the lid grid."""
     p = box(-15, 15, -9, 17, 0, 2.5)
@@ -165,6 +226,7 @@ def parts():
         "hatch-ribbon": hatch("ribbon"),
         "hatch-open": hatch("open"),
         "camera-bracket": camera_bracket(),
+        "strap-plate": strap_plate(),
         "coupon": coupon(),
     }
 
