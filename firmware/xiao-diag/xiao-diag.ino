@@ -1,7 +1,7 @@
 // xiao-diag.ino: bench test for the XIAO ESP32S3 Sense expansion board (camera, microSD, PDM mic).
 // No Wi-Fi, no secrets. Flash: firmware/xiao-clip/flash.sh's FQBN, or
 //   arduino-cli compile --fqbn esp32:esp32:XIAO_ESP32S3:PSRAM=opi xiao-diag && arduino-cli upload ...
-// Prints one report, then the mic level every 2 s (clap or talk to see it move).
+// Prints one report, then a press-test line every pass (camera bus, SD, mic level).
 #include "esp_camera.h"
 #include "FS.h"
 #include "SD.h"
@@ -135,13 +135,18 @@ void setup() {
   bool mic = micOK && distinct > 100;
 
   Serial.printf("RESULT cam=%d sd=%d mic=%d sccb=%d\n", cam, sd, mic, n);
-  Serial.println("Now clap or talk: mic level every 2 s");
+  Serial.println("Press test: camera bus, SD and mic re-checked every pass");
 }
 
+// Press test: re-probe the camera bus and the SD card every pass, so pressing on the boards
+// shows whether a loose board-to-board contact is the fault (the line flips to yes while pressed).
 void loop() {
-  if (!micOK) { delay(2000); return; }
-  int rms, peak, distinct;
-  micLevel(rms, peak, distinct);
-  Serial.printf("mic rms %5d  peak %5d  %s\n", rms, peak, rms > 300 ? "<-- sound" : "");
-  delay(1500);
+  int found = sccbScan();
+  bool sd = SD.begin(21);
+  SD.end();
+  int rms = 0, peak = 0, distinct = 0;
+  if (micOK) micLevel(rms, peak, distinct);
+  Serial.printf("cam bus %-3s  sd %-3s  mic rms %5d peak %5d %s\n", found ? "YES" : "no", sd ? "YES" : "no",
+                rms, peak, rms > 300 ? "<-- sound" : "");
+  delay(1000);
 }
