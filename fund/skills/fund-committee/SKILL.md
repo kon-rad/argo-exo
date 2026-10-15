@@ -10,7 +10,7 @@ Runs one meeting of the Argo Fund committee and records it. Works under Claude C
 ## Paths
 - `$FUND_HOME`: the fund's code and identity files (`personas/`, `PHILOSOPHY.md`, `templates/`, `bin/fund-trade`).
 - `$FUND_DIR`: the live fund (`constitution.md`, `trade-log.md`, `meetings/`, `research/`, `reviews/`, `state/`).
-- `fund-trade` means `$FUND_HOME/bin/fund-trade`. It prints JSON. Never read key files; you don't need them.
+- Call the CLI as plain `fund-trade <command>` (it's on PATH under `fund-run`; otherwise `$FUND_HOME/bin/fund-trade`). Write the command literally, without shell variables, so the permission rule matches. It prints JSON. Never read key files; you don't need them.
 
 ## Steps
 

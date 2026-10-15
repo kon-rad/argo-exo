@@ -5,7 +5,7 @@ description: The Argo Fund's onchain tool — check the fund's Safe and portfoli
 
 # fund-trade
 
-`$FUND_HOME/bin/fund-trade <command>` prints one JSON object (errors: `{"error": ...}`, exit 1).
+`fund-trade <command>` (on PATH under `fund-run`; else `$FUND_HOME/bin/fund-trade`) prints one JSON object (errors: `{"error": ...}`, exit 1).
 
 | Command | Who uses it | Does |
 |---|---|---|

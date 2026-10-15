@@ -7,6 +7,7 @@ case "$SKILL" in fund-research|fund-committee|fund-review) ;; *) echo "usage: fu
 FUND_HOME="${FUND_HOME:-$(cd "$(dirname "$0")/.." && pwd)}"
 : "${FUND_DIR:?FUND_DIR is not set}"
 export FUND_HOME FUND_DIR
+export PATH="$FUND_HOME/bin:$PATH"     # skills call plain `fund-trade`, which the allow rule below matches
 CLAUDE="${CLAUDE_BIN:-$HOME/.local/bin/claude}"
 mkdir -p "$FUND_DIR/state/runs"
 cd "$FUND_DIR"
@@ -14,6 +15,6 @@ exec "$CLAUDE" -p "/$SKILL" \
   --output-format stream-json --verbose \
   --model "${FUND_MODEL:-sonnet}" \
   --permission-mode acceptEdits --permission-prompts none \
-  --allowedTools "Read,Write,Edit,Glob,Grep,WebSearch,WebFetch,Task,Bash($FUND_HOME/bin/fund-trade *)" \
+  --allowedTools "Read,Write,Edit,Glob,Grep,WebSearch,WebFetch,Task,Agent,Bash(fund-trade *),Bash($FUND_HOME/bin/fund-trade *)" \
   --disallowedTools "Bash(sudo *),Bash(ssh *),Read(//home/hermes/.argo-fund/**),Read(**/.env),Read(**/.env.*)" \
   > "$FUND_DIR/state/runs/$SKILL-$(date +%Y%m%d-%H%M).jsonl" 2>&1
