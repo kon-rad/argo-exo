@@ -66,6 +66,7 @@ class Dispatcher:
     run_verifier: Callable = verify.run
     running: dict[str, Running] = field(default_factory=dict)
     _capped_day: str = ""
+    _ticks: int = 0
 
     org: OrgRunner | None = None
 
@@ -100,6 +101,18 @@ class Dispatcher:
         self._roll_day(now)
         if not self._may_spawn(now):
             return
+        # Lanes and the org take turns going first: with two slots, a tick that always served the lanes first let two
+        # research cards hold both slots while four bots' cards and their mentions waited (2026-10-15).
+        self._ticks += 1
+        if self.org is not None and self._ticks % 2 == 0:
+            self._tick_org(now)
+            self._tick_lanes(now)
+        else:
+            self._tick_lanes(now)
+            if self.org is not None:
+                self._tick_org(now)
+
+    def _tick_lanes(self, now: float) -> None:
         for board_name, board in self.boards.items():
             for lane in self.settings.lanes.values():
                 for task in sorted(self._safe(board.tasks, lane.name, "ready") or [],
@@ -107,11 +120,13 @@ class Dispatcher:
                     if not self._may_spawn(now):
                         return
                     self._start(board_name, board, lane, task["id"], now)
-        if self.org is not None:
-            started = self.org.tick(now, lambda: self._may_spawn(now))
-            if started:
-                self.state.spawned_today += started
-                self.state.save(self.state_path)
+
+    def _tick_org(self, now: float) -> None:
+        assert self.org is not None
+        started = self.org.tick(now, lambda: self._may_spawn(now))
+        if started:
+            self.state.spawned_today += started
+            self.state.save(self.state_path)
 
     def _may_spawn(self, now: float) -> bool:
         s = self.settings

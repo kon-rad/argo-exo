@@ -212,6 +212,23 @@ def test_a_dm_wakes_the_agent_once_with_all_its_wakeups(tmp_path):
     assert "atlas" not in runner.running
 
 
+def test_lanes_and_the_org_take_turns_going_first(tmp_path):
+    # Two slots, two lane cards ready and two bots woken: the first tick serves the lanes, the second the org, so a
+    # busy lane never holds both slots while bots wait (2026-10-15, two research cards vs four bots' cards).
+    board = FakeBoard(ready=[{"id": "t_l1"}, {"id": "t_l2"}, {"id": "t_l3"}])
+    d, runner, ob, spawned, clock = make(tmp_path, board=board, wakeups=[
+        {"id": 1, "agent_name": "atlas", "reason": "dm", "ref": "7"},
+        {"id": 2, "agent_name": "rune", "reason": "dm", "ref": "8"},
+    ])
+    d.tick()
+    assert sorted(d.running) == ["t_l1", "t_l2"] and spawned == []
+    for r in d.running.values():
+        r.proc.code = 0
+    clock["t"] += 60
+    d.tick()
+    assert [s["agent"] for s in spawned] == ["atlas", "rune"] and "t_l3" not in d.running
+
+
 def test_cooldown_and_daily_cap_hold_an_agent_back(tmp_path):
     d, runner, ob, spawned, clock = make(tmp_path, wakeups=[{"id": 1, "agent_name": "vera", "reason": "dm", "ref": "1"}])
     d.tick()
