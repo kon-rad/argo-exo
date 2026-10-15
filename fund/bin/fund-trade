@@ -1,6 +1,8 @@
 #!/bin/sh
-# fund-trade wrapper: runs the CLI from this checkout with the repo venv (or FUND_PYTHON).
+# fund-trade wrapper: runs the CLI from this checkout with FUND_PYTHON, the repo venv, or ~/.argo-fund/venv.
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
-PY="${FUND_PYTHON:-$HERE/../.venv/bin/python}"
-[ -x "$PY" ] || PY=python3
+for PY in "${FUND_PYTHON:-}" "$HERE/../.venv/bin/python" "$HOME/.argo-fund/venv/bin/python"; do
+  [ -n "$PY" ] && [ -x "$PY" ] && break
+  PY=python3
+done
 PYTHONPATH="$HERE${PYTHONPATH:+:$PYTHONPATH}" exec "$PY" -m fund_trade "$@"

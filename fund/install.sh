@@ -18,6 +18,9 @@ TODAY=$(date +%Y-%m-%d)
 [ -f "$FUND_DIR/constitution.md" ] || sed "s/{{DATE}}/$TODAY/g" "$HERE/templates/constitution.md" > "$FUND_DIR/constitution.md"
 [ -f "$FUND_DIR/trade-log.md" ] || cp "$HERE/templates/trade-log.md" "$FUND_DIR/trade-log.md"
 mkdir -p "$HOME/.argo-fund" && chmod 700 "$HOME/.argo-fund"
+if [ ! -x "$HOME/.argo-fund/venv/bin/python" ] && [ ! -x "$HERE/../.venv/bin/python" ]; then
+  python3 -m venv "$HOME/.argo-fund/venv" && "$HOME/.argo-fund/venv/bin/pip" install -q -r "$HERE/requirements.txt"
+fi
 [ -f "$HOME/.argo-fund/env" ] || printf 'FUND_DIR=%s\nFUND_RPC_URL=https://mainnet.base.org\nFUND_DECK_OWNER=\nFUND_PHONE_OWNER=\nFUND_SAVINGS=\n' "$FUND_DIR" > "$HOME/.argo-fund/env"
 AGENT=$("$HERE/bin/fund-trade" init-agent)
 cat <<MSG
