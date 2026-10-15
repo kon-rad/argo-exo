@@ -141,7 +141,7 @@ def make(tmp_path, board=None, wakeups=(), t=None):
     clock = {"t": t if t is not None else datetime(2026, 10, 15, 4, 0, tzinfo=TZ).timestamp()}
     board = board or FakeBoard()
     runner = OrgRunner(settings, {"exo": board}, ob, spawn=spawn, prepare_cwd=lambda s, l, t: f"/work/{t}", clock=lambda: clock["t"])
-    d = Dispatcher(settings, {"exo": board}, spawn=lambda *a: FakeProc(), prepare_cwd=lambda s, l, t: l.cwd,
+    d = Dispatcher(settings, {"exo": board}, spawn=lambda *a: FakeProc(), prepare_cwd=lambda s, l, t, base=None: l.cwd,
                    clock=lambda: clock["t"], org=runner)
     return d, runner, ob, spawned, clock
 
