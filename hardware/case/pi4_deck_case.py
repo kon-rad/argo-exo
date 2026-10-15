@@ -11,7 +11,7 @@ import json
 import math
 from pathlib import Path
 
-from build123d import (Align, Axis, Box, Compound, Cylinder, Face, Kind, Mesher, Polygon, Pos, RectangleRounded,
+from build123d import (Align, Axis, Box, Compound, Cylinder, Face, Kind, Mesher, Polygon, Pos, Rectangle, RectangleRounded,
                        RegularPolygon, Side, Spline, Text, Wire, chamfer, export_step, export_stl, extrude)
 
 HERE = Path(__file__).parent
@@ -140,6 +140,8 @@ def shell():
         s -= cyl(x, GPIO_Y - 0.5, TOP - 2.8, TOP + 1, SELF_TAP_M3)
     # lid: camera ribbon slot over the CSI connector
     s -= box(CSI_X - 11, CSI_X + 11, CSI_Y - 2.25, CSI_Y + 2.25, CEIL - 1, TOP + 1)
+    # 1 mm 45-degree lead-in on the outer edge so the ribbon bends over a slope, not a sharp edge
+    s -= extrude(Pos(CSI_X, CSI_Y, TOP - 1.0) * Rectangle(22.0, 4.5), amount=1.01, taper=-45)
     # lid: M3 self-tap holes (blind): two for the camera bracket, a column of three for anything else
     for x, y in CAMERA_HOLES + LID_HOLES:
         s -= cyl(x, y, TOP - 2.8, TOP + 1, SELF_TAP_M3)
