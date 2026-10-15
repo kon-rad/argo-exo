@@ -40,8 +40,9 @@ Next (Konrad):
        echo "exoguard ALL=(hermes) NOPASSWD: $HERE/bin/fund-trade" > /etc/sudoers.d/argo-fund
        FUND_TRADE_CMD="sudo -n -u hermes $HERE/bin/fund-trade"     (it reads ~hermes/.argo-fund/env)
 
-Crontab (crontab -e as hermes; droplet time is Asia/Tokyo):
-  0 8  * * *  FUND_DIR=$FUND_DIR $HERE/bin/fund-run fund-research
-  0 9  * * *  FUND_DIR=$FUND_DIR $HERE/bin/fund-run fund-committee
-  0 10 * * 0  FUND_DIR=$FUND_DIR $HERE/bin/fund-run fund-review
+Crontab (crontab -e as hermes). System cron runs in the server's clock; these lines are for a UTC server and
+equal 08:00 / 09:00 / Sunday 10:00 in Asia/Tokyo. Shift them if the server or your timezone differs:
+  0 23 * * *  FUND_DIR=$FUND_DIR $HERE/bin/fund-run fund-research
+  0 0  * * *  FUND_DIR=$FUND_DIR $HERE/bin/fund-run fund-committee
+  0 1  * * 0  FUND_DIR=$FUND_DIR $HERE/bin/fund-run fund-review
 MSG
