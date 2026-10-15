@@ -1,3 +1,4 @@
-# Chest OLED and NFC reader (deck-oled, deck-nfc). Installed separately so a failure here only warns.
+# Chest OLED, NFC reader and GPS (deck-oled, deck-nfc, deck-gps). Installed separately so a failure here only warns.
 luma.oled>=3.13
 nfcpy>=1.0.4
+pyserial>=3.5

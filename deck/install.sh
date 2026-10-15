@@ -18,7 +18,7 @@ S(){ printf '%s\n' "$PW" | sudo -S -p "" "$@"; }
 A=/srv/deck/app/deck
 [ -x /srv/deck/venv/bin/python ] || python3 -m venv /srv/deck/venv
 /srv/deck/venv/bin/pip install -q -r $A/requirements.txt </dev/null
-/srv/deck/venv/bin/pip install -q -r $A/requirements-sensors.txt </dev/null || echo "WARN: luma.oled / nfcpy did not install: deck-oled and deck-nfc will not start"
+/srv/deck/venv/bin/pip install -q -r $A/requirements-sensors.txt </dev/null || echo "WARN: luma.oled / nfcpy did not install: deck-oled, deck-nfc and deck-gps will not start"
 S apt-get install -y -qq espeak-ng alsa-utils rclone ffmpeg i2c-tools libnfc-bin >/dev/null
 S install -m 755 $A/bin/deck-approve /usr/local/bin/deck-approve
 S install -m 755 $A/bin/deck-capture /usr/local/bin/deck-capture
@@ -29,12 +29,13 @@ S install -m 755 $A/bin/deck-kiosk /usr/local/bin/deck-kiosk
 S install -m 755 $A/bin/deck-secondbrain /usr/local/bin/deck-secondbrain
 S install -m 755 $A/bin/deck-oled /usr/local/bin/deck-oled
 S install -m 755 $A/bin/deck-nfc /usr/local/bin/deck-nfc
+S install -m 755 $A/bin/deck-gps /usr/local/bin/deck-gps
 install -D -m 644 $A/desktop/deck-secondbrain.desktop "$HOME/.local/share/applications/deck-secondbrain.desktop"
 install -m 644 $A/buttons/deck-buttons.py /srv/deck/deck-buttons.py
 install -m 644 $A/collector/lifelog-collector.py /srv/deck/lifelog-collector.py
 install -m 644 $A/recorder/deck-recorder.py /srv/deck/deck-recorder.py
 install -m 644 $A/ring/ring_sync.py /srv/deck/ring_sync.py
-mkdir -p /srv/deck/hooks /srv/deck/state/tx-queue /srv/deck/state/tx-approved /srv/deck/outbox/photos /srv/deck/outbox/audio /srv/deck/outbox/nfc /srv/deck/outbox/lifeos /srv/deck/oled/screens /srv/deck/media/video
+mkdir -p /srv/deck/hooks /srv/deck/state/tx-queue /srv/deck/state/tx-approved /srv/deck/outbox/photos /srv/deck/outbox/audio /srv/deck/outbox/nfc /srv/deck/outbox/gps /srv/deck/outbox/lifeos /srv/deck/oled/screens /srv/deck/media/video
 install -d -m 700 /srv/deck/keys
 [ -f /srv/deck/buttons.json ] || /usr/local/bin/deck-button reset >/dev/null
 # The I2S mic, shared by talk, memos and video. Only once the card exists; until then video records silently.
@@ -68,6 +69,10 @@ if [ -e /dev/i2c-1 ]; then S systemctl enable deck-oled; S systemctl restart dec
 else echo "NOTE: I2C is off (no /dev/i2c-1): sudo raspi-config nonint do_i2c 0, reboot, rerun. deck-oled is installed, not enabled"; fi
 if [ -e /dev/serial0 ]; then S systemctl enable deck-nfc; S systemctl restart deck-nfc
 else echo "NOTE: UART is off (no /dev/serial0): sudo raspi-config nonint do_serial_hw 0, reboot, rerun. deck-nfc is installed, not enabled"; fi
+# GPS (NEO-6M) on UART4, GPIO 8/9: enabled only once its port exists. EXO_GPS_DEVICE in the deck env overrides.
+GPS_DEV=$(set -a; . /srv/deck/.env 2>/dev/null; echo "${EXO_GPS_DEVICE:-/dev/ttyAMA4}")
+if [ -e "$GPS_DEV" ]; then S systemctl enable deck-gps; S systemctl restart deck-gps
+else echo "NOTE: no GPS port $GPS_DEV: add dtoverlay=uart4 to /boot/firmware/config.txt, power-cycle, check ls /dev/ttyAMA*, set EXO_GPS_DEVICE if it differs, rerun. deck-gps is installed, not enabled"; fi
 grep -q "console=serial0" /boot/firmware/cmdline.txt 2>/dev/null && echo "NOTE: the serial console is still on /dev/serial0, so the PN532 will not answer: sudo raspi-config nonint do_serial_cons 1, reboot"
 systemctl is-active deck-buttons lifelog-collector cyberdeck-dashboard deck-recorder
 R

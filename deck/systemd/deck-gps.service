@@ -1,0 +1,16 @@
+[Unit]
+Description=Exo GPS: position for the lifelog (deck-gps)
+After=multi-user.target
+
+[Service]
+Type=simple
+User=deck
+WorkingDirectory=/srv/deck
+Environment=PYTHONPATH=/srv/deck/app/deck
+EnvironmentFile=/srv/deck/.env
+ExecStart=/srv/deck/venv/bin/python3 -m exo_deck.gps run
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

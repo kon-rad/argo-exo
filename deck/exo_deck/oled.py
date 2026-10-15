@@ -250,9 +250,24 @@ def screen_env(ctx: Ctx) -> list[str]:
     return out
 
 
+def screen_gps(ctx: Ctx) -> list[str]:
+    try:
+        s = json.loads((ctx.deck_root / "state" / "gps.json").read_text())
+    except (OSError, ValueError):
+        return ["GPS", "no data"]
+    if not isinstance(s, dict) or s.get("error"):
+        return ["GPS", "no receiver"]
+    stale = " stale" if ctx.now - s.get("at", 0) > 10 else ""
+    if not s.get("fix"):
+        return ["GPS", f"no fix, {s.get('sats', 0)} sats{stale}", "needs open sky"]
+    alt = f"alt {s['alt_m']:.0f} m " if isinstance(s.get("alt_m"), (int, float)) else ""
+    spd = f"{s['speed_kmh']:.0f} km/h" if isinstance(s.get("speed_kmh"), (int, float)) else ""
+    return [f"GPS {s.get('sats', 0)} sats{stale}", f"{s['lat']:.5f}", f"{s['lon']:.5f}", f"{alt}{spd}".strip()]
+
+
 BUILTIN: dict[str, Callable[[Ctx], list[str]]] = {
     "status": screen_status, "wallet": screen_wallet, "portfolio": screen_portfolio, "qs": screen_qs,
-    "lifelog": screen_lifelog, "env": screen_env,
+    "lifelog": screen_lifelog, "env": screen_env, "gps": screen_gps,
 }
 
 

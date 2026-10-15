@@ -14,7 +14,7 @@ Copied verbatim from [[exo-hardware-priorities]] §2.1–2.2.
 | **P1** (programmable) | Tactile | GPIO 16 (36) | 39 | Default: tap = next panel; double-tap = kiosk ↔ desktop. Reprogram with `deck-button` (tap / double / hold) |
 | P2 (programmable, optional) | Tactile | GPIO 27 (13) | 14 | Nothing by default; `deck-button set p2 tap "<command>"` |
 
-Each button goes **between its GPIO and GND**, with the Pi's internal pull-ups. No resistors needed. Reserved: I2C GPIO 2/3, UART GPIO 14/15 (PN532), I2S GPIO 18/19/20 (mic), GPIO 12 (AI City door servo).
+Each button goes **between its GPIO and GND**, with the Pi's internal pull-ups. No resistors needed. Reserved: I2C GPIO 2/3, UART GPIO 14/15 (PN532), UART4 GPIO 8/9 (GPS: its TX → GPIO 9, pin 21; `dtoverlay=uart4`), I2S GPIO 18/19/20 (mic), GPIO 12 (AI City door servo).
 
 ### 2.2 Light map
 
