@@ -61,6 +61,7 @@ class Settings:
     boards: tuple[str, ...]
     max_in_progress: int
     daily_cap: int
+    day_timezone: str            # the cap's day rolls at 00:00 in this zone (the org's routines run on the same clock)
     poll_seconds: int
     runs_dir: Path
     work_dir: Path
@@ -162,7 +163,8 @@ def load(path: str | Path) -> Settings:
     return Settings(
         lanes_path=path,
         boards=tuple(d.get("boards", ["exo"])), max_in_progress=int(d.get("max_in_progress", 2)),
-        daily_cap=int(d.get("daily_cap", 20)), poll_seconds=int(d.get("poll_seconds", 30)),
+        daily_cap=int(d.get("daily_cap", 20)), day_timezone=str(d.get("timezone", o.get("timezone", "Asia/Tokyo"))),
+        poll_seconds=int(d.get("poll_seconds", 30)),
         runs_dir=runs_dir, work_dir=Path(d.get("work_dir", "/home/hermes/cc-work")),
         pause_file=Path(d.get("pause_file", runs_dir / "PAUSE")),
         rate_limit_pause_minutes=int(d.get("rate_limit_pause_minutes", 60)),

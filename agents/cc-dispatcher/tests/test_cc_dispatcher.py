@@ -434,6 +434,24 @@ def test_recover_blocks_orphans(tmp_path):
     assert d.recover() == ["t_9"] and "restarted" in board.blocks[0][1]
 
 
+def test_the_cap_day_rolls_at_midnight_in_the_configured_zone(tmp_path):
+    board = FakeBoard(ready=[{"id": "t_1"}])
+    d, procs, clock = make(tmp_path, board)
+    clock["t"] = 1792000000.0                               # 2026-10-14 17:46 UTC = 2026-10-15 02:46 Tokyo
+    d.tick()
+    assert d.settings.day_timezone == "Asia/Tokyo" and d.state.day == "2026-10-15" and d.state.spawned_today == 1
+    board.ready = [{"id": "t_2"}]
+    clock["t"] = 1792000000.0 + 19 * 3600                   # 2026-10-15 12:46 UTC: still the 15th in Tokyo (21:46)
+    procs[0][2].code = 0                                    # the first worker finished; the tick reaps it, then spawns
+    d.tick()
+    assert d.state.day == "2026-10-15" and d.state.spawned_today == 2
+    board.ready = [{"id": "t_3"}]
+    clock["t"] = 1792000000.0 + 23 * 3600                   # 2026-10-15 16:46 UTC = 01:46 Tokyo on the 16th: fresh cap
+    procs[1][2].code = 0
+    d.tick()
+    assert d.state.day == "2026-10-16" and d.state.spawned_today == 1
+
+
 def test_state_survives_restart(tmp_path):
     board = FakeBoard(ready=[{"id": "t_1"}])
     d, _, _ = make(tmp_path, board)

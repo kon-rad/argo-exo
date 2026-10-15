@@ -83,5 +83,8 @@ class Board:
             args += ["--initial-status", initial_status]
         return self._json(*args, "--", title)
 
+    def assign(self, task_id: str, assignee: str) -> None:
+        self._call("assign", task_id, assignee)      # "none" unassigns
+
     def attach(self, task_id: str, path: str, author: str) -> None:
         self._call("attach", "--author", author, "--content-type", "application/x-ndjson", task_id, path)

@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
+from zoneinfo import ZoneInfo
 
 from . import verify, worker
 from .board import Board, BoardError
@@ -122,8 +123,8 @@ class Dispatcher:
             # card sat `ready` for hours behind a silent cap).
             if self._capped_day != self.state.day:
                 self._capped_day = self.state.day
-                log.warning("daily cap reached (%d spawns on %s); nothing starts until the day rolls over at 00:00 local",
-                            s.daily_cap, self.state.day)
+                log.warning("daily cap reached (%d spawns on %s); nothing starts until the day rolls over at 00:00 %s",
+                            s.daily_cap, self.state.day, s.day_timezone)
             return False
         return in_progress < s.max_in_progress
 
@@ -260,7 +261,9 @@ class Dispatcher:
                 self._signal(r, signal.SIGTERM)
 
     def _roll_day(self, now: float) -> None:
-        day = time.strftime("%Y-%m-%d", time.localtime(now))
+        # The cap's day is the org's day (Asia/Tokyo), not the droplet's UTC clock: on 2026-10-15 the 05:30 Tokyo
+        # stand-ups and the morning's DMs used the whole cap by 13:45 Tokyo and nothing ran until 09:00 the next morning.
+        day = datetime.fromtimestamp(now, ZoneInfo(self.settings.day_timezone)).strftime("%Y-%m-%d")
         if day != self.state.day:
             self.state.day, self.state.spawned_today = day, 0
             self.state.save(self.state_path)

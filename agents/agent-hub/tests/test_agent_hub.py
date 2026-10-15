@@ -198,6 +198,9 @@ class FakeBoard:
     def comment(self, task_id, text, author):
         self.comments.append((task_id, text, author))
 
+    def assign(self, task_id, assignee):
+        self.assigned = (task_id, assignee)
+
 
 class Runner:
     def __init__(self, out="", code=0, err=""):
@@ -343,3 +346,22 @@ def test_create_task_for_a_bot_goes_through_cli_org(tmp_path, fake_claude):
     assert code == 400 and "no feature" in out["error"]
     # Lanes keep the direct path.
     assert h.handle("POST", "/tasks", {}, {"title": "lane work", "assignee": "cc-writer"}, AUTH)[0] == 200 and board.created
+
+
+def test_assign_task_moves_a_card_to_a_lane_or_through_cli_org_to_a_bot(tmp_path, fake_claude):
+    h, board, runner = org_hub(tmp_path, fake_claude)
+    # A lane or "none": the kanban's own assign, then the card as it is now.
+    code, out = h.handle("POST", "/tasks/t_abc123/assign", {}, {"board": "exo", "assignee": "cc-writer"}, AUTH)
+    assert code == 200 and out == {"id": "t_abc123"} and board.assigned == ("t_abc123", "cc-writer")
+    assert h.handle("POST", "/tasks/t_abc123/assign", {}, {"assignee": "none"}, AUTH)[0] == 200 and board.assigned[1] == "none"
+    assert h.handle("POST", "/tasks/t_abc123/assign", {}, {"assignee": "nobody"}, AUTH)[0] == 400
+    assert h.handle("POST", "/tasks/t_abc123/assign", {}, {"assignee": "trader"}, AUTH)[0] == 400
+    # A bot: cli-org task assign as konrad with the project, never the kanban's assign directly.
+    board.assigned = None
+    code, out = h.handle("POST", "/tasks/t_abc123/assign", {}, {"assignee": "rune", "project": "secondbrain-app", "feature": "org-page"}, AUTH)
+    assert code == 200 and out["link"]["assignee"] == "rune" and board.assigned is None
+    cmd = [c for c in runner.calls if c[0] == "/x/cli-org"][-1]
+    assert cmd[:4] == ["/x/cli-org", "task", "assign", "t_abc123"] and cmd[4] == "rune"
+    assert cmd[cmd.index("--project") + 1] == "secondbrain-app" and cmd[cmd.index("--board") + 1] == "exo"
+    assert h.handle("POST", "/tasks/t_abc123/assign", {}, {"assignee": "rune"}, AUTH)[0] == 400       # no project
+    assert h.handle("POST", "/tasks/not-an-id/assign", {}, {"assignee": "rune", "project": "x"}, AUTH)[0] == 400

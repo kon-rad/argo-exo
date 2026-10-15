@@ -8,7 +8,8 @@
 [dispatcher]
 boards = ["exo"]
 max_in_progress = 2          # concurrent claude workers; about 3 GB free on the droplet, shared with production
-daily_cap = 20               # spawns per local day; the Max plan's limits are shared with the Mac sessions
+daily_cap = 60               # spawns per day (lanes + the org's 22 bots); the Max plan's limits are shared with the Mac sessions
+timezone = "Asia/Tokyo"      # the cap's day rolls at 00:00 here, the same clock as the org's routines (was the droplet's UTC)
 poll_seconds = 30
 runs_dir = "/home/hermes/cc-runs"        # <task>.jsonl stream logs + state.json
 work_dir = "/home/hermes/cc-work"        # git worktrees for lanes with worktree = true

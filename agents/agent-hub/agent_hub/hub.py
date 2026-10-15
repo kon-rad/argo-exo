@@ -92,6 +92,8 @@ class Hub:
                 return self.board(q.get("board", self.lanes.boards[0])).show(task_id)
             if m == ("GET", "tasks", task_id, "log"):
                 return read_from(self.lanes.runs_dir / f"{task_id}.jsonl", int(q.get("offset", 0) or 0))
+            if m == ("POST", "tasks", task_id, "assign"):
+                return self.assign_task(task_id, b)
             if m == ("POST", "tasks", task_id, "comment"):
                 text = str(b.get("text", "")).strip()
                 if not text or len(text) > 4000:
@@ -185,9 +187,33 @@ class Hub:
             raise HttpError(400, "money agents take work from the wearer's approve key path, not from the app")
         return self.board(board).create(title, body, assignee, "secondbrain-app")
 
+    def assign_task(self, task_id: str, b: dict) -> dict:
+        """An existing card moves to a lane, a Hermes profile, nobody ("none"), or a bot. A bot's card goes
+        through `cli-org task assign` as konrad, so the link row, the feature owner and the mention are written."""
+        board = b.get("board", self.lanes.boards[0])
+        assignee = str(b.get("assignee", "")).strip()
+        if assignee in self.bots():
+            return self.run_cli_org(board, ["task", "assign", task_id, assignee], b)
+        known = set(self.lanes.lanes) | set(self.profiles()) | {"none"}
+        if assignee not in known:
+            raise HttpError(400, f"unknown agent {assignee!r}")
+        if assignee in ("trader", "portfolio", "wallet"):
+            raise HttpError(400, "money agents take work from the wearer's approve key path, not from the app")
+        kb = self.board(board)
+        kb.assign(task_id, assignee)
+        task = kb.show(task_id)
+        return task.get("task") or task
+
     def create_bot_task(self, board: str, title: str, body: str, bot: str, b: dict) -> dict:
         """A card for a bot goes through `cli-org task create` as konrad: it tags the card with the tracker
         project and feature (task_links), sets the feature's owner and mentions the bot on the board."""
+        args = ["task", "create", bot, title]
+        if body:
+            args += ["--body", body]
+        return self.run_cli_org(board, args, b)
+
+    def run_cli_org(self, board: str, verb: list[str], b: dict) -> dict:
+        """`cli-org <verb> --project p [--feature f] --board b --json` as konrad; the card it names comes back with its link."""
         org = self.lanes.org
         assert org is not None
         project = str(b.get("project", "")).strip()
@@ -198,18 +224,16 @@ class Hub:
             raise HttpError(400, "bad feature slug")
         if not BOARD.match(board or ""):
             raise HttpError(400, "bad board name")
-        args = [org.cli_org, "task", "create", bot, title, "--project", project, "--board", board, "--json"]
+        args = [org.cli_org, *verb, "--project", project, "--board", board, "--json"]
         if feature:
             args += ["--feature", feature]
-        if body:
-            args += ["--body", body]
         env = {**os.environ, "ORG_AGENT": "konrad", "ORG_RUN": "app", "ORG_KANBAN_CMD": self.hermes_bin}
         try:
             p = self.run(args, capture_output=True, text=True, timeout=60, env=env)
         except (OSError, subprocess.TimeoutExpired) as exc:
             raise HttpError(502, f"cli-org: {exc}") from exc
         if p.returncode != 0:
-            raise HttpError(400, (p.stderr or p.stdout).strip()[-400:] or "cli-org task create failed")
+            raise HttpError(400, (p.stderr or p.stdout).strip()[-400:] or f"cli-org {verb[0]} {verb[1]} failed")
         try:
             created = json.loads(p.stdout.strip().splitlines()[-1])
         except (IndexError, json.JSONDecodeError) as exc:
