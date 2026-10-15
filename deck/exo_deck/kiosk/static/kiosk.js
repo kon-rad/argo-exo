@@ -70,7 +70,7 @@ export const RENDER = {
   body: (j) => {
     if (!j.last) return `<h1>Body</h1><p class="bad">${esc(j.sync_error || 'No ring data')}</p>`;
     const l = j.last, v = (x, u = '') => x == null ? '–' : `${esc(Math.round(x * 10) / 10)}${u}`;
-    const stages = j.stages || [], hr = j.sleep_hr || [], trend = j.trend || [], srv = j.server;   // demo data has only last + trend
+    const stages = j.stages || [], hr = j.sleep_hr || [], trend = j.trend || [], m = j.mirror;   // demo data has only last + trend
     const h = (m) => m == null ? '–' : `${(m / 60) | 0}:${String(m % 60).padStart(2, '0')}`;
     const clock = (ts) => new Date(ts * 1000).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
     const night = l.bedtime_start ? `${esc(l.day)} · ${clock(l.bedtime_start)} → ${clock(l.bedtime_end)}` : `${esc(l.day)}${l.sleep_score == null ? ' · no sleep' : ''}`;
@@ -83,8 +83,8 @@ export const RENDER = {
         <li><span>Efficiency · SpO₂</span><span>${v(l.sleep_efficiency_pct, '%')} · ${v(l.spo2_pct, '%')}</span></li></ul>
         <p class="muted tight">Sleep score, last ${trend.length} days</p>${scoreBars(trend, l.day)}
       </div><div>${hypnogram(stages, l.bedtime_start, l.bedtime_end)}${hr.length > 1 ? '<p class="muted tight">Heart rate in bed, bpm</p>' : ''}${sleepHr(hr, l.bedtime_start, l.bedtime_end)}</div></div>
-      <p class="muted tight clamp">${j.nights_total ? `night ${j.night_index + 1} of ${j.nights_total} · say "more" for the one before · ` : ''}synced ${j.synced_at ? ago(j.synced_at) + ' ago' : 'never'}${srv
-        ? ` · <span class="${srv.uploaded === srv.total ? 'ok' : 'warn'}">${srv.uploaded}/${srv.total} days on server</span>` : ''}${j.sync_error ? ' · <span class="bad">' + esc(j.sync_error) + '</span>' : ''}</p>`;
+      <p class="muted tight clamp">${j.nights_total ? `night ${j.night_index + 1} of ${j.nights_total} · say "more" for the one before · ` : ''}pulled ${j.synced_at ? ago(j.synced_at) + ' ago' : 'never'}${m
+        ? ` · <span class="${j.sync_error ? 'warn' : 'ok'}">mirror of ${m.days} days${m.ok_at ? ', as of ' + ago(m.ok_at) + ' ago' : ''}</span>` : ''}${j.sync_error ? ' · <span class="bad">' + esc(j.sync_error) + '</span>' : ''}</p>`;
   },
   sensors: (j, s) => {
     const d = j.deck, c = j.clip, x = (n, u = '') => n == null ? '–' : `${esc(n)}${u}`;

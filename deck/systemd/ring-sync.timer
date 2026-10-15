@@ -1,9 +1,9 @@
 [Unit]
-Description=Hourly Ultrahuman ring sync
+Description=Hourly ring mirror pull (Pi, after the droplet's :07 sync)
 
 [Timer]
 OnBootSec=3min
-OnCalendar=*-*-* *:07:00
+OnCalendar=*-*-* *:17:00
 RandomizedDelaySec=2min
 Persistent=true
 

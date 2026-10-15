@@ -40,7 +40,7 @@ def test_more_steps_back_through_scored_nights(tmp_path):
     assert ring_view.panel(db, 9)["last"]["day"] == "2026-10-09"        # wraps
 
 
-def test_stages_hr_and_server_count(tmp_path):
+def test_stages_hr_and_mirror_state(tmp_path):
     db = make_db(tmp_path)
     con = sqlite3.connect(db)
     con.execute("UPDATE ring_daily SET bedtime_start = 1000, bedtime_end = 5000 WHERE day = '2026-10-09'")
@@ -48,14 +48,16 @@ def test_stages_hr_and_server_count(tmp_path):
                     [(1000, 2000, "light_sleep"), (2000, 5000, "deep_sleep")])
     con.executemany("INSERT INTO ring_samples VALUES ('sleep_hr', ?, '2026-10-09', ?)",
                     [(900, 70), (1500, 60), (4000, 55), (6000, 80)])                 # 900 and 6000 fall outside bed
-    con.executemany("INSERT INTO ring_raw(day, payload, payload_sha256, fetched_at, changed_at, uploaded_at)"
-                    " VALUES (?, '[]', 'x', 10, 10, ?)", [("2026-10-08", 20), ("2026-10-09", None)])
+    con.executemany("INSERT INTO ring_raw(day, payload, payload_sha256, fetched_at, changed_at)"
+                    " VALUES (?, '[]', 'x', 10, 10)", [("2026-10-08",), ("2026-10-09",)])
+    con.execute("INSERT INTO ring_sync_log(ran_at, days, changed, error) VALUES (1800003600, 0, 0, 'pull URLError: offline')")
     con.commit()
     con.close()
     p = ring_view.panel(db)
     assert [s["stage"] for s in p["stages"]] == ["light_sleep", "deep_sleep"]
     assert p["sleep_hr"] == [[1500, 60.0], [4000, 55.0]]
-    assert p["server"] == {"uploaded": 1, "total": 2}
+    assert p["mirror"] == {"days": 2, "ok_at": 1800000000}          # last good pull, not the failed one
+    assert p["synced_at"] == 1800003600 and p["sync_error"] == "pull URLError: offline"
 
 
 def test_missing_db(tmp_path):

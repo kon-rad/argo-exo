@@ -3,7 +3,8 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-# ring.db is written by ring/ring_sync.py (installed as /srv/deck/ring_sync.py, hourly timer).
+# ring.db is a read-only mirror of the droplet's ring_* tables, pulled hourly by ring/ring_sync.py --pull
+# (installed as /srv/deck/ring_sync.py). The droplet is the master; see ring-sync-design.md §0.
 # The body panel shows one scored night at a time; "more" (page) steps back through the nights.
 
 NIGHT_COLS = ("day", "sleep_score", "total_sleep_min", "time_in_bed_min", "deep_min", "rem_min", "light_min",
@@ -14,7 +15,7 @@ TREND_DAYS = 14
 
 def _empty(err: str) -> dict:
     return {"last": None, "trend": [], "stages": [], "sleep_hr": [], "night_index": 0, "nights_total": 0,
-            "server": {"uploaded": 0, "total": 0}, "synced_at": None, "sync_error": err}
+            "mirror": {"days": 0, "ok_at": None}, "synced_at": None, "sync_error": err}
 
 
 def panel(db_path, page: int = 0) -> dict:
@@ -43,15 +44,14 @@ def panel(db_path, page: int = 0) -> dict:
             trend = con.execute(
                 "SELECT day, sleep_score, hrv_avg, recovery_index FROM ring_daily ORDER BY day DESC LIMIT ?",
                 (TREND_DAYS,)).fetchall()
-            up, total = con.execute(
-                "SELECT coalesce(sum(uploaded_at IS NOT NULL AND uploaded_at >= changed_at), 0), count(*) FROM ring_raw"
-            ).fetchone()
+            total = con.execute("SELECT count(*) FROM ring_raw").fetchone()[0]
             log = con.execute("SELECT ran_at, error FROM ring_sync_log ORDER BY id DESC LIMIT 1").fetchone()
+            ok = con.execute("SELECT max(ran_at) FROM ring_sync_log WHERE error IS NULL").fetchone()[0]
         finally:
             con.close()
     except sqlite3.Error:
         return _empty("ring.db unreadable")
     return {"last": dict(last) if last else None, "trend": [dict(r) for r in reversed(trend)],
             "stages": stages, "sleep_hr": hr, "night_index": idx, "nights_total": len(nights),
-            "server": {"uploaded": up, "total": total},
+            "mirror": {"days": total, "ok_at": ok},
             "synced_at": log["ran_at"] if log else None, "sync_error": log["error"] if log else None}
