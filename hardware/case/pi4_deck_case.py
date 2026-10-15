@@ -44,8 +44,8 @@ IX0, IX1, IY0, IY1 = -CL, BW + CL, -CL, BD + CL                    # inner box
 OX0, OX1, OY0, OY1 = IX0 - WALL, IX1 + WALL, IY0 - WALL, IY1 + WALL # outer box
 
 # --- parts ---
-FAN = 30.0         # MEASURE: the fan in the clear Raspberry Pi bracket
-FAN_HOLE = 24.0    # MEASURE: screw spacing
+FAN = 25.0         # official Pi 4 Case Fan, measured by Konrad 2026-10-15
+FAN_HOLE = 20.0    # centre to centre, measured (holes in 3 corners; the lid has all 4 so it fits any way round)
 SELF_TAP_M3 = 2.5  # pilot for an M3 screw straight into plastic
 SELF_TAP_M25 = 2.2
 GRID = 10.0        # hack grid pitch on the lid and the base
@@ -94,7 +94,7 @@ def shell():
                 s -= cyl(x, y, CEIL - 1, TOP + 1, 2.4)
     for dx in (-FAN_HOLE / 2, FAN_HOLE / 2):
         for dy in (-FAN_HOLE / 2, FAN_HOLE / 2):
-            s -= cyl(SOC_X + dx, SOC_Y + dy, CEIL - 1, TOP + 1, 3.3)
+            s -= cyl(SOC_X + dx, SOC_Y + dy, CEIL - 1, TOP + 1, 2.7)         # M2 or M2.5 fan screws
     # lid: GPIO hatch opening (a 40-pin IDC plug passes) + its two screw holes
     s -= box(GPIO_X - GPIO_LEN / 2 - 3, GPIO_X + GPIO_LEN / 2 + 3, GPIO_Y - 5, IY1 - 0.2, CEIL - 1, TOP + 1)
     for x in hatch_screws():
