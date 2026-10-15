@@ -113,7 +113,7 @@ def shell():
     return s
 
 
-CAMERA_HOLES = [(62.0, 8.0), (82.0, 8.0)]      # 20 mm apart, matches camera_bracket()
+CAMERA_HOLES = [(62.0, 3.0), (82.0, 3.0)]      # 20 mm apart, matches camera_bracket(); bracket then spans y -2..24
 LID_HOLES = [(6.0, 20.0), (6.0, 30.0), (6.0, 40.0)]
 
 
@@ -141,10 +141,11 @@ def emblem_cut(x, y, height):
 
 
 def branding():
-    """Emblem top right with "EXO ARGO V0.1" under it, the URL along the HDMI edge (the camera bracket covers the
+    """Emblem top right with "EXO ARGO" and "V0.1" on two lines under it, the URL along the HDMI edge (the camera bracket covers the
     bottom right)."""
-    c = emblem_cut(72.0, 39.3, 13.0)
-    c += text_cut(f"{LABEL} {VERSION}", 72.0, 29.0, 30.0, 4.0, ENGRAVE, align=Align.CENTER)
+    c = emblem_cut(72.0, 40.0, 12.0)
+    c += text_cut(LABEL, 72.0, 31.0, 30.0, 4.6, ENGRAVE, align=Align.CENTER)
+    c += text_cut(VERSION, 72.0, 26.6, 30.0, 3.6, ENGRAVE, align=Align.CENTER)
     c += text_cut(URL, 0.0, 3.0, 54.0, 4.2, ENGRAVE)
     return c
 
