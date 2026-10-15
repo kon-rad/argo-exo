@@ -50,9 +50,11 @@ SELF_TAP_M3 = 2.5  # pilot for an M3 screw straight into plastic
 SELF_TAP_M25 = 2.2
 GRID = 10.0        # hack grid pitch on the lid and the base
 STRAP = 25.0       # MEASURE: webbing width of the shoulder strap (25 mm is the common sling size)
+EAR = 15.0         # strap ear length beyond each end of the case
 
 # --- branding, engraved into the lid ---
 LABEL = "EXO ARGO"
+VERSION = "V0.1"
 URL = "exo.myargoquest.com"
 ENGRAVE = 0.6      # text depth; the emblem's light facets go this deep, the dark ones twice as deep
 
@@ -66,8 +68,8 @@ def cyl(x, y, z0, z1, d):
 
 
 def shell():
-    """Walls + lid in one print (print it upside down, lid on the bed: no supports)."""
-    s = box(OX0, OX1, OY0, OY1, 0, TOP) - box(IX0, IX1, IY0, IY1, -1, CEIL)
+    """Walls + lid in one print (print it upside down, lid on the bed: no supports). Sits on the base's rim."""
+    s = box(OX0, OX1, OY0, OY1, FLOOR, TOP) - box(IX0, IX1, IY0, IY1, -1, CEIL)
 
     # HDMI edge: open-bottom notches so the shell lowers over the connectors
     w0, w1 = OY0 - 1, IY0 + 1
@@ -115,10 +117,11 @@ CAMERA_HOLES = [(62.0, 8.0), (82.0, 8.0)]      # 20 mm apart, matches camera_bra
 LID_HOLES = [(6.0, 20.0), (6.0, 30.0), (6.0, 40.0)]
 
 
-def text_cut(txt, x, y, max_w, size, depth):
-    """Engrave txt (left edge at x, centred on y) into the lid top, shrinking the font until it fits max_w."""
+def text_cut(txt, x, y, max_w, size, depth, align=Align.MIN):
+    """Engrave txt (left edge, or centre with Align.CENTER, at x; centred on y) into the lid top, shrinking the
+    font until it fits max_w."""
     while True:
-        t = Text(txt, font_size=size, font_path=FONT, align=(Align.MIN, Align.CENTER))
+        t = Text(txt, font_size=size, font_path=FONT, align=(align, Align.CENTER))
         if t.bounding_box().size.X <= max_w or size < 2.5:
             break
         size *= 0.95
@@ -138,11 +141,10 @@ def emblem_cut(x, y, height):
 
 
 def branding():
-    """Emblem + EXO / ARGO top right, the URL along the HDMI edge (the camera bracket covers the bottom right)."""
-    c = emblem_cut(64.0, 37.0, 15.0)
-    first, second = LABEL.split(" ", 1)
-    c += text_cut(first, 72.5, 40.5, 14.5, 6.0, ENGRAVE)
-    c += text_cut(second, 72.5, 33.0, 14.5, 6.0, ENGRAVE)
+    """Emblem top right with "EXO ARGO V0.1" under it, the URL along the HDMI edge (the camera bracket covers the
+    bottom right)."""
+    c = emblem_cut(72.0, 39.3, 13.0)
+    c += text_cut(f"{LABEL} {VERSION}", 72.0, 29.0, 30.0, 4.0, ENGRAVE, align=Align.CENTER)
     c += text_cut(URL, 0.0, 3.0, 54.0, 4.2, ENGRAVE)
     return c
 
@@ -152,8 +154,19 @@ def hatch_screws():
 
 
 def base():
-    """Floor plate with standoffs; screws go up from below through the Pi into the shell posts."""
-    b = box(IX0 + FIT, IX1 - FIT, IY0 + FIT, IY1 - FIT, 0, FLOOR)
+    """Floor plate the shell sits on, with a rim that locates the shell, standoffs, and a strap ear at each end:
+    the shoulder strap feeds down through one ear, runs under the case and up through the other. Screws go up from
+    below through the Pi into the shell posts."""
+    b = box(OX0, OX1, OY0, OY1, 0, FLOOR)
+    rim = box(IX0 + FIT, IX1 - FIT, IY0 + FIT, IY1 - FIT, FLOOR, FLOOR + 1.5)
+    rim -= box(IX0 + FIT + 1.0, IX1 - FIT - 1.0, IY0 + FIT + 1.0, IY1 - FIT - 1.0, FLOOR - 1, FLOOR + 3)  # 1.0: not tangent to the standoffs
+    rim -= box(IX0 - 1, IX0 + 3, SD_Y - 6, SD_Y + 6, FLOOR - 1, FLOOR + 3)   # SD card path
+    b += rim
+    w = STRAP + 10.0
+    for x0, x1 in ((OX0 - EAR, OX0 + 0.5), (OX1 - 0.5, OX1 + EAR)):
+        b += box(x0, x1, BD / 2 - w / 2, BD / 2 + w / 2, 0, FLOOR)
+    for xs in (OX0 - EAR + 4.0, OX1 + EAR - 4.0 - 4.5):                  # slots, 4.5 mm for thick webbing
+        b -= box(xs, xs + 4.5, BD / 2 - (STRAP + 1.5) / 2, BD / 2 + (STRAP + 1.5) / 2, -1, FLOOR + 1)
     for x, y in HOLES:
         b += cyl(x, y, FLOOR, PCB_Z0, 6.0)
         b -= cyl(x, y, -1, PCB_Z0 + 1, 2.8)
@@ -176,24 +189,6 @@ def hatch(kind):
     elif kind == "open":
         h -= box(GPIO_X - GPIO_LEN / 2 - 3, GPIO_X + GPIO_LEN / 2 + 3, GPIO_Y - 5, IY1 - 0.2, -1, 3)
     return h
-
-
-def strap_plate():
-    """Screws under the base (four M3 into the underside grid); the shoulder strap threads down through one end
-    slot, runs under the plate and comes up through the other, so the case rides on the strap."""
-    ear = 13.0
-    x0, x1 = OX0 - ear, OX1 + ear
-    w = STRAP + 9.0
-    p = box(x0, x1, BD / 2 - w / 2, BD / 2 + w / 2, 0, 3.0)
-    for xs in (x0 + 3.0, x1 - 3.0 - 4.5):                                # strap slots, 4.5 mm for thick webbing
-        p -= box(xs, xs + 4.5, BD / 2 - (STRAP + 1.5) / 2, BD / 2 + (STRAP + 1.5) / 2, -1, 4)
-    for x, y in STRAP_SCREWS:
-        p -= cyl(x, y, -1, 4, 3.4)
-        p -= cyl(x, y, -1, 1.8, 6.2)                                    # head recess on the strap side
-    return p
-
-
-STRAP_SCREWS = [(10.0, 30.0), (30.0, 30.0), (50.0, 30.0), (70.0, 30.0)]   # the base's middle grid row
 
 
 def camera_bracket():
@@ -226,7 +221,6 @@ def parts():
         "hatch-ribbon": hatch("ribbon"),
         "hatch-open": hatch("open"),
         "camera-bracket": camera_bracket(),
-        "strap-plate": strap_plate(),
         "coupon": coupon(),
     }
 
