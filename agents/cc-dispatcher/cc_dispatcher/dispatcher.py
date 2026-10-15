@@ -14,6 +14,7 @@ from typing import Callable
 from . import verify, worker
 from .board import Board, BoardError
 from .config import Lane, Settings
+from .org import OrgBoard, OrgRunner
 
 log = logging.getLogger("cc-dispatcher")
 KILL_GRACE_SECONDS = 30
@@ -64,9 +65,13 @@ class Dispatcher:
     run_verifier: Callable = verify.run
     running: dict[str, Running] = field(default_factory=dict)
 
+    org: OrgRunner | None = None
+
     def __post_init__(self):
         self.state_path = self.settings.runs_dir / "state.json"
         self.state = State.load(self.state_path)
+        if self.org is None and self.settings.org is not None:
+            self.org = OrgRunner(self.settings, self.boards, OrgBoard(self.settings.org.cli_org), clock=self.clock)
 
     # -- startup -------------------------------------------------------------------------------------------------
     def recover(self) -> list[str]:
@@ -98,12 +103,18 @@ class Dispatcher:
                     if not self._may_spawn(now):
                         return
                     self._start(board_name, board, lane, task["id"], now)
+        if self.org is not None:
+            started = self.org.tick(now, lambda: self._may_spawn(now))
+            if started:
+                self.state.spawned_today += started
+                self.state.save(self.state_path)
 
     def _may_spawn(self, now: float) -> bool:
         s = self.settings
         if s.pause_file.exists() or now < self.state.paused_until:
             return False
-        return len(self.running) < s.max_in_progress and self.state.spawned_today < s.daily_cap
+        in_progress = len(self.running) + (len(self.org.running) if self.org is not None else 0)
+        return in_progress < s.max_in_progress and self.state.spawned_today < s.daily_cap
 
     def _start(self, board_name: str, board: Board, lane: Lane, task_id: str, now: float) -> None:
         ttl = lane.max_runtime_minutes * 60 + 900   # outlives our own runtime limit, so only we end the run
@@ -133,6 +144,8 @@ class Dispatcher:
         log.info("started %s on %s (pid %s)", task_id, lane.name, getattr(proc, "pid", "?"))
 
     def _reap(self, now: float) -> None:
+        if self.org is not None:
+            self.org.reap(now)
         for task_id, r in list(self.running.items()):
             code = r.proc.poll()
             if code is None:
@@ -225,6 +238,8 @@ class Dispatcher:
         self._safe(board.comment, task_id, said, AUTHOR)
 
     def _enforce_runtime(self, now: float) -> None:
+        if self.org is not None:
+            self.org.enforce_runtime(now, KILL_GRACE_SECONDS)
         for r in self.running.values():
             limit = r.started + r.lane.max_runtime_minutes * 60
             if r.interrupted_at is None and now > limit:
@@ -258,12 +273,13 @@ class Dispatcher:
     def stop_all(self, wait_seconds: float = 20, sleep: Callable[[float], None] = time.sleep) -> None:
         """SIGINT every worker so it ends its turn, wait a little, then SIGTERM what's left. Their tasks stay
         `running`; the next start's recover() blocks them with a reason."""
-        for r in self.running.values():
+        everyone = list(self.running.values()) + (list(self.org.running.values()) if self.org is not None else [])
+        for r in everyone:
             self._signal(r, signal.SIGINT)
         waited = 0.0
-        while waited < wait_seconds and any(r.proc.poll() is None for r in self.running.values()):
+        while waited < wait_seconds and any(r.proc.poll() is None for r in everyone):
             sleep(0.5)
             waited += 0.5
-        for r in self.running.values():
+        for r in everyone:
             if r.proc.poll() is None:
                 self._signal(r, signal.SIGTERM)

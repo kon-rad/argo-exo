@@ -1,6 +1,7 @@
 """lanes.toml -> Settings + Lane objects. Stdlib only (tomllib), so it runs on the droplet's system python."""
 from __future__ import annotations
 
+import logging
 import re
 import tomllib
 from dataclasses import dataclass, field
@@ -41,7 +42,22 @@ class Lane:
 
 
 @dataclass(frozen=True)
+class OrgSettings:
+    """[org] in lanes.toml: the agent company (design §6 in the vault). Off unless `enabled = true`."""
+    vault: Path                    # the vault checkout the agents work in (their cwd, the prompt files)
+    agents_file: Path              # .agents/org/org-agents.json, written by .agents/org/compile.py agents
+    skill_file: Path               # .agents/skills/org-member/SKILL.md, appended to every agent's system prompt
+    cli_org: str                   # the cli-org wrapper on hermes's PATH
+    timezone: str = "Asia/Tokyo"   # routines (05:30 stand-up) are in this zone, like the Hermes cron
+    session_reset_days: int = 14
+    max_turns: int = 60
+    allowed_tools: tuple[str, ...] = ()
+    denied_tools: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class Settings:
+    lanes_path: Path
     boards: tuple[str, ...]
     max_in_progress: int
     daily_cap: int
@@ -55,6 +71,7 @@ class Settings:
     lanes: dict[str, Lane] = field(default_factory=dict)
     verifiers: dict[str, Verifier] = field(default_factory=dict)
     max_attempts: int = 3
+    org: OrgSettings | None = None
 
 
 def load(path: str | Path) -> Settings:
@@ -122,12 +139,33 @@ def load(path: str | Path) -> Settings:
     max_attempts = int(d.get("max_attempts", 3))
     if max_attempts < 1:
         raise ValueError(f"max_attempts must be >= 1, got {max_attempts}")
+    o = raw.get("org", {})
+    org = None
+    if o.get("enabled"):
+        vault = Path(o.get("vault", defaults.get("cwd", "/home/hermes/secondBrain")))
+        org = OrgSettings(
+            vault=vault,
+            agents_file=Path(o.get("agents_file", vault / ".agents/org/org-agents.json")),
+            skill_file=Path(o.get("skill_file", vault / ".agents/skills/org-member/SKILL.md")),
+            cli_org=o.get("cli_org", "/home/hermes/.local/bin/cli-org"),
+            timezone=o.get("timezone", "Asia/Tokyo"),
+            session_reset_days=int(o.get("session_reset_days", 14)),
+            max_turns=int(o.get("max_turns", 60)),
+            allowed_tools=tuple(defaults.get("allowed_tools", [])) + tuple(o.get("allowed_tools", [])),
+            denied_tools=tuple(defaults.get("denied_tools", [])) + tuple(o.get("denied_tools", [])),
+        )
+        missing = [str(f) for f in (org.agents_file, org.skill_file) if not f.exists()]
+        if missing:
+            # Not fatal: the lanes keep working and the log says why no agent wakes (e.g. the vault not pulled yet).
+            logging.getLogger("cc-dispatcher").warning("[org] disabled: missing %s", ", ".join(missing))
+            org = None
     return Settings(
+        lanes_path=path,
         boards=tuple(d.get("boards", ["exo"])), max_in_progress=int(d.get("max_in_progress", 2)),
         daily_cap=int(d.get("daily_cap", 20)), poll_seconds=int(d.get("poll_seconds", 30)),
         runs_dir=runs_dir, work_dir=Path(d.get("work_dir", "/home/hermes/cc-work")),
         pause_file=Path(d.get("pause_file", runs_dir / "PAUSE")),
         rate_limit_pause_minutes=int(d.get("rate_limit_pause_minutes", 60)),
         claude_bin=d.get("claude_bin", "claude"), hermes_bin=d.get("hermes_bin", "hermes"),
-        lanes=lanes, verifiers=verifiers, max_attempts=max_attempts,
+        lanes=lanes, verifiers=verifiers, max_attempts=max_attempts, org=org,
     )

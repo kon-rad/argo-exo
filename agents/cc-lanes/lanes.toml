@@ -74,3 +74,18 @@ cwd = "worker"
 lanes = ["cc-coder"]
 timeout_seconds = 300
 metric_regex = "(\\d+) passed"
+# The agent company (Areas/argo/second-brain/agent-company/agent-company-design.md §6 in the vault): named agents
+# from .agents/org.yaml, woken by the message board (org_wakeups) and by kanban tasks assigned to their names.
+# Tools and denies add to [defaults]; an agent's own tools come from org-agents.json; a `lane` adds that lane's.
+[org]
+enabled = true
+vault = "/home/hermes/secondBrain"
+agents_file = "/home/hermes/secondBrain/.agents/org/org-agents.json"
+skill_file = "/home/hermes/secondBrain/.agents/skills/org-member/SKILL.md"
+cli_org = "/home/hermes/.local/bin/cli-org"
+timezone = "Asia/Tokyo"
+session_reset_days = 14
+max_turns = 60
+allowed_tools = ["Bash(cli-org *)", "Bash(cli-projects list*)", "Bash(cli-projects report*)", "Bash(python3 -m pytest *)", "Bash(npx vitest *)"]
+denied_tools = ["Read(CURRENT/**)", "Read(//home/hermes/secondBrain/CURRENT/**)", "Edit(CURRENT/**)", "Write(CURRENT/**)"]
+

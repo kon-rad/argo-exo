@@ -35,6 +35,8 @@ def main(argv: list[str] | None = None) -> int:
         logging.warning("blocked %d task(s) orphaned by a previous run: %s", len(blocked), ", ".join(blocked))
     logging.info("lanes %s on boards %s, max %d in progress", ", ".join(settings.lanes), ", ".join(settings.boards),
                  settings.max_in_progress)
+    if d.org is not None:
+        logging.info("org: %d agents from %s, routines in %s", len(d.org.agents), settings.org.agents_file, settings.org.timezone)
 
     stopping = False
 
