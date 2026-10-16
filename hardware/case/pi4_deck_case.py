@@ -30,7 +30,8 @@ GPIO_X, GPIO_Y, GPIO_LEN = 32.5, 52.5, 51.0                        # 2x20 header
 CSI_X, CSI_Y = 45.0, 11.5                                          # camera connector centre (photo IMG_7474 agrees; MEASURE)
 CSI_SLOT = (4.5, 19.0)        # x, y: the connector lies ACROSS the board (long side square to the HDMI edge), so the
                               # 16 mm ribbon rises straight out of it with its width along y; 19 mm leaves 1.5 each side
-SOC_X, SOC_Y = 29.0, 31.0                                          # fan sits over the SoC (MEASURE)
+SOC_X, SOC_Y = 28.0, 33.0                                          # fan sits over the SoC: heatsink centre in photos
+                                                                   # IMG_7474 + IMG_7482 (ruler), 2026-10-16; calipers later
 SD_Y = 28.0                                                        # microSD slot centre, under the board
 TALLEST = 16.0                                                     # USB-A stack above the PCB
 
@@ -57,6 +58,8 @@ OX0, OX1, OY0, OY1 = IX0 - WALL, IX1 + WALL, IY0 - WALL, IY1 + WALL  # outer: th
 # --- parts ---
 FAN = 25.0         # official Pi 4 Case Fan, measured by Konrad 2026-10-15
 FAN_HOLE = 20.0    # centre to centre, measured (holes in 3 corners; the lid has all 4 so it fits any way round)
+FAN_T = 6.0        # fan frame thickness, measured by Konrad 2026-10-16
+HEATSINK = 8.0     # finned SoC heatsink, about 17 x 17 mm in the photos; height NOT measured (estimate, incl. the chip)
 SELF_TAP_M3 = 2.5  # pilot for an M3 screw straight into plastic
 SELF_TAP_M25 = 2.2
 GRID = 10.0        # hack grid pitch on the lid and the base
@@ -354,6 +357,8 @@ def main():
         print(f"{name:15s} {bb.size.X:6.1f} x {bb.size.Y:5.1f} x {bb.size.Z:5.1f} mm  volume {p.volume / 1000:6.1f} cm3")
     export_step(Compound([ps["shell"], ps["base"]]), str(OUT / "exo-deck-case.step"))
     print(f"inside height {CEIL - PCB_Z1:.1f} mm above the board; outer {OX1 - OX0:.1f} x {OY1 - OY0:.1f} x {TOP:.1f} mm")
+    gap = CEIL - FAN_T - (PCB_Z1 + HEATSINK)
+    print(f"fan under the lid: {FAN_T} mm fan over a {HEATSINK} mm heatsink leaves {gap:.1f} mm" + ("" if gap >= 1 else "  << TOO TIGHT"))
 
 
 if __name__ == "__main__":
