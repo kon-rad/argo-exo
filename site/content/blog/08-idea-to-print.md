@@ -22,10 +22,10 @@ The case is a Python script, not a file you drag around in a CAD program. That m
 
 | Tool | What it did | Licence |
 |---|---|---|
-| build123d | Builds the solids in Python on the OpenCascade kernel | Not checked |
-| uv | Runs the script with its dependencies and no install | Not checked |
-| shapely | Computes the Voronoi network on the lid | Not checked |
-| trimesh, matplotlib, PIL | The lid depth map and the shaded renders | Not checked |
+| build123d | Builds the solids in Python on the OpenCascade kernel | Apache-2.0 |
+| uv | Runs the script with its dependencies and no install | MIT or Apache-2.0 |
+| shapely | Computes the Voronoi network on the lid | BSD-3-Clause |
+| trimesh, matplotlib, Pillow | The lid depth map and the shaded renders | MIT; Matplotlib licence (PSF-style); MIT-CMU |
 | OrcaSlicer 2.4.2 | Slices the 3MF files for the printer | Open source, AGPL-3.0 |
 | Bambu Lab P1P | Prints them: 0.4 mm nozzle, no AMS | Hardware |
 
@@ -127,4 +127,4 @@ Everything prints on the Bambu Lab P1P (0.4 mm nozzle, no AMS), sliced in OrcaSl
 
 The times are the guide's estimates. OrcaSlicer shows the real ones after slicing, and we have none yet. Photos of the finished case will be added to this post after the print.
 
-*The model is `hardware/case/pi4_deck_case.py` in the argo-exo repo. Design notes live in the vault under `Areas/argo/argo-exo/`.*
+*The model is `hardware/case/pi4_deck_case.py` in the argo-exo repo.*
