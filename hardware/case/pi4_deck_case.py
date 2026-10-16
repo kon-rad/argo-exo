@@ -1,6 +1,6 @@
 """Exo deck case for the Raspberry Pi 4: a hackable shell + base, swappable GPIO hatches, a camera bracket.
 
-Run:  uv run --no-project --with build123d --with trimesh --with matplotlib python pi4_deck_case.py
+Run:  uv run --no-project --with build123d --with shapely --with numpy python pi4_deck_case.py
 Out:  out/*.stl, out/*.3mf, out/exo-deck-case.step, out/preview-*.png
 
 Coordinates: board space. Origin at the Pi's SD-card end (x=0) and HDMI edge (y=0); z=0 is the bottom of the case.
@@ -8,11 +8,14 @@ Pi 4 numbers are from the Raspberry Pi 4 mechanical drawing; every value marked 
 calipers on the real board and parts before the full print (print `coupon` first).
 """
 import json
-import math
 from pathlib import Path
 
-from build123d import (Align, Axis, Box, Compound, Cylinder, Face, Kind, Mesher, Polygon, Pos, Rectangle, RectangleRounded,
-                       RegularPolygon, Side, Spline, Text, Wire, chamfer, export_step, export_stl, extrude)
+import numpy as np
+from build123d import (Align, Box, Compound, Cylinder, Face, Mesher, Plane, Polygon, Pos, Rectangle, RectangleRounded,
+                       RegularPolygon, Text, Vector, Wire, export_step, export_stl, extrude)
+from shapely.geometry import MultiPoint, Point, box as sbox
+from shapely.geometry.polygon import orient
+from shapely.ops import unary_union, voronoi_diagram
 
 HERE = Path(__file__).parent
 OUT = HERE / "out"
@@ -41,15 +44,13 @@ PCB_Z1 = PCB_Z0 + PCB
 CEIL = PCB_Z1 + TALLEST + 1.1        # inside of the lid
 TOP = CEIL + LID
 
-# --- the look: a tapered, rounded carapace (walls lean in 5 degrees, soft corners, a chamfered lid edge) ---
-TAPER = 5.0        # degrees the walls lean in; printed lid-down this is a gentle outward overhang, no supports
-R_CORNER = 9.0     # plan-view corner radius at the bottom
-EDGE = 1.5         # 45-degree chamfer round the lid (prints cleanly on the bed; a fillet there would droop)
-INSET = (TOP - FLOOR) * math.tan(math.radians(TAPER))
+# --- the look: a straight-walled hull (walls square to the lid and the base, only the vertical corners rounded) ---
+R_CORNER = 8.0     # plan-view corner radius; lid and base edges stay crisp
+LINE = 0.8         # width of the engraved lid network (2 nozzle widths)
+ETCH = 0.6         # its depth: 3 layers at 0.2 mm, printed on the bed face
 
 IX0, IX1, IY0, IY1 = -CL, BW + CL, -CL, BD + CL                    # inner box
-OX0, OX1, OY0, OY1 = IX0 - WALL - INSET, IX1 + WALL + INSET, IY0 - WALL - INSET, IY1 + WALL + INSET  # outer, at the bottom
-LID_FLAT = (IX0 - WALL + EDGE, IX1 + WALL - EDGE, IY0 - WALL + EDGE, IY1 + WALL - EDGE)            # flat top of the lid
+OX0, OX1, OY0, OY1 = IX0 - WALL, IX1 + WALL, IY0 - WALL, IY1 + WALL  # outer: the same at every height
 
 # --- parts ---
 FAN = 25.0         # official Pi 4 Case Fan, measured by Konrad 2026-10-15
@@ -75,38 +76,27 @@ def cyl(x, y, z0, z1, d):
     return Pos(x, y, (z0 + z1) / 2) * Cylinder(d / 2, z1 - z0)
 
 
+def outline(inset=0.0):
+    """The rounded hull footprint, shrunk by inset all round."""
+    return Pos((OX0 + OX1) / 2, (OY0 + OY1) / 2) * RectangleRounded(OX1 - OX0 - 2 * inset, OY1 - OY0 - 2 * inset,
+                                                                     R_CORNER - inset)
+
+
 def outer(inset=0.0):
-    """The tapered rounded body, shrunk by inset all round (inset > 0 is used to cut the wall grooves)."""
-    f = Pos((OX0 + OX1) / 2, (OY0 + OY1) / 2, FLOOR) * RectangleRounded(OX1 - OX0 - 2 * inset, OY1 - OY0 - 2 * inset,
-                                                                         R_CORNER - inset)
-    return extrude(f, amount=TOP - FLOOR, taper=TAPER)
+    """The straight-walled body from the base seam to the lid (inset > 0 is used to cut the wall bands)."""
+    return extrude(Pos(0, 0, FLOOR) * outline(inset), amount=TOP - FLOOR)
 
 
-def vein(points, width=0.9, depth=0.45):
-    """An engraved channel along a smooth curve on the lid: the case's "veins"."""
-    w = Wire([Spline(*points)]).offset_2d(width / 2, kind=Kind.ARC, side=Side.BOTH)
-    return extrude(Pos(0, 0, TOP - depth) * Face(w), amount=depth + 1)
-
-
-# veins run out from the fan "heart" round the other features (checked against lid_map.py's depth map)
-VEINS = [
-    [(40.5, 33.0), (46.0, 36.0), (51.0, 41.0), (55.0, 44.5)],
-    [(40.5, 28.0), (46.0, 25.0), (50.0, 20.0), (54.0, 17.0)],
-    [(17.5, 28.0), (12.5, 25.0), (10.0, 19.0), (11.5, 12.0), (15.0, 8.5)],
-    [(29.0, 19.5), (29.5, 15.5), (27.0, 11.0), (22.0, 8.5)],
-    [(17.5, 34.0), (12.5, 38.0), (10.0, 43.0), (11.0, 45.5)],
-]
 GROOVES = (PCB_Z1 + 3.5, PCB_Z1 + 10.5)   # heights of the two segment grooves round the walls
 
 
 def shell():
     """Walls + lid in one print (print it upside down, lid on the bed: no supports). Sits on the base's rim."""
     body = outer()
-    body = chamfer(body.edges().group_by(Axis.Z)[-1], length=EDGE)
     cavity = extrude(Pos((IX0 + IX1) / 2, (IY0 + IY1) / 2, -1) * RectangleRounded(IX1 - IX0, IY1 - IY0, 3.0),
                      amount=CEIL + 1)
     s = body - cavity
-    for z in GROOVES:                                                    # segmented, exoskeleton-like walls
+    for z in GROOVES:                                                    # exoskeleton segments round the walls
         band = box(OX0 - 5, OX1 + 5, OY0 - 5, OY1 + 5, z - 0.5, z + 0.5)
         s -= band - outer(0.6)
 
@@ -117,23 +107,22 @@ def shell():
     s -= box(AUDIO_X - 4.0, AUDIO_X + 4.0, w0, w1, -1, PCB_Z1 + 7.5)        # 3.5 mm audio
     # USB / Ethernet end: open, with corner pillars left
     s -= box(IX1 - 1, OX1 + 1, 0.5, BD - 0.5, -1, CEIL - 0.7)
-    # SD end: card notch + exhaust vents
+    # SD end: card notch + hexagonal "spiracle" exhaust vents in two staggered rows, pointy side up (no supports)
     s -= box(OX0 - 1, IX0 + 1, SD_Y - 6, SD_Y + 6, -1, PCB_Z1 + 2)
-    for y in (6, 11, 16, 40, 45, 50):
-        s -= box(OX0 - 1, IX0 + 1, y - 1, y + 1, PCB_Z1 + 5, CEIL - 2.5)
+    for y, z in SPIRACLES:
+        s -= extrude(Plane.YZ.offset(OX0 - 1) * Pos(y, z) * RegularPolygon(1.8, 6, rotation=30), amount=WALL + 3)
     # GPIO edge: two knock-out panels (0.6 mm skin, cut through with a knife for a new cable)
     for x0 in (8, 40):
         s -= box(x0, x0 + 22, IY1 + 0.6, OY1 + 1, PCB_Z1 + 4, CEIL - 3)
 
-    # lid: hexagonal fan grille (the emblem's hexagon, as a honeycomb) + fan screws
+    # lid: the compound eye, a honeycomb fan grille + fan screws
     for i in range(-5, 6):
         for j in range(-5, 6):
             x, y = SOC_X + i * 2.9 + (1.45 if j % 2 else 0), SOC_Y + j * 2.5
-            if (x - SOC_X) ** 2 + (y - SOC_Y) ** 2 <= (FAN / 2 - 2.5) ** 2:
+            if (x - SOC_X) ** 2 + (y - SOC_Y) ** 2 <= EYE ** 2:
                 s -= extrude(Pos(x, y, CEIL - 1) * RegularPolygon(1.3, 6), amount=LID + 2)
-    for dx in (-FAN_HOLE / 2, FAN_HOLE / 2):
-        for dy in (-FAN_HOLE / 2, FAN_HOLE / 2):
-            s -= cyl(SOC_X + dx, SOC_Y + dy, CEIL - 1, TOP + 1, 2.7)         # M2 or M2.5 fan screws
+    for x, y in fan_screws():
+        s -= cyl(x, y, CEIL - 1, TOP + 1, 2.7)                           # M2 or M2.5 fan screws
     # lid: GPIO hatch opening (a 40-pin IDC plug passes) + its two screw holes
     s -= box(GPIO_X - GPIO_LEN / 2 - 3, GPIO_X + GPIO_LEN / 2 + 3, GPIO_Y - 5, IY1 - 0.2, CEIL - 1, TOP + 1)
     for x in hatch_screws():
@@ -146,8 +135,7 @@ def shell():
     for x, y in CAMERA_HOLES + LID_HOLES:
         s -= cyl(x, y, TOP - 2.8, TOP + 1, SELF_TAP_M3)
     s -= branding()
-    for pts in VEINS:
-        s -= vein(pts)
+    s -= network()
 
     # posts that clamp the board onto the base standoffs; base screws thread into them
     for x, y in HOLES:
@@ -158,6 +146,10 @@ def shell():
 
 CAMERA_HOLES = [(62.0, 3.0), (82.0, 3.0)]      # 20 mm apart, matches camera_bracket(); bracket then spans y -2..24
 LID_HOLES = [(6.0, 20.0), (6.0, 30.0), (6.0, 40.0)]
+EYE = 9.5                                       # grille cells sit within this radius of the fan centre
+SPIRACLES = [(y, 14.4) for y in (5.0, 10.0, 15.0, 41.0, 46.0, 51.0)] + \
+            [(y, 21.2) for y in (7.5, 12.5, 39.0, 48.5)]
+PANEL = (58.0, 86.2, 23.0, 46.4)                # branding panel frame on the lid: x0, x1, y0, y1
 
 
 def text_cut(txt, x, y, max_w, size, depth, align=Align.MIN):
@@ -184,13 +176,81 @@ def emblem_cut(x, y, height):
 
 
 def branding():
-    """Emblem top right with "EXO ARGO" and "V0.1" on two lines under it, the URL along the HDMI edge (the camera bracket covers the
-    bottom right)."""
-    c = emblem_cut(72.0, 40.0, 12.0)
-    c += text_cut(LABEL, 72.0, 31.0, 27.0, 4.6, ENGRAVE, align=Align.CENTER)
-    c += text_cut(VERSION, 72.0, 26.6, 27.0, 3.6, ENGRAVE, align=Align.CENTER)
-    c += text_cut(URL, 0.0, 3.0, 54.0, 4.2, ENGRAVE)
+    """Emblem in the framed panel top right with "EXO ARGO" and "V0.1" on two lines under it, the URL along the HDMI
+    edge (the camera bracket covers the bottom right)."""
+    cx = (PANEL[0] + PANEL[1]) / 2
+    c = emblem_cut(cx, 39.4, 11.0)
+    c += text_cut(LABEL, cx, 31.0, 24.0, 4.6, ENGRAVE, align=Align.CENTER)
+    c += text_cut(VERSION, cx, 26.6, 24.0, 3.6, ENGRAVE, align=Align.CENTER)
+    c += text_cut(URL, 3.0, 3.0, 50.0, 4.2, ENGRAVE)
     return c
+
+
+def faces_of(geom):
+    """shapely (Multi)Polygon -> build123d faces on z = 0."""
+    polys = [geom] if geom.geom_type == "Polygon" else list(geom.geoms)
+    for p in polys:
+        if p.area < 0.05:
+            continue
+        p = orient(p, sign=1.0)                     # counter-clockwise outside: the face normal points up
+        ring = lambda r: Wire.make_polygon([Vector(x, y, 0) for x, y in list(r.coords)[:-1]], close=True)
+        yield Face(ring(p.exterior), [ring(r) for r in p.interiors])
+
+
+def network_2d():
+    """The lid's engraved network, in 2D: a dragonfly-wing vein net (Voronoi cells, small round the fan and larger
+    towards the edges) with a node at every junction, framed by a hull line round the lid, a ring round the fan eye,
+    rings round every screw hole, a docking frame round the camera slot and a panel round the branding."""
+    r = LINE / 2
+    border = sbox(OX0 + 2, OY0 + 2, OX1 - 2, OY1 - 2).buffer(-(R_CORNER - 2)).buffer(R_CORNER - 2, quad_segs=16)
+    eye = Point(SOC_X, SOC_Y).buffer(11.8, quad_segs=32)
+    rings = [Point(x, y).buffer(2.3, quad_segs=16) for x, y in
+             fan_screws() + CAMERA_HOLES + LID_HOLES]
+    dock = sbox(CSI_X - 13, CSI_Y - 5.25, CSI_X + 13, CSI_Y + 5.25).buffer(-1.5).buffer(1.5)
+    panel = sbox(PANEL[0], PANEL[2], PANEL[1], PANEL[3]).buffer(-2.5).buffer(2.5)
+    frames = [border.exterior, eye.exterior, dock.exterior, panel.exterior] + [g.exterior for g in rings]
+
+    # no veins inside the frames, near the GPIO opening and its screws, or round the URL
+    keep_out = unary_union([eye, dock, panel] + rings + [
+        sbox(GPIO_X - GPIO_LEN / 2 - 4, GPIO_Y - 6, GPIO_X + GPIO_LEN / 2 + 4, OY1 + 1),
+        sbox(2.0, 0.8, 55.0, 5.4)] + [Point(x, GPIO_Y - 0.5).buffer(2.3) for x in hatch_screws()])
+    field = border.difference(keep_out)
+
+    # seeds: a rosette round the eye, then dart-throwing with spacing that grows away from it
+    rng = np.random.default_rng(2049)
+    seeds = [(SOC_X + 15.5 * np.cos(a), SOC_Y + 15.5 * np.sin(a)) for a in np.linspace(0, 2 * np.pi, 13)[:-1]]
+    for _ in range(6000):
+        x, y = rng.uniform(OX0, OX1), rng.uniform(OY0, OY1)
+        d = np.hypot(x - SOC_X, y - SOC_Y)
+        gap = 5.0 + 0.09 * max(d - 12, 0)
+        if all(np.hypot(x - u, y - v) >= gap for u, v in seeds):
+            seeds.append((x, y))
+    edges = voronoi_diagram(MultiPoint(seeds), envelope=sbox(OX0 - 20, OY0 - 20, OX1 + 20, OY1 + 20), edges=True)
+    veins = unary_union(edges).intersection(field)
+
+    # nodes where three veins meet, away from the field's edge
+    inner = field.buffer(-1.6)
+    pts = {}
+    for e in getattr(unary_union(edges), "geoms", []):
+        for c in (e.coords[0], e.coords[-1]):
+            k = (round(c[0], 3), round(c[1], 3))
+            pts[k] = pts.get(k, 0) + 1
+    nodes = [Point(k).buffer(0.85, quad_segs=8) for k, n in pts.items() if n >= 3 and inner.contains(Point(k))]
+
+    net = unary_union([veins.buffer(r, quad_segs=4)] + [f.buffer(r, quad_segs=8) for f in frames] + nodes)
+    net = net.buffer(0.2, quad_segs=4).buffer(-0.2, quad_segs=4)            # close slivers between lines
+    # nothing under the GPIO hatch plate
+    hatch_zone = sbox(GPIO_X - GPIO_LEN / 2 - 10.5, GPIO_Y - 6.7, GPIO_X + GPIO_LEN / 2 + 10.5, OY1 + 1)
+    return net.difference(hatch_zone).simplify(0.03)
+
+
+def network():
+    faces = list(faces_of(network_2d()))
+    return extrude([Pos(0, 0, TOP - ETCH) * f for f in faces], amount=ETCH + 1)
+
+
+def fan_screws():
+    return [(SOC_X + dx, SOC_Y + dy) for dx in (-FAN_HOLE / 2, FAN_HOLE / 2) for dy in (-FAN_HOLE / 2, FAN_HOLE / 2)]
 
 
 def hatch_screws():
@@ -201,15 +261,20 @@ def base():
     """Floor plate the shell sits on, with a rim that locates the shell, standoffs, and a strap ear at each end:
     the shoulder strap feeds down through one ear, runs under the case and up through the other. Screws go up from
     below through the Pi into the shell posts."""
-    b = extrude(Pos((OX0 + OX1) / 2, (OY0 + OY1) / 2, 0) * RectangleRounded(OX1 - OX0, OY1 - OY0, R_CORNER),
-                amount=FLOOR)
-    rim = box(IX0 + FIT, IX1 - FIT, IY0 + FIT, IY1 - FIT, FLOOR, FLOOR + 1.5)
-    rim -= box(IX0 + FIT + 1.0, IX1 - FIT - 1.0, IY0 + FIT + 1.0, IY1 - FIT - 1.0, FLOOR - 1, FLOOR + 3)  # 1.0: not tangent to the standoffs
+    b = extrude(outline(), amount=FLOOR)
+    cx, cy = (IX0 + IX1) / 2, (IY0 + IY1) / 2
+    rim = extrude(Pos(cx, cy, FLOOR) * RectangleRounded(IX1 - IX0 - 2 * FIT, IY1 - IY0 - 2 * FIT, 3.0 - FIT), amount=1.5)
+    rim -= extrude(Pos(cx, cy, FLOOR - 1) * RectangleRounded(IX1 - IX0 - 2 * FIT - 2.0, IY1 - IY0 - 2 * FIT - 2.0,
+                                                              2.0 - FIT), amount=4)   # 1.0 walls: not tangent to the standoffs
     rim -= box(IX0 - 1, IX0 + 3, SD_Y - 6, SD_Y + 6, FLOOR - 1, FLOOR + 3)   # SD card path
     b += rim
     w = STRAP + 10.0
-    for x0, x1 in ((OX0 - EAR, OX0 + 8.0), (OX1 - 8.0, OX1 + EAR)):     # rounded lugs, like a watch's
-        b += extrude(Pos((x0 + x1) / 2, BD / 2, 0) * RectangleRounded(x1 - x0, w, 6.0), amount=FLOOR)
+    for sgn, xe in ((-1, OX0), (1, OX1)):                                # lugs with a faceted, hull-like nose
+        tip, root, c = xe + sgn * EAR, xe - sgn * 8.0, 5.0
+        pts = [(root, BD / 2 - w / 2), (tip - sgn * c, BD / 2 - w / 2), (tip, BD / 2 - w / 2 + c),
+               (tip, BD / 2 + w / 2 - c), (tip - sgn * c, BD / 2 + w / 2), (root, BD / 2 + w / 2)]
+        pts = pts if sgn > 0 else pts[::-1]                              # counter-clockwise, so it extrudes up
+        b += extrude(Polygon(*pts, align=None), amount=FLOOR)
     for xs in (OX0 - EAR + 4.0, OX1 + EAR - 4.0 - 4.5):                  # slots, 4.5 mm for thick webbing
         b -= extrude(Pos(xs + 2.25, BD / 2, -1) * RectangleRounded(4.5, STRAP + 1.5, 2.0), amount=FLOOR + 2)
     for x, y in HOLES:
@@ -225,8 +290,8 @@ def base():
 def hatch(kind):
     """GPIO hatch plates: blank, ribbon (a 40-way flat cable passes), open (the IDC plug passes)."""
     x0, x1 = GPIO_X - GPIO_LEN / 2 - 10, GPIO_X + GPIO_LEN / 2 + 10
-    y0, y1 = GPIO_Y - 6.2, LID_FLAT[3] + 0.3                          # clears the fan screw heads; ends at the lid edge
-    h = box(x0, x1, y0, y1, 0, 2.0)
+    y0, y1 = GPIO_Y - 6.2, OY1                                        # clears the fan screw heads; ends at the lid edge
+    h = box(x0, x1, y0, y1, 0, 2.0) & extrude(outline(), amount=2.0)  # follows the hull's rounded corner
     for x in hatch_screws():
         h -= cyl(x, GPIO_Y - 0.5, -1, 3, 3.4)
     if kind == "ribbon":
@@ -238,7 +303,7 @@ def hatch(kind):
 
 def camera_bracket():
     """Flat bracket for the Pi Camera Rev 1.3 (25 x 24 mm, M2 holes 21 x 12.5): two M3 screws into the lid grid."""
-    p = box(-15, 15, -9, 17, 0, 2.5)
+    p = extrude(Pos(0, 4, 0) * RectangleRounded(30, 26, 6.0), amount=2.5)
     for x in (-10.0, 10.0):
         p -= cyl(x, -4, -1, 3.5, 3.4)                                    # 20 mm = two grid steps
     for x in (-10.5, 10.5):
