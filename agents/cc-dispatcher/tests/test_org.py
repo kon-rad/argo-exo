@@ -404,6 +404,8 @@ def test_prompt_wording():
     text = wake_prompt(a, [{"reason": "konrad", "ref": "5"}, {"reason": "routine", "ref": "weekly-reflection"}], None)
     assert text.startswith("You are atlas, Head on the Platform team.")
     assert "a message from konrad (message 5" in text and "weekly-reflection" in text and "kanban" not in text
+    owner = wake_prompt(a, [{"reason": "owner", "ref": "6"}], None)
+    assert "a message from konrad (message 6" in owner
     assert describe_wakeups([{"reason": "task", "ref": "t_9"}]) == ["kanban task t_9"]
 
 

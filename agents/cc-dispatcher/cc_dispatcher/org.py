@@ -159,8 +159,11 @@ def describe_wakeups(wakeups: list[dict]) -> list[str]:
     lines = []
     for w in wakeups:
         reason, ref = w.get("reason"), w.get("ref")
-        if reason in ("dm", "mention", "handoff", "konrad"):
-            who = {"dm": "a direct message", "mention": "a mention", "handoff": "a handoff", "konrad": "a message from konrad"}[reason]
+        # "owner" is the reason for a message the human wrote (the engine's name since its
+        # owner-names migration); "konrad" is what older wakeups carried.
+        if reason in ("dm", "mention", "handoff", "owner", "konrad"):
+            who = {"dm": "a direct message", "mention": "a mention", "handoff": "a handoff",
+                   "owner": "a message from konrad", "konrad": "a message from konrad"}[reason]
             lines.append(f"{who} (message {ref}; `cli-org thread {ref}` shows it)")
         elif reason == "routine":
             lines.append(f"your routine `{ref}`" + (": post today's stand-up with `cli-org standup`" if ref == "daily-standup" else
