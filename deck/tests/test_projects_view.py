@@ -7,9 +7,9 @@ from exo_deck.router import Route, route
 
 FEED = {
     "totals": {"features": {"idea": 13, "building": 7, "testing": 9, "live": 19}},
-    "projects": [{"slug": f"p{i}", "title": f"P{i}", "stage": "building", "counts": {}, "next": "x", "needs_konrad": i == 0}
+    "projects": [{"slug": f"p{i}", "title": f"P{i}", "stage": "building", "counts": {}, "next": "x", "needs_owner": i == 0}
                  for i in range(7)],
-    "needs_konrad": [{"project": "p0", "feature": None, "title": "P0", "detail": "Upload build 11"}],
+    "needs_owner": [{"project": "p0", "feature": None, "title": "P0", "detail": "Upload build 11"}],
     "attention": [{"project": "p1", "feature": "f", "title": "F", "detail": "testing, no activity for 9d"}],
     "gaps": {"goals_uncovered": ["W3"]},
     "shipped_7d": 2,
@@ -47,7 +47,7 @@ def test_more_steps_through_projects_needs_and_attention(tmp_path):
     views = [projects_view.panel("u", "t", tmp_path / "c.json", p, get=get)["view"] for p in range(4)]
     assert views == ["projects", "needs", "attention", "projects"]
     j = projects_view.panel("u", "t", tmp_path / "c.json", 1, get=get)
-    assert j["needs"] == FEED["needs_konrad"]
+    assert j["needs"] == FEED["needs_owner"]
 
 
 def test_offline_shows_the_cached_summary_marked_stale(tmp_path):

@@ -78,7 +78,7 @@ export const RENDER = {
     if (j.view === 'attention') return head('Attention') + `<ul class="rows tight">${j.attention.map(item).join('') || '<li class="muted">No failing, overdue or stale work</li>'}</ul>`
       + `<p class="muted tight">goals with no work: ${esc((j.gaps.goals_uncovered || []).join(', ') || 'none')} · say "more" for projects</p>`;
     return head('Projects') + `<ul class="rows tight">${j.projects.map((p) => `<li><span class="clamp"><b>${esc(p.title)}</b> <span class="muted">${esc(p.next || '')}</span></span>`
-      + `<span class="tag">${STAGE[p.stage] || esc(p.stage)} ${bar(p.counts)}${p.needs_konrad ? ' <span class="warn">⚑</span>' : ''}</span></li>`).join('') || '<li class="muted">No projects</li>'}</ul>`
+      + `<span class="tag">${STAGE[p.stage] || esc(p.stage)} ${bar(p.counts)}${p.needs_owner ? ' <span class="warn">⚑</span>' : ''}</span></li>`).join('') || '<li class="muted">No projects</li>'}</ul>`
       + `<p class="muted tight">⚑ needs you · say "more" for the needs-you list</p>`;
   },
   body: (j) => {

@@ -57,7 +57,7 @@ def panel(url: str, token: str, cache: Path, page: int = 0, get: Callable = requ
         "view": view, "page": page % len(VIEWS), "pages": len(VIEWS),
         "totals": data.get("totals", {}),
         "projects": data.get("projects", [])[:5],
-        "needs": data.get("needs_konrad", [])[:7],
+        "needs": data.get("needs_owner", [])[:7],
         "attention": data.get("attention", [])[:7],
         "gaps": data.get("gaps", {}),
         "shipped_7d": data.get("shipped_7d", 0),

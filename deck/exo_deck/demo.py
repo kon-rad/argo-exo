@@ -201,11 +201,11 @@ def _media(now: float) -> dict:
 def _projects(now: float) -> dict:
     c = lambda **k: {"idea": 0, "designing": 0, "building": 0, "testing": 0, "live": 0, "parked": 0, "done": 0, **k}  # noqa: E731
     projects = [
-        {"title": "Argo app", "stage": "live", "counts": c(building=1, testing=1, live=1, parked=2), "next": "Upload build 11", "needs_konrad": True},
-        {"title": "Body track", "stage": "building", "counts": c(building=2, live=3), "next": "Finish the node", "needs_konrad": True},
-        {"title": "Exo capture", "stage": "building", "counts": c(building=2, live=1, parked=1), "next": "Solder the I2S mic", "needs_konrad": True},
-        {"title": "Second brain", "stage": "live", "counts": c(idea=1, designing=2, building=1, testing=1, live=1), "next": "One-database cutover", "needs_konrad": True},
-        {"title": "argo-lifeos", "stage": "designing", "counts": c(idea=7, done=1), "next": "Phase 1 headless core", "needs_konrad": True},
+        {"title": "Argo app", "stage": "live", "counts": c(building=1, testing=1, live=1, parked=2), "next": "Upload build 11", "needs_owner": True},
+        {"title": "Body track", "stage": "building", "counts": c(building=2, live=3), "next": "Finish the node", "needs_owner": True},
+        {"title": "Exo capture", "stage": "building", "counts": c(building=2, live=1, parked=1), "next": "Solder the I2S mic", "needs_owner": True},
+        {"title": "Second brain", "stage": "live", "counts": c(idea=1, designing=2, building=1, testing=1, live=1), "next": "One-database cutover", "needs_owner": True},
+        {"title": "argo-lifeos", "stage": "designing", "counts": c(idea=7, done=1), "next": "Phase 1 headless core", "needs_owner": True},
     ]
     needs = [{"project": "argo-app", "feature": None, "title": "Argo app", "detail": "Upload build 11"},
              {"project": "exo-capture", "feature": "i2s-mic", "title": "I2S mic", "detail": "Solder the mic board"}]
