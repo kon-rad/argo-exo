@@ -327,9 +327,9 @@ def camera_bracket():
 
 
 def coupon():
-    """20-minute fit test: a Pi hole post, a USB-C notch, a grid hole, an M2 camera boss."""
+    """20-minute fit test: a shell post (M2.5 self-tap), a USB-C notch, a grid hole, an M2 camera boss."""
     c = box(0, 40, 0, 20, 0, 3)
-    c += cyl(6, 10, 3, 6, 6.0) - cyl(6, 10, -1, 7, 2.8)
+    c += cyl(6, 10, 3, 9, 5.5) - cyl(6, 10, 1, 10, SELF_TAP_M25)                 # same pilot as the shell posts
     c += box(14, 32, 16, 20, 3, 14) - box(23 - USBC_PLUG[0] / 2 - 1, 23 + USBC_PLUG[0] / 2 + 1, 15, 21, 2, 12.5)  # USB-C notch
     c -= cyl(36, 10, 0.4, 4, SELF_TAP_M3)
     c += cyl(36, 4, 3, 6, 4.2) - cyl(36, 4, 1, 7, 1.8)
