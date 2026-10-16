@@ -144,7 +144,7 @@ def make(tmp_path, board=None, wakeups=(), t=None):
         spawned.append({"agent": agent.name, "lane": lane.name if lane else None, "task": task, "prompt": prompt,
                         "session": session_id, "run_id": run_id, "cwd": cwd, "log": log_path, "proc": p})
         log_path.parent.mkdir(parents=True, exist_ok=True)
-        log_path.write_text("")
+        log_path.touch()            # the runner wrote the header already; a worker only appends
         return p
     # 2026-10-15 04:00 Asia/Tokyo, before the 05:30 routine so only the routine test fires it
     clock = {"t": t if t is not None else datetime(2026, 10, 15, 4, 0, tzinfo=TZ).timestamp()}
@@ -210,6 +210,30 @@ def test_a_dm_wakes_the_agent_once_with_all_its_wakeups(tmp_path):
     assert ob.finished[0] == ([1, 2], atlas["run_id"], 0, "posted a status")
     assert ob.session_sets == [("atlas", "sess-atlas")]
     assert "atlas" not in runner.running
+
+
+def test_every_wake_opens_its_log_with_a_header_the_ledger_can_read(tmp_path):
+    d, runner, ob, spawned, clock = make(tmp_path, wakeups=[
+        {"id": 1, "agent_name": "atlas", "reason": "dm", "ref": "7"},
+        {"id": 2, "agent_name": "atlas", "reason": "mention", "ref": "9"},
+    ])
+    ob.sessions["atlas"] = {"session_id": "sess-old", "session_started": datetime.now(TZ).date().isoformat()}
+    d.tick()
+    atlas = spawned[0]
+    head = json.loads(Path(atlas["log"]).read_text().splitlines()[0])
+    assert head["type"] == "cc_dispatch" and head["run_id"] == atlas["run_id"] and head["agent"] == "atlas"
+    assert head["team"] == "platform" and head["reasons"] == [{"reason": "dm", "ref": "7"}, {"reason": "mention", "ref": "9"}]
+    assert head["wakeup_ids"] == [1, 2] and head["task_id"] is None and head["board"] is None
+    assert head["resumed"] is True and head["model"] == "opus" and head["at"].startswith("2026-10-1")
+    # A fresh session on a kanban card: resumed false, the card in the header, no wakeups.
+    log_result(atlas["log"], session="sess-old"); atlas["proc"].code = 0
+    clock["t"] += 3600
+    runner.boards["exo"].ready.append({"id": "t_c0ffee01", "assignee": "rune", "priority": 1})
+    d.tick()
+    rune = next(s for s in spawned if s["agent"] == "rune")
+    head = json.loads(Path(rune["log"]).read_text().splitlines()[0])
+    assert head["agent"] == "rune" and head["task_id"] == "t_c0ffee01" and head["board"] == "exo"
+    assert head["reasons"] == [] and head["wakeup_ids"] == [] and head["resumed"] is False
 
 
 def test_lanes_and_the_org_take_turns_going_first(tmp_path):

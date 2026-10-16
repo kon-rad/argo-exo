@@ -47,6 +47,7 @@ class OrgAgent:
     max_runtime_minutes: int
     routines: tuple[dict, ...]
     permission_mode: str = "acceptEdits"
+    work: str | None = None               # research | coding | design | media | writing | sales | education | ops
 
 
 def load_agents(path: Path) -> dict[str, OrgAgent]:
@@ -60,9 +61,20 @@ def load_agents(path: Path) -> dict[str, OrgAgent]:
             lane=a.get("lane"), is_lead=bool(a.get("is_lead")), prompt_file=a["prompt_file"], tools=tuple(a.get("tools", [])),
             wakes_per_day=int(a.get("wakes_per_day", 6)), cooldown_minutes=int(a.get("cooldown_minutes", 10)),
             max_runtime_minutes=int(a.get("max_runtime_minutes", 30)), routines=tuple(a.get("routines", [])),
-            permission_mode=a.get("permission_mode", "acceptEdits"),
+            permission_mode=a.get("permission_mode", "acceptEdits"), work=a.get("work"),
         )
     return agents
+
+
+def run_header(agent: OrgAgent, run_id: str, claimed: list[dict], task: tuple[str, str] | None, resumed: bool, at: str) -> dict:
+    """The first line of a wake's log: who ran, why, on which card. The Second Brain usage ledger reads it."""
+    return {
+        "type": "cc_dispatch", "run_id": run_id, "agent": agent.name, "team": agent.team, "work": agent.work,
+        "reasons": [{"reason": w.get("reason"), "ref": w.get("ref")} for w in claimed],
+        "wakeup_ids": [w["id"] for w in claimed if "id" in w],
+        "task_id": task[1] if task else None, "board": task[0] if task else None,
+        "model": agent.model, "resumed": resumed, "at": at,
+    }
 
 
 class OrgBoard:
@@ -339,6 +351,10 @@ class OrgRunner:
         log_path = self.settings.runs_dir / f"{run_id}.jsonl"
         try:
             cwd = self.prepare_cwd(self.settings, lane, task_ref[1]) if (lane and lane.worktree and task_ref) else str(self.org.vault)
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(log_path, "a") as f:      # frames this wake in the log; the Second Brain ledger reads it
+                at = datetime.fromtimestamp(now, tz=ZoneInfo("UTC")).isoformat()
+                f.write(json.dumps(run_header(agent, run_id, claimed, task_ref, bool(session), at)) + "\n")
             proc = self.spawn(self.settings, agent, lane, task_ref, wake_prompt(agent, claimed, task_ref), session, run_id, cwd, log_path)
         except Exception as exc:
             log.exception("spawn failed for %s", agent.name)

@@ -156,8 +156,10 @@ class Dispatcher:
             cwd = self.prepare_cwd(self.settings, lane, task_id, base=base)
             self.settings.runs_dir.mkdir(parents=True, exist_ok=True)
             with open(log_path, "a") as f:     # frames this run in the log; the Second Brain ledger reads it
-                f.write(json.dumps({"type": "cc_dispatch", "task_id": task_id, "board": board_name, "lane": lane.name,
-                                    "model": lane.model, "at": datetime.now(timezone.utc).isoformat()}) + "\n")
+                started = datetime.now(timezone.utc)
+                f.write(json.dumps({"type": "cc_dispatch", "run_id": f"{task_id}-{started.strftime('%Y%m%d-%H%M%S')}",
+                                    "task_id": task_id, "board": board_name, "lane": lane.name,
+                                    "model": lane.model, "at": started.isoformat()}) + "\n")
             proc = self.spawn(self.settings, lane, board_name, task_id, cwd, log_path)
         except Exception as exc:   # worktree or exec failure: the task must not sit claimed until the TTL ends
             log.exception("spawn failed for %s", task_id)
