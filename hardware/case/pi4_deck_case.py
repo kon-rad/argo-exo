@@ -27,7 +27,9 @@ BW, BD, PCB = 85.0, 56.0, 1.4
 HOLES = [(3.5, 3.5), (61.5, 3.5), (3.5, 52.5), (61.5, 52.5)]      # M2.5
 USBC_X, HDMI0_X, HDMI1_X, AUDIO_X = 11.2, 26.0, 39.5, 53.5         # along the y=0 edge
 GPIO_X, GPIO_Y, GPIO_LEN = 32.5, 52.5, 51.0                        # 2x20 header centre
-CSI_X, CSI_Y = 45.0, 11.5                                          # camera connector centre (MEASURE)
+CSI_X, CSI_Y = 45.0, 11.5                                          # camera connector centre (photo IMG_7474 agrees; MEASURE)
+CSI_SLOT = (4.5, 19.0)        # x, y: the connector lies ACROSS the board (long side square to the HDMI edge), so the
+                              # 16 mm ribbon rises straight out of it with its width along y; 19 mm leaves 1.5 each side
 SOC_X, SOC_Y = 29.0, 31.0                                          # fan sits over the SoC (MEASURE)
 SD_Y = 28.0                                                        # microSD slot centre, under the board
 TALLEST = 16.0                                                     # USB-A stack above the PCB
@@ -128,9 +130,10 @@ def shell():
     for x in hatch_screws():
         s -= cyl(x, GPIO_Y - 0.5, TOP - 2.8, TOP + 1, SELF_TAP_M3)
     # lid: camera ribbon slot over the CSI connector
-    s -= box(CSI_X - 11, CSI_X + 11, CSI_Y - 2.25, CSI_Y + 2.25, CEIL - 1, TOP + 1)
+    sw, sl = CSI_SLOT
+    s -= box(CSI_X - sw / 2, CSI_X + sw / 2, CSI_Y - sl / 2, CSI_Y + sl / 2, CEIL - 1, TOP + 1)
     # 1 mm 45-degree lead-in on the outer edge so the ribbon bends over a slope, not a sharp edge
-    s -= extrude(Pos(CSI_X, CSI_Y, TOP - 1.0) * Rectangle(22.0, 4.5), amount=1.01, taper=-45)
+    s -= extrude(Pos(CSI_X, CSI_Y, TOP - 1.0) * Rectangle(sw, sl), amount=1.01, taper=-45)
     # lid: M3 self-tap holes (blind): two for the camera bracket, a column of three for anything else
     for x, y in CAMERA_HOLES + LID_HOLES:
         s -= cyl(x, y, TOP - 2.8, TOP + 1, SELF_TAP_M3)
@@ -176,13 +179,14 @@ def emblem_cut(x, y, height):
 
 
 def branding():
-    """Emblem in the framed panel top right with "EXO ARGO" and "V0.1" on two lines under it, the URL along the HDMI
-    edge (the camera bracket covers the bottom right)."""
+    """Emblem in the framed panel top right with "EXO ARGO" and "V0.1" on two lines under it; the URL is a hull
+    marking on the HDMI-side wall, above the upper band (the camera slot crosses the lid's HDMI edge)."""
     cx = (PANEL[0] + PANEL[1]) / 2
     c = emblem_cut(cx, 39.4, 11.0)
     c += text_cut(LABEL, cx, 31.0, 24.0, 4.6, ENGRAVE, align=Align.CENTER)
     c += text_cut(VERSION, cx, 26.6, 24.0, 3.6, ENGRAVE, align=Align.CENTER)
-    c += text_cut(URL, 3.0, 3.0, 50.0, 4.2, ENGRAVE)
+    url = Text(URL, font_size=4.2, font_path=FONT, align=(Align.CENTER, Align.CENTER))
+    c += extrude(Plane.XZ.offset(-(OY0 + ENGRAVE)) * Pos((OX0 + OX1) / 2, (GROOVES[1] + 0.5 + TOP) / 2) * url, amount=2)
     return c
 
 
@@ -206,14 +210,16 @@ def network_2d():
     eye = Point(SOC_X, SOC_Y).buffer(11.8, quad_segs=32)
     rings = [Point(x, y).buffer(2.3, quad_segs=16) for x, y in
              fan_screws() + CAMERA_HOLES + LID_HOLES]
-    dock = sbox(CSI_X - 13, CSI_Y - 5.25, CSI_X + 13, CSI_Y + 5.25).buffer(-1.5).buffer(1.5)
+    sw, sl = CSI_SLOT
+    lead = sbox(CSI_X - sw / 2 - 1, CSI_Y - sl / 2 - 1, CSI_X + sw / 2 + 1, CSI_Y + sl / 2 + 1)   # slot + lead-in
+    dock = lead.buffer(1.6, quad_segs=8)
+    dock = unary_union([dock] + [g for g in rings if g.intersects(dock)])   # the frame wraps the nearby fan screw
     panel = sbox(PANEL[0], PANEL[2], PANEL[1], PANEL[3]).buffer(-2.5).buffer(2.5)
     frames = [border.exterior, eye.exterior, dock.exterior, panel.exterior] + [g.exterior for g in rings]
 
-    # no veins inside the frames, near the GPIO opening and its screws, or round the URL
+    # no veins inside the frames, near the GPIO opening or its screws
     keep_out = unary_union([eye, dock, panel] + rings + [
-        sbox(GPIO_X - GPIO_LEN / 2 - 4, GPIO_Y - 6, GPIO_X + GPIO_LEN / 2 + 4, OY1 + 1),
-        sbox(2.0, 0.8, 55.0, 5.4)] + [Point(x, GPIO_Y - 0.5).buffer(2.3) for x in hatch_screws()])
+        sbox(GPIO_X - GPIO_LEN / 2 - 4, GPIO_Y - 6, GPIO_X + GPIO_LEN / 2 + 4, OY1 + 1)] + [Point(x, GPIO_Y - 0.5).buffer(2.3) for x in hatch_screws()])
     field = border.difference(keep_out)
 
     # seeds: a rosette round the eye, then dart-throwing with spacing that grows away from it
