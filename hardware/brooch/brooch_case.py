@@ -1,4 +1,7 @@
-"""Exo brooch v0.1: a straight-walled, wing-veined case for the XIAO ESP32S3 Sense, the 0.96" OLED, four buttons,
+"""DRAFT, NOT FOR PRINTING (Konrad, 2026-10-16: final print files wait for the measurements in the vault note
+current/brooch/exo-brooch-case-requirements.md). While DRAFT is True this writes previews only, no 3MF or STEP.
+
+Exo brooch: a straight-walled, wing-veined case for the XIAO ESP32S3 Sense, the 0.96" OLED, four buttons,
 two LEDs, the BME680, the IMU and a 503030 LiPo, on a cut perfboard. Same language as the deck case
 (hardware/case/pi4_deck_case.py): square walls, rounded vertical corners, an engraved dragonfly-wing network with
 nodes, a compound eye over the camera, hex spiracle vents.
@@ -55,7 +58,10 @@ def hole(c, r):
     return P_X0 + PITCH / 2 + PITCH * c, P_Y0 + PITCH / 2 + PITCH * r
 
 
-KEYS = {"TALK": hole(1.5, 1), "APPROVE": hole(5.5, 1), "MARK": hole(1.5, 5), "SCREEN": hole(5.5, 5)}
+DRAFT = True
+# three keys (exo-brooch-controls, 2026-10-16): MARK and TALK side by side for the Private pinch, APPROVE below and
+# furthest from the edge
+KEYS = {"MARK": hole(1.5, 5), "TALK": hole(5.5, 5), "APPROVE": hole(5.5, 1)}
 LEDS = {"STATUS": hole(9.5, 1), "REC": hole(9.5, 5)}
 OLED_PINS_X = hole(5.5, 17)[0]               # 4-pin header in holes c4..c7, row 17
 OLED_W, OLED_H = 27.3, 27.8                  # module (photo + typical 0.96" module; MEASURE)
@@ -213,8 +219,8 @@ def shell():
         for dy in (-1, 1):
             px, py = OLED_WIN_C[0] + dx * (w / 2 + 1.6), OLED_WIN_C[1] + dy * (h / 2 + 1.6)
             s += box(px - 1, px + 1, py - 1, py + 1, Z_FACE_IN - 0.6, Z_FACE_IN + 0.01)
-    for x in ((KEYS["TALK"][0] + KEYS["APPROVE"][0]) / 2, LEDS["REC"][0]):
-        s += cyl(x, (KEYS["TALK"][1] + KEYS["MARK"][1]) / 2, P_FRONT, Z_FACE_IN + 0.01, 3.0)
+    for x in ((KEYS["MARK"][0] + KEYS["TALK"][0]) / 2, LEDS["REC"][0]):
+        s += cyl(x, (KEYS["APPROVE"][1] + KEYS["MARK"][1]) / 2, P_FRONT, Z_FACE_IN + 0.01, 3.0)
     x0, x1, y0, y1 = POCKET
     s += box(x0 - 1.0, x1 + 0.01, y1, y1 + 1.2, POCKET_Z0, Z_FACE_IN + 0.01)       # roof between pocket and XIAO
     s += box(x0 - 1.0, x0, y0, y1 + 1.2, POCKET_Z0, Z_FACE_IN + 0.01)              # wall toward the LEDs
@@ -259,10 +265,10 @@ def back_marks():
 
 
 def keys():
-    """Four key caps, printed flange down: 7 mm stem, 9 mm flange; TALK gets a raised dot to find by feel."""
+    """Three key caps, printed flange down: 7 mm stem, 9 mm flange; TALK gets a raised dot to find by feel."""
     stem = T + 1.0 - (P_FRONT + H_BTN) - 0.8          # from the flange top to 1 mm proud of the face
     out = None
-    for i, name in enumerate(("MARK", "SCREEN", "TALK", "APPROVE")):
+    for i, name in enumerate(KEYS):
         k = Pos(i * 12, 0, 0) * (Cylinder(4.5, 0.8, align=(Align.CENTER, Align.CENTER, Align.MIN)) +
                                  Pos(0, 0, 0.8) * Cylinder(3.5, stem, align=(Align.CENTER, Align.CENTER, Align.MIN)))
         if name == "TALK":
@@ -282,15 +288,19 @@ def main():
     }
     for name, part in prints.items():
         assert part.is_valid, name
-        export_stl(part, str(OUT / f"{name}.stl"))
-        m = Mesher()
-        m.add_shape(part)
-        m.write(str(OUT / f"{name}.3mf"))
         bb = part.bounding_box()
         print(f"{name:13s} {bb.size.X:5.1f} x {bb.size.Y:5.1f} x {bb.size.Z:5.1f} mm  volume {part.volume / 1000:5.1f} cm3")
-    export_stl(sh, str(OUT / "brooch-shell-assembled.stl"))
+        if not DRAFT:
+            export_stl(part, str(OUT / f"{name}.stl"))
+            m = Mesher()
+            m.add_shape(part)
+            m.write(str(OUT / f"{name}.3mf"))
+    export_stl(sh, str(OUT / "brooch-shell-assembled.stl"))          # previews only (views.py)
     export_stl(bk, str(OUT / "brooch-back-assembled.stl"))
-    export_step(Compound([sh, bk]), str(OUT / "brooch.step"))
+    if DRAFT:
+        print("DRAFT: no 3MF or STEP written; set DRAFT = False once the measurements are in")
+    else:
+        export_step(Compound([sh, bk]), str(OUT / "brooch.step"))
     print(f"outer {IW + 2 * WALL:.1f} x {IH + 2 * WALL:.1f} x {T:.1f} mm; perfboard {P_COLS} x {P_ROWS} holes "
           f"({P_W:.1f} x {P_H:.1f} mm); key stem {T + 1.0 - (P_FRONT + H_BTN) - 0.8:.1f} mm")
 
