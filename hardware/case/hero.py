@@ -12,7 +12,7 @@ from PIL import Image, ImageDraw
 OUT = Path(__file__).parent / "out"
 TOP = 27.5
 PARTS = [("shell", (0, 0, 0), (0.17, 0.19, 0.22)), ("base", (0, 0, 0), (0.42, 0.44, 0.48)),
-         ("hatch-ribbon", (0, 0, TOP), (0.78, 0.62, 0.18))]
+         ("hatch-ribbon-assembled", (0, 0, TOP), (0.78, 0.62, 0.18))]
 
 
 def scene(parts):

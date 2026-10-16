@@ -11,7 +11,7 @@ import json
 from pathlib import Path
 
 import numpy as np
-from build123d import (Align, Box, Compound, Cylinder, Face, Mesher, Plane, Polygon, Pos, Rectangle, RectangleRounded,
+from build123d import (Align, Axis, Box, Compound, Cylinder, Face, Mesher, Plane, Polygon, Pos, Rectangle, RectangleRounded,
                        RegularPolygon, Text, Vector, Wire, export_step, export_stl, extrude)
 from shapely.geometry import MultiPoint, Point, box as sbox
 from shapely.geometry.polygon import orient
@@ -301,18 +301,43 @@ def base():
     return b
 
 
+RIBBON_GAP = 1.2   # ribbon-plate clamp gap: a 40-way ribbon (about 1 mm) plus Kapton, pinched lightly
+LAP = 4.0          # half-lap reach either side of the gap line at each end (holds an M3 hole with 2.3 mm of wall)
+LAP_CL = 0.15      # clearance where a tongue meets the other half's full-thickness edge
+
+
 def hatch(kind):
-    """GPIO hatch plates: blank, ribbon (a 40-way flat cable passes), open (the IDC plug passes)."""
+    """GPIO hatch plates: blank, open (the IDC plug passes), ribbon-back / ribbon-front (the split clamp, §2.6)."""
     x0, x1 = GPIO_X - GPIO_LEN / 2 - 10, GPIO_X + GPIO_LEN / 2 + 10
     y0, y1 = GPIO_Y - 6.2, OY1                                        # clears the fan screw heads; ends at the lid edge
     h = box(x0, x1, y0, y1, 0, 2.0) & extrude(outline(), amount=2.0)  # follows the hull's rounded corner
     for x in hatch_screws():
         h -= cyl(x, GPIO_Y - 0.5, -1, 3, 3.4)
-    if kind == "ribbon":
-        h -= box(GPIO_X - 26.5, GPIO_X + 26.5, GPIO_Y - 1.8, GPIO_Y + 0.8, -1, 3)
-    elif kind == "open":
+    if kind == "open":
         h -= box(GPIO_X - GPIO_LEN / 2 - 3, GPIO_X + GPIO_LEN / 2 + 3, GPIO_Y - 5, IY1 - 0.2, -1, 3)
+    elif kind in ("ribbon-back", "ribbon-front"):
+        # Two halves split along the ribbon. Across the middle (53 mm) a 1.2 mm gap clamps the ribbon; at each end
+        # the halves overlap in a half-lap (back tongue on top, front tongue below) and one M3 screw goes through
+        # both tongues, so the two screws hold both halves. No plug has to pass through the plate.
+        yc, g = GPIO_Y - 0.5, RIBBON_GAP / 2                         # gap line = the screw line
+        ms0, ms1 = GPIO_X - 26.5, GPIO_X + 26.5                     # the middle, where the ribbon passes
+        ends = [(x0 - 1, ms0), (ms1, x1 + 1)]
+        if kind == "ribbon-back":
+            keep = box(ms0, ms1, y0 - 1, yc - g, -1, 3)
+            for a, b in ends:
+                keep += box(a, b, y0 - 1, yc - LAP, -1, 3) + box(a, b, yc - LAP, yc + LAP - LAP_CL, 1.0, 3)
+        else:
+            keep = box(ms0, ms1, yc + g, y1 + 1, -1, 3)
+            for a, b in ends:
+                keep += box(a, b, yc + LAP, y1 + 1, -1, 3) + box(a, b, yc - LAP + LAP_CL, yc + LAP, -1, 1.0)
+        h &= keep
     return h
+
+
+def print_pose(p):
+    """Flip a part upside down and set it back on z=0 (the ribbon plate's back half prints tongue-down)."""
+    p = p.rotate(Axis.X, 180)
+    return Pos(0, 0, -p.bounding_box().min.Z) * p
 
 
 def coupon():
@@ -330,7 +355,8 @@ def parts():
         "shell": shell(),
         "base": base(),
         "hatch-blank": hatch("blank"),
-        "hatch-ribbon": hatch("ribbon"),
+        "hatch-ribbon-back": print_pose(hatch("ribbon-back")),    # flipped: prints tongue-down, as exported
+        "hatch-ribbon-front": hatch("ribbon-front"),
         "hatch-open": hatch("open"),
         "coupon": coupon(),
     }
@@ -347,6 +373,7 @@ def main():
         m.write(str(OUT / f"{name}.3mf"))
         bb = p.bounding_box()
         print(f"{name:15s} {bb.size.X:6.1f} x {bb.size.Y:5.1f} x {bb.size.Z:5.1f} mm  volume {p.volume / 1000:6.1f} cm3")
+    export_stl(Compound([hatch("ribbon-back"), hatch("ribbon-front")]), str(OUT / "hatch-ribbon-assembled.stl"))  # previews
     export_step(Compound([ps["shell"], ps["base"]]), str(OUT / "exo-deck-case.step"))
     print(f"inside height {CEIL - PCB_Z1:.1f} mm above the board; outer {OX1 - OX0:.1f} x {OY1 - OY0:.1f} x {TOP:.1f} mm")
     gap = CEIL - FAN_T - (PCB_Z1 + HEATSINK)

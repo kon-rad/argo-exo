@@ -37,9 +37,10 @@ def scene(name, items, elev, azim):
 
 
 TOP = 27.5
-scene("assembled", [("shell", (0, 0, 0), "#3a3f47"), ("hatch-ribbon", (0, 0, TOP), "#c9a227"), ("base", (0, 0, 0), "#8a8f99")], 30, -60)
+scene("assembled", [("shell", (0, 0, 0), "#3a3f47"), ("hatch-ribbon-assembled", (0, 0, TOP), "#c9a227"), ("base", (0, 0, 0), "#8a8f99")], 30, -60)
 scene("ports", [("shell", (0, 0, 0), "#3a3f47"), ("base", (0, 0, 0), "#8a8f99")], 12, -110)
 scene("exploded", [("base", (0, 0, 0), "#8a8f99"), ("shell", (0, 0, 25), "#3a3f47"),
                    ("hatch-open", (0, 0, 25 + TOP + 12), "#c9a227")], 22, 50)
 scene("top", [("shell", (0, 0, 0), "#3a3f47")], 90, -90)
 scene("base", [("base", (0, 0, 0), "#8a8f99")], 90, -90)
+scene("hatch-ribbon", [("hatch-ribbon-front", (0, 0, 0), "#c9a227"), ("hatch-ribbon-back", (0, -14, 0), "#8a6d1a")], 35, -65)
