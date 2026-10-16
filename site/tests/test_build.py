@@ -209,6 +209,23 @@ def test_blog_renders_index_posts_and_landing_links(site, tmp_path):
     assert 'href="/blog/"' in landing
 
 
+def test_blog_images_exist_and_newest_post_leads(site, tmp_path):
+    import re
+    build.build(site, tmp_path / "dist")
+    posts = build.load_posts(site)
+    newest = max(posts, key=lambda p: (p["date"], p["order"]))
+    assert newest["slug"] == "idea-to-print"
+    index = (tmp_path / "dist" / "blog" / "index.html").read_text(encoding="utf-8")
+    hrefs = re.findall(r'href="/blog/([\w-]+)\.html"', index)
+    assert hrefs[0] == newest["slug"]
+    for p in posts:
+        page = (tmp_path / "dist" / "blog" / f"{p['slug']}.html").read_text(encoding="utf-8")
+        for src in re.findall(r'<img\b[^>]*\bsrc="(/static/[^"]+)"', page):
+            assert (tmp_path / "dist" / src.lstrip("/")).exists(), (p["slug"], src)
+    assert len(re.findall(r'<img\b[^>]*src="/static/img/blog/idea-to-print/',
+                          (tmp_path / "dist" / "blog" / "idea-to-print.html").read_text(encoding="utf-8"))) == 14
+
+
 def test_blog_post_needs_front_matter_and_a_clean_slug(site, tmp_path):
     blog = site / "content" / "blog"
     (blog / "zz-bad.md").write_text("no front matter here")
