@@ -40,7 +40,8 @@ cwd = "/home/hermes/argo-exo"
 worktree = true
 max_runtime_minutes = 60
 allowed_tools = ["Bash(git add *)", "Bash(git commit *)", "Bash(git checkout *)",
-                 "Bash(python3 -m pytest *)", "Bash(npm test *)", "Bash(npx vitest *)"]
+                 "Bash(python3 -m pytest *)", "Bash(/home/hermes/.venvs/exo-verify/bin/python -m pytest *)",
+                 "Bash(npm test *)", "Bash(npx vitest *)"]
 
 [lanes.cc-research]
 description = "Researches a question from primary sources and writes a vault research note in house style; answers in the task result."
@@ -88,5 +89,8 @@ timezone = "Asia/Tokyo"
 session_reset_days = 14
 max_turns = 60
 allowed_tools = ["Bash(cli-org *)", "Bash(cli-projects list*)", "Bash(cli-projects report*)", "Bash(python3 -m pytest *)", "Bash(npx vitest *)"]
-denied_tools = ["Read(CURRENT/**)", "Read(//home/hermes/secondBrain/CURRENT/**)", "Edit(CURRENT/**)", "Write(CURRENT/**)"]
+# Absolute paths only: the relative "CURRENT/**" also blocked Read on the vault's lowercase Areas/argo/argo-exo/current/
+# ("directory denied by your permission settings", lena, card t_66272ae6, 2026-10-16).
+denied_tools = ["Read(//home/hermes/secondBrain/CURRENT/**)", "Edit(//home/hermes/secondBrain/CURRENT/**)",
+                "Write(//home/hermes/secondBrain/CURRENT/**)"]
 
