@@ -59,11 +59,14 @@ OX0, OX1, OY0, OY1 = IX0 - WALL, IX1 + WALL, IY0 - WALL, IY1 + WALL  # outer: th
 FAN = 25.0         # official Pi 4 Case Fan, measured by Konrad 2026-10-15
 FAN_HOLE = 20.0    # centre to centre, measured (holes in 3 corners; the lid has all 4 so it fits any way round)
 FAN_T = 6.0        # fan frame thickness, measured by Konrad 2026-10-16
-HEATSINK = 8.0     # finned SoC heatsink, about 17 x 17 mm in the photos; height NOT measured (estimate, incl. the chip)
+HEATSINK = 7.0     # finned SoC heatsink top above the board, measured by Konrad 2026-10-16 (about 17 x 17 mm in the photos)
+FAN_SCREW = 2.9    # M2.5 fan screws (Konrad, 2026-10-16): clearance hole, printed holes come out about 0.2 small
+USBC_PLUG = (10.0, 6.0)  # USB-C power plug body, width x thickness, measured 2026-10-16
 SELF_TAP_M3 = 2.5  # pilot for an M3 screw straight into plastic
 SELF_TAP_M25 = 2.2
 GRID = 10.0        # hack grid pitch on the lid and the base
 STRAP = 30.0       # webbing width of the shoulder strap (Konrad's strap: 3 cm, 2026-10-15)
+STRAP_T = 3.0      # webbing thickness, measured 2026-10-16; the slot is 1 mm wider
 EAR = 15.0         # strap ear length beyond each end of the case
 
 # --- branding, engraved into the lid ---
@@ -107,7 +110,7 @@ def shell():
 
     # HDMI edge: open-bottom notches so the shell lowers over the connectors
     w0, w1 = OY0 - 1, IY0 + 1
-    s -= box(USBC_X - 6.5, USBC_X + 6.5, w0, w1, -1, PCB_Z1 + 6.5)          # USB-C power
+    s -= box(USBC_X - USBC_PLUG[0] / 2 - 1, USBC_X + USBC_PLUG[0] / 2 + 1, w0, w1, -1, PCB_Z1 + 6.5)  # USB-C: 1 mm round the plug
     s -= box(HDMI0_X - 6.5, HDMI1_X + 6.5, w0, w1, -1, PCB_Z1 + 7.0)        # both micro-HDMI
     s -= box(AUDIO_X - 4.0, AUDIO_X + 4.0, w0, w1, -1, PCB_Z1 + 7.5)        # 3.5 mm audio
     # USB / Ethernet end: open, with corner pillars left
@@ -127,7 +130,7 @@ def shell():
             if (x - SOC_X) ** 2 + (y - SOC_Y) ** 2 <= EYE ** 2:
                 s -= extrude(Pos(x, y, CEIL - 1) * RegularPolygon(1.3, 6), amount=LID + 2)
     for x, y in fan_screws():
-        s -= cyl(x, y, CEIL - 1, TOP + 1, 2.7)                           # M2 or M2.5 fan screws
+        s -= cyl(x, y, CEIL - 1, TOP + 1, FAN_SCREW)                     # M2.5 fan screws
     # lid: GPIO hatch opening (a 40-pin IDC plug passes) + its two screw holes
     s -= box(GPIO_X - GPIO_LEN / 2 - 3, GPIO_X + GPIO_LEN / 2 + 3, GPIO_Y - 5, IY1 - 0.2, CEIL - 1, TOP + 1)
     for x in hatch_screws():
@@ -284,8 +287,9 @@ def base():
                (tip, BD / 2 + w / 2 - c), (tip - sgn * c, BD / 2 + w / 2), (root, BD / 2 + w / 2)]
         pts = pts if sgn > 0 else pts[::-1]                              # counter-clockwise, so it extrudes up
         b += extrude(Polygon(*pts, align=None), amount=FLOOR)
-    for xs in (OX0 - EAR + 4.0, OX1 + EAR - 4.0 - 4.5):                  # slots, 4.5 mm for thick webbing
-        b -= extrude(Pos(xs + 2.25, BD / 2, -1) * RectangleRounded(4.5, STRAP + 1.5, 2.0), amount=FLOOR + 2)
+    sw = STRAP_T + 1.0
+    for xs in (OX0 - EAR + 4.0, OX1 + EAR - 4.0 - sw):                   # slots: the strap's thickness + 1 mm
+        b -= extrude(Pos(xs + sw / 2, BD / 2, -1) * RectangleRounded(sw, STRAP + 1.5, 1.9), amount=FLOOR + 2)
     for x, y in HOLES:
         b += cyl(x, y, FLOOR, PCB_Z0, 6.0)
         b -= cyl(x, y, -1, PCB_Z0 + 1, 2.8)
@@ -326,7 +330,7 @@ def coupon():
     """20-minute fit test: a Pi hole post, a USB-C notch, a grid hole, an M2 camera boss."""
     c = box(0, 40, 0, 20, 0, 3)
     c += cyl(6, 10, 3, 6, 6.0) - cyl(6, 10, -1, 7, 2.8)
-    c += box(14, 32, 16, 20, 3, 14) - box(16.5, 29.5, 15, 21, 2, 12.5)
+    c += box(14, 32, 16, 20, 3, 14) - box(23 - USBC_PLUG[0] / 2 - 1, 23 + USBC_PLUG[0] / 2 + 1, 15, 21, 2, 12.5)  # USB-C notch
     c -= cyl(36, 10, 0.4, 4, SELF_TAP_M3)
     c += cyl(36, 4, 3, 6, 4.2) - cyl(36, 4, 1, 7, 1.8)
     return c
