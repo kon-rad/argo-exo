@@ -1,4 +1,4 @@
-"""Exo deck case for the Raspberry Pi 4: a hackable shell + base, swappable GPIO hatches, a camera bracket.
+"""Exo deck case for the Raspberry Pi 4: a hackable shell + base and swappable GPIO hatches.
 
 Run:  uv run --no-project --with build123d --with shapely --with numpy python pi4_deck_case.py
 Out:  out/*.stl, out/*.3mf, out/exo-deck-case.step, out/preview-*.png
@@ -140,7 +140,7 @@ def shell():
     s -= box(CSI_X - sw / 2, CSI_X + sw / 2, CSI_Y - sl / 2, CSI_Y + sl / 2, CEIL - 1, TOP + 1)
     # 1 mm 45-degree lead-in on the outer edge so the ribbon bends over a slope, not a sharp edge
     s -= extrude(Pos(CSI_X, CSI_Y, TOP - 1.0) * Rectangle(sw, sl), amount=1.01, taper=-45)
-    # lid: M3 self-tap holes (blind): two for the camera bracket, a column of three for anything else
+    # lid: M3 self-tap holes (blind) for brackets and sensors: a pair near the corner, a column of three
     for x, y in CAMERA_HOLES + LID_HOLES:
         s -= cyl(x, y, TOP - 2.8, TOP + 1, SELF_TAP_M3)
     s -= branding()
@@ -153,7 +153,8 @@ def shell():
     return s
 
 
-CAMERA_HOLES = [(62.0, 3.0), (82.0, 3.0)]      # 20 mm apart, matches camera_bracket(); bracket then spans y -2..24
+CAMERA_HOLES = [(62.0, 3.0), (82.0, 3.0)]      # two spare M3 hack holes (the camera bracket they held was dropped
+                                               # 2026-10-16: the camera has its own pin, camera_pin.py)
 LID_HOLES = [(6.0, 20.0), (6.0, 30.0), (6.0, 40.0)]
 EYE = 9.5                                       # grille cells sit within this radius of the fan centre
 SPIRACLES = [(y, 14.4) for y in (5.0, 10.0, 15.0, 41.0, 46.0, 51.0)] + \
@@ -314,18 +315,6 @@ def hatch(kind):
     return h
 
 
-def camera_bracket():
-    """Flat bracket for the Pi Camera Rev 1.3 (25 x 24 mm, M2 holes 21 x 12.5): two M3 screws into the lid grid."""
-    p = extrude(Pos(0, 4, 0) * RectangleRounded(30, 26, 6.0), amount=2.5)
-    for x in (-10.0, 10.0):
-        p -= cyl(x, -4, -1, 3.5, 3.4)                                    # 20 mm = two grid steps
-    for x in (-10.5, 10.5):
-        for y in (2.0, 14.5):
-            p += cyl(x, y, 2.5, 5.5, 4.2)
-            p -= cyl(x, y, 1.0, 6.0, 1.8)                                # M2 self-tap
-    return p
-
-
 def coupon():
     """20-minute fit test: a shell post (M2.5 self-tap), a USB-C notch, a grid hole, an M2 camera boss."""
     c = box(0, 40, 0, 20, 0, 3)
@@ -343,7 +332,6 @@ def parts():
         "hatch-blank": hatch("blank"),
         "hatch-ribbon": hatch("ribbon"),
         "hatch-open": hatch("open"),
-        "camera-bracket": camera_bracket(),
         "coupon": coupon(),
     }
 
