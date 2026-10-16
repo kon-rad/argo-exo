@@ -56,6 +56,7 @@ def render(name, parts, azim, elev, px=1000, ss=2):
     print(OUT / f"hero-{name}.png")
 
 
-render("front", PARTS, azim=-125, elev=28)
-render("back", PARTS, azim=55, elev=22)
-render("lid", PARTS[:1], azim=-75, elev=52)
+if __name__ == "__main__":
+    render("front", PARTS, azim=-125, elev=28)
+    render("back", PARTS, azim=55, elev=22)
+    render("lid", PARTS[:1], azim=-75, elev=52)
