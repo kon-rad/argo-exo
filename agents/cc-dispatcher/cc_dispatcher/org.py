@@ -302,8 +302,8 @@ def hermes_result_of(log_path: Path) -> tuple[str | None, str, bool]:
     for line in lines:
         if line.startswith("session_id: "):
             session = line.split(": ", 1)[1].strip() or None
-        elif not line.startswith('{"type": "cc_dispatch"'):
-            body.append(line)
+        elif not line.startswith('{"type": "cc_dispatch"') and "tirith security scanner" not in line:
+            body.append(line)        # (Hermes's start-up warning about its optional command scanner is noise here)
     text = "\n".join(body).strip()
     return session, text[-1500:], bool(text)
 

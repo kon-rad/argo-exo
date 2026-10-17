@@ -67,7 +67,8 @@ def test_a_finished_hermes_wake_stores_its_session_and_closes_the_wakeups(tmp_pa
     hspawned = with_hermes_spawn(runner)
     d.tick()
     h = hspawned[0]
-    h["log"].write_text(json.dumps({"type": "cc_dispatch", "run_id": h["run_id"]}) + "\nPosted the draft to media.\n\nsession_id: 20261017_120000_abc\n")
+    h["log"].write_text(json.dumps({"type": "cc_dispatch", "run_id": h["run_id"]}) + "\n  \u26a0 tirith security scanner enabled but not available\n"
+                        "Posted the draft to media.\n\nsession_id: 20261017_120000_abc\n")
     h["proc"].code = 0
     clock["t"] += 30
     d.tick()
