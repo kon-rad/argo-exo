@@ -94,3 +94,10 @@ allowed_tools = ["Bash(cli-org *)", "Bash(cli-projects list*)", "Bash(cli-projec
 denied_tools = ["Read(//home/hermes/secondBrain/CURRENT/**)", "Edit(//home/hermes/secondBrain/CURRENT/**)",
                 "Write(//home/hermes/secondBrain/CURRENT/**)"]
 
+
+# Hermes profiles whose model runs on the home M1 Max (vault: Areas/argo/second-brain/macbook-home-lab/). While the
+# health URL fails, their ready cards are parked (`schedule`) and runtime: hermes bots' wakes wait; when it answers
+# again, the parked cards and any card Hermes gave up on during the outage go back to ready.
+[local]
+health_url = "http://m1max:11434/api/version"
+profiles = ["m1-writer", "lena"]

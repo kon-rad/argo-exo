@@ -56,6 +56,13 @@ class OrgSettings:
 
 
 @dataclass(frozen=True)
+class LocalSettings:
+    """[local] in lanes.toml: Hermes profiles whose model runs on the home model host. Off unless health_url is set."""
+    health_url: str                # e.g. the host's Ollama /api/version through its gateway
+    profiles: tuple[str, ...]      # Hermes profile names (and runtime: hermes bots) that need it
+
+
+@dataclass(frozen=True)
 class Settings:
     lanes_path: Path
     boards: tuple[str, ...]
@@ -73,6 +80,7 @@ class Settings:
     verifiers: dict[str, Verifier] = field(default_factory=dict)
     max_attempts: int = 3
     org: OrgSettings | None = None
+    local: LocalSettings | None = None
 
 
 def load(path: str | Path) -> Settings:
@@ -141,6 +149,7 @@ def load(path: str | Path) -> Settings:
     if max_attempts < 1:
         raise ValueError(f"max_attempts must be >= 1, got {max_attempts}")
     o = raw.get("org", {})
+    lo = raw.get("local", {})
     org = None
     if o.get("enabled"):
         vault = Path(o.get("vault", defaults.get("cwd", "/home/hermes/secondBrain")))
@@ -170,4 +179,5 @@ def load(path: str | Path) -> Settings:
         rate_limit_pause_minutes=int(d.get("rate_limit_pause_minutes", 60)),
         claude_bin=d.get("claude_bin", "claude"), hermes_bin=d.get("hermes_bin", "hermes"),
         lanes=lanes, verifiers=verifiers, max_attempts=max_attempts, org=org,
+        local=LocalSettings(health_url=str(lo["health_url"]), profiles=tuple(lo.get("profiles", []))) if lo.get("health_url") else None,
     )

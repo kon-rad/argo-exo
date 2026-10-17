@@ -15,6 +15,7 @@ from zoneinfo import ZoneInfo
 from . import verify, worker
 from .board import Board, BoardError
 from .config import Lane, Settings
+from .local_gate import LocalGate
 from .org import OrgBoard, OrgRunner
 
 log = logging.getLogger("cc-dispatcher")
@@ -69,12 +70,18 @@ class Dispatcher:
     _ticks: int = 0
 
     org: OrgRunner | None = None
+    gate: LocalGate | None = None
 
     def __post_init__(self):
         self.state_path = self.settings.runs_dir / "state.json"
         self.state = State.load(self.state_path)
         if self.org is None and self.settings.org is not None:
             self.org = OrgRunner(self.settings, self.boards, OrgBoard(self.settings.org.cli_org), clock=self.clock)
+        if self.gate is None and self.settings.local is not None:
+            self.gate = LocalGate(self.settings.local.health_url, self.settings.local.profiles, self.boards,
+                                  self.settings.runs_dir / "local-gate.json")
+        if self.org is not None and self.org.gate is None:
+            self.org.gate = self.gate
 
     # -- startup -------------------------------------------------------------------------------------------------
     def recover(self) -> list[str]:
@@ -99,7 +106,11 @@ class Dispatcher:
         self._reap(now)
         self._enforce_runtime(now)
         self._roll_day(now)
+        if self.gate is not None:
+            self.gate.tick(now)
         if not self._may_spawn(now):
+            if self.org is not None and self._may_spawn_local(now):
+                self._tick_org(now)      # capped for Claude, but local-model bots still run
             return
         # Lanes and the org take turns going first: with two slots, a tick that always served the lanes first let two
         # research cards hold both slots while four bots' cards and their mentions waited (2026-10-15).
@@ -123,10 +134,17 @@ class Dispatcher:
 
     def _tick_org(self, now: float) -> None:
         assert self.org is not None
-        started = self.org.tick(now, lambda: self._may_spawn(now))
+        started = self.org.tick(now, lambda: self._may_spawn(now), lambda: self._may_spawn_local(now))
         if started:
             self.state.spawned_today += started
             self.state.save(self.state_path)
+
+    def _may_spawn_local(self, now: float) -> bool:
+        """A wake on the local model: the PAUSE file and the concurrency limit apply (droplet RAM); the daily cap and
+        the Claude rate-limit pause don't."""
+        if self.settings.pause_file.exists():
+            return False
+        return len(self.running) + (len(self.org.running) if self.org is not None else 0) < self.settings.max_in_progress
 
     def _may_spawn(self, now: float) -> bool:
         s = self.settings

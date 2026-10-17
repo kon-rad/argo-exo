@@ -4,6 +4,10 @@ Design: Areas/argo/second-brain/agent-company/agent-company-design.md §6 in the
 through `cli-org` (the Second Brain app's CLI, on hermes's PATH), the same way kanban is reached through `hermes
 kanban`: no database driver here, stdlib only.
 
+A `runtime: hermes` agent is a Hermes profile of the same name (its model on the home model host): a wake is one
+`hermes -p <name> chat -Q -q` run, its kanban cards are Hermes's own dispatcher's (never claimed here), and it waits
+while the local gate says the host is down. Those wakes don't count toward the daily cap (no Claude quota).
+
 One wake = one `claude -p` run as that agent: identity from .claude/agents/<name>.md plus the org-member skill as the
 appended system prompt, ORG_AGENT in the environment, the agent's last session resumed. All open wakeups of an agent
 are claimed together (coalescing); an agent runs at most once per cooldown and `wakes_per_day` times a day; the
@@ -48,20 +52,26 @@ class OrgAgent:
     routines: tuple[dict, ...]
     permission_mode: str = "acceptEdits"
     work: str | None = None               # research | coding | design | media | writing | sales | education | ops
+    runtime: str = "claude-code"          # claude-code | hermes
+
+    @property
+    def is_hermes(self) -> bool:
+        return self.runtime == "hermes"
 
 
 def load_agents(path: Path) -> dict[str, OrgAgent]:
     raw = json.loads(path.read_text())
     agents = {}
     for name, a in raw.get("agents", {}).items():
-        if a.get("runtime", "claude-code") != "claude-code":
-            continue   # Hermes agents are woken by Hermes, later
+        runtime = a.get("runtime", "claude-code")
+        if runtime not in ("claude-code", "hermes"):
+            continue   # codex, human: not ours
         agents[name] = OrgAgent(
             name=name, role=a["role"], team=a["team"], team_name=a.get("team_name", a["team"]), model=a.get("model", "sonnet"),
             lane=a.get("lane"), is_lead=bool(a.get("is_lead")), prompt_file=a["prompt_file"], tools=tuple(a.get("tools", [])),
             wakes_per_day=int(a.get("wakes_per_day", 6)), cooldown_minutes=int(a.get("cooldown_minutes", 10)),
             max_runtime_minutes=int(a.get("max_runtime_minutes", 30)), routines=tuple(a.get("routines", [])),
-            permission_mode=a.get("permission_mode", "acceptEdits"), work=a.get("work"),
+            permission_mode=a.get("permission_mode", "acceptEdits"), work=a.get("work"), runtime=runtime,
         )
     return agents
 
@@ -255,6 +265,47 @@ def spawn(settings: Settings, agent: OrgAgent, lane: Lane | None, task: tuple[st
         out.close()
 
 
+def hermes_command(settings: Settings, agent: OrgAgent, prompt: str, session_id: str | None) -> list[str]:
+    """The Hermes profile named like the agent; identity and the org skill ride in the first prompt of a session."""
+    org = settings.org
+    assert org is not None
+    if not session_id:
+        prompt = system_prompt(settings, agent, with_protocol=False) + "\n---\n\n" + prompt
+    cmd = [settings.hermes_bin, "-p", agent.name, "chat", "-Q", "-q", prompt, "--max-turns", str(org.max_turns), "--source", "org"]
+    if session_id:
+        cmd += ["--resume", session_id]
+    return cmd
+
+
+def spawn_hermes(settings: Settings, agent: OrgAgent, prompt: str, session_id: str | None, run_id: str, cwd: str,
+                 log_path: Path, base_env: dict | None = None) -> subprocess.Popen:
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    out = open(log_path, "ab")
+    env = org_env(base_env if base_env is not None else dict(os.environ), settings, agent, run_id, None)
+    try:
+        return subprocess.Popen(hermes_command(settings, agent, prompt, session_id), cwd=cwd, stdin=subprocess.DEVNULL,
+                                stdout=out, stderr=subprocess.STDOUT, env=env, start_new_session=True)
+    finally:
+        out.close()
+
+
+def hermes_result_of(log_path: Path) -> tuple[str | None, str, bool]:
+    """(session_id, result text, saw_reply) from a `hermes chat -Q` log: the reply, then `session_id: <id>` on stderr."""
+    try:
+        lines = log_path.read_text(errors="replace").splitlines()
+    except OSError:
+        return None, "", False
+    session = None
+    body = []
+    for line in lines:
+        if line.startswith("session_id: "):
+            session = line.split(": ", 1)[1].strip() or None
+        elif not line.startswith('{"type": "cc_dispatch"'):
+            body.append(line)
+    text = "\n".join(body).strip()
+    return session, text[-1500:], bool(text)
+
+
 def result_of(log_path: Path) -> tuple[str | None, str, bool]:
     """(session_id, result text, saw_assistant) from a stream-json log."""
     session, text, saw = None, "", False
@@ -278,6 +329,8 @@ class OrgRunner:
     prepare_cwd: Callable = worker.prepare_cwd
     clock: Callable[[], float] = time.time
     running: dict[str, OrgRun] = field(default_factory=dict)   # agent name -> run (one run per agent at a time)
+    spawn_hermes: Callable = spawn_hermes
+    gate: object | None = None            # local_gate.LocalGate: `up` False holds runtime: hermes wakes
 
     def __post_init__(self):
         org = self.settings.org
@@ -297,8 +350,10 @@ class OrgRunner:
         return n
 
     # -- one pass --------------------------------------------------------------------------------------------------
-    def tick(self, now: float, may_spawn: Callable[[], bool]) -> int:
-        """Fires due routines, then starts one run per agent that has work. Returns the number started."""
+    def tick(self, now: float, may_spawn: Callable[[], bool], may_spawn_local: Callable[[], bool] | None = None) -> int:
+        """Fires due routines, then starts one run per agent that has work. Returns the number of Claude runs started
+        (the daily cap counts those; a Hermes wake on the local model is checked with may_spawn_local instead)."""
+        may_spawn_local = may_spawn_local or may_spawn
         self._fire_routines(now)
         started = 0
         pending: dict[str, list[dict]] = {}
@@ -311,12 +366,20 @@ class OrgRunner:
         tasks: dict[str, tuple[str, str, dict]] = {}
         for board_name, board in self.boards.items():
             for name in self.agents:
+                if self.agents[name].is_hermes:
+                    continue      # a Hermes profile's cards belong to Hermes's own dispatcher
                 for t in sorted(self._safe(board.tasks, name, "ready") or [],
                                 key=lambda t: (-int(t.get("priority") or 0), int(t.get("created_at") or 0))):
                     tasks.setdefault(name, (board_name, t["id"], t))
         for name in sorted(set(pending) | set(tasks), key=lambda n: (not self.agents[n].is_lead if n in self.agents else True, n)):
             agent = self.agents.get(name)
             if agent is None or name in self.running or not self._allowed(agent, now):
+                continue
+            if agent.is_hermes:
+                if self.gate is not None and agent.name in getattr(self.gate, "profiles", ()) and not getattr(self.gate, "up", True):
+                    continue      # its model host is down: the wakeups stay open until it is back
+                if may_spawn_local() and pending.get(name):
+                    self._start(agent, pending[name], None, now)
                 continue
             if not may_spawn():
                 break
@@ -351,14 +414,17 @@ class OrgRunner:
             return False
         lane = self.settings.lanes.get(agent.lane) if agent.lane else None
         session = self._session_to_resume(agent)
-        log_path = self.settings.runs_dir / f"{run_id}.jsonl"
+        log_path = self.settings.runs_dir / f"{run_id}.{'log' if agent.is_hermes else 'jsonl'}"
         try:
             cwd = self.prepare_cwd(self.settings, lane, task_ref[1]) if (lane and lane.worktree and task_ref) else str(self.org.vault)
             log_path.parent.mkdir(parents=True, exist_ok=True)
             with open(log_path, "a") as f:      # frames this wake in the log; the Second Brain ledger reads it
                 at = datetime.fromtimestamp(now, tz=ZoneInfo("UTC")).isoformat()
                 f.write(json.dumps(run_header(agent, run_id, claimed, task_ref, bool(session), at)) + "\n")
-            proc = self.spawn(self.settings, agent, lane, task_ref, wake_prompt(agent, claimed, task_ref), session, run_id, cwd, log_path)
+            if agent.is_hermes:
+                proc = self.spawn_hermes(self.settings, agent, wake_prompt(agent, claimed, None), session, run_id, cwd, log_path)
+            else:
+                proc = self.spawn(self.settings, agent, lane, task_ref, wake_prompt(agent, claimed, task_ref), session, run_id, cwd, log_path)
         except Exception as exc:
             log.exception("spawn failed for %s", agent.name)
             if task_ref:
@@ -401,7 +467,7 @@ class OrgRunner:
             if code is None:
                 continue
             del self.running[name]
-            session, text, saw = result_of(r.log_path)
+            session, text, saw = (hermes_result_of if r.agent.is_hermes else result_of)(r.log_path)
             if r.timed_out:
                 text = f"hit its max runtime ({r.agent.max_runtime_minutes} min). {text}"
             if session and (code == 0 or saw):

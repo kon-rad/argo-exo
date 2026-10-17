@@ -164,13 +164,14 @@ def log_result(path: Path, session="sess-1", result="posted a status", assistant
 
 
 # -- config -------------------------------------------------------------------------------------------------------
-def test_org_section_loads_and_hermes_agents_are_skipped(tmp_path):
+def test_org_section_loads_and_keeps_hermes_agents_apart(tmp_path):
     vault = org_vault(tmp_path)
     s = load(lanes_with_org(tmp_path, vault))
     assert s.org.cli_org == "/opt/cli-org" and s.org.allowed_tools == ("Read", "Bash(cli-org *)")
     assert s.org.denied_tools == ("Bash(sudo *)", "Read(CURRENT/**)")
     agents = orgmod.load_agents(s.org.agents_file)
-    assert set(agents) == {"atlas", "rune", "vera"} and agents["atlas"].is_lead and agents["rune"].lane == "cc-test"
+    assert set(agents) == {"atlas", "rune", "vera", "argo-cmo"} and agents["atlas"].is_lead and agents["rune"].lane == "cc-test"
+    assert agents["argo-cmo"].is_hermes and not agents["atlas"].is_hermes
     assert load(lanes_with_org(tmp_path, vault, enabled="false")).org is None
 
 

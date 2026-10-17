@@ -58,6 +58,13 @@ class Board:
     def block(self, task_id: str, reason: str, kind: str = "transient") -> None:
         self._call("block", "--kind", kind, "--", task_id, reason)
 
+    def schedule(self, task_id: str, reason: str) -> None:
+        """Park a card in Scheduled (waiting on time, not a human); `unblock` returns it to ready."""
+        self._call("schedule", "--", task_id, reason)
+
+    def unblock(self, task_id: str, reason: str) -> None:
+        self._call("unblock", "--reason", reason, "--", task_id)
+
     # -- used by agent-hub (the Second Brain app's Agents page) -------------------------------------------------
     def all_tasks(self) -> list[dict]:
         rows = self._json("list", "--json")
