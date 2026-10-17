@@ -76,6 +76,16 @@ def test_a_finished_hermes_wake_stores_its_session_and_closes_the_wakeups(tmp_pa
     assert ids == [1] and code == 0 and text == "Posted the draft to media."
 
 
+def test_a_bot_that_changed_runtime_starts_a_fresh_session(tmp_path):
+    d, runner, ob, spawned, clock = make(tmp_path, wakeups=[{"id": 1, "agent_name": "argo-cmo", "reason": "dm", "ref": "77"}])
+    hspawned = with_hermes_spawn(runner)
+    ob.sessions["argo-cmo"] = {"session_id": "5b32ace6-2042-4784-bab0-2b5ced19fee1", "session_started": datetime.now(TZ).date().isoformat()}
+    d.tick()
+    assert hspawned[0]["session"] is None and ob.session_sets[-1] == ("argo-cmo", None)
+    ob.sessions["argo-cmo"] = {"session_id": "20261017_120000_abc", "session_started": datetime.now(TZ).date().isoformat()}
+    assert runner._session_to_resume(runner.agents["argo-cmo"]) == "20261017_120000_abc"
+
+
 def test_hermes_command_sends_identity_once_per_session(tmp_path):
     vault = org_vault(tmp_path)
     s = load(lanes_with_org(tmp_path, vault))

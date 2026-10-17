@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import subprocess
 import time
 from dataclasses import dataclass, field
@@ -33,6 +34,7 @@ from .config import Lane, OrgSettings, Settings
 log = logging.getLogger("cc-dispatcher.org")
 AUTHOR = "cc-dispatcher"
 WEEKDAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+HERMES_SESSION = re.compile(r"^\d{8}_\d{6}_[0-9a-f]+$")   # Hermes ids; a Claude session id (a uuid) is not resumable there
 
 
 @dataclass(frozen=True)
@@ -83,7 +85,7 @@ def run_header(agent: OrgAgent, run_id: str, claimed: list[dict], task: tuple[st
         "reasons": [{"reason": w.get("reason"), "ref": w.get("ref")} for w in claimed],
         "wakeup_ids": [w["id"] for w in claimed if "id" in w],
         "task_id": task[1] if task else None, "board": task[0] if task else None,
-        "model": agent.model, "resumed": resumed, "at": at,
+        "model": "hermes" if agent.is_hermes else agent.model, "runtime": agent.runtime, "resumed": resumed, "at": at,
     }
 
 
@@ -450,6 +452,10 @@ class OrgRunner:
             return None
         sid, started = s.get("session_id"), s.get("session_started")
         if not sid:
+            return None
+        if agent.is_hermes != bool(HERMES_SESSION.match(str(sid))):
+            # The bot changed runtime (lena: Claude Code -> Hermes, 2026-10-17): the old session is the other runtime's.
+            self._safe(self.org_board.set_session, agent.name, None)
             return None
         try:
             age_days = (datetime.now(self.tz).date() - datetime.fromisoformat(str(started)[:10]).date()).days
