@@ -31,7 +31,10 @@ allowed_tools = ["Read", "Grep", "Glob", "Edit", "Write",
 denied_tools = ["Bash(sudo *)", "Bash(git push *)", "Bash(ssh *)", "Bash(systemctl *)",
                 "Read(**/.env)", "Read(**/.env.*)", "Read(//home/hermes/.hermes/.env)",
                 "Read(//home/hermes/.hermes/auth.json)", "Read(//home/hermes/.claude/.credentials.json)",
-                "Read(//home/trader/**)", "Read(//srv/exo-guard/**)"]
+                "Read(//home/trader/**)", "Read(//srv/exo-guard/**)",
+                # The bots' GitHub token and the environment of running processes (cli-git hands the token to git
+                # and gh through it); vault bot-powers-and-shared-memory-design.md section 2.
+                "Read(//home/hermes/.config/bot-github/**)", "Read(//proc/**)", "Read(//etc/secondbrain/env*)"]
 
 [lanes.cc-coder]
 description = "Writes and fixes code in its own git worktree, runs the tests, and leaves a branch for review. Never pushes."
@@ -86,7 +89,8 @@ agents_file = "/home/hermes/secondBrain/.agents/org/org-agents.json"
 skill_file = "/home/hermes/secondBrain/.agents/skills/org-member/SKILL.md"
 cli_org = "/home/hermes/.local/bin/cli-org"
 timezone = "Asia/Tokyo"
-session_reset_days = 14
+session_reset_days = 3        # was 14: a resumed session re-reads its whole history on every wake (2026-10-19)
+bots_work_dir = "/home/hermes/cc-work/bots"   # cli-git worktrees; bots with the code capability get it as --add-dir
 max_turns = 60
 allowed_tools = ["Bash(cli-org *)", "Bash(cli-projects list*)", "Bash(cli-projects report*)", "Bash(python3 -m pytest *)", "Bash(npx vitest *)"]
 # Absolute paths only: the relative "CURRENT/**" also blocked Read on the vault's lowercase Areas/argo/argo-exo/current/

@@ -1,0 +1,28 @@
+# Installed to /etc/secondbrain/bot-repos.toml (root-owned, 644) by install.sh; edits here change nothing until the
+# owner reinstalls. The repos the org's bots may branch, push and open PRs in (cli-git). Design: vault
+# Areas/argo/second-brain/agent-company/bot-powers-and-shared-memory-design.md section 2.
+
+# Fine-grained GitHub token: Contents read/write and Pull requests read/write on these repos only. Mode 600, owned by
+# hermes; the bots' tool rules deny reading it. The owner creates it.
+token_file = "/home/hermes/.config/bot-github/token"
+work_dir = "/home/hermes/cc-work/bots"     # base/<repo> clones and wt/<repo>-<card> worktrees
+
+[repos.argo-exo]
+github = "kon-rad/argo-exo"
+default_branch = "main"
+protected = ["main"]
+test = ["/home/hermes/.venvs/exo-verify/bin/python", "-m", "pytest", "-q", "-p", "no:cacheprovider"]
+
+[repos.secondbrain]
+github = "kon-rad/secondbrain"
+default_branch = "main"
+protected = ["main"]
+test = ["bash", "-lc", "cd app && npm ci --silent && npx tsc --noEmit -p server && npx vitest run --project web"]
+test_timeout_seconds = 1200
+
+[repos.luminalog-oss]
+github = "kon-rad/luminalog-oss"
+default_branch = "main"
+protected = ["main"]
+test = ["bash", "-lc", "cd web && npm ci --silent && npx tsc --noEmit"]
+test_timeout_seconds = 1200

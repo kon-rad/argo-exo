@@ -1,0 +1,28 @@
+# Installed to ~/.config/m1-jobs/jobs.toml on the M1 Max by install-m1.sh (outside the vault on purpose: the bots can
+# edit the vault and it syncs here). What `m1-job run <job>` may start. Paths must resolve under `roots`; flags must be
+# listed in `flags`. Design: vault Areas/argo/second-brain/agent-company/bot-powers-and-shared-memory-design.md section 5.
+
+[jobs.caption]
+description = "Caption a video: SRT, transcript markdown, burned karaoke captions (caption-video skill, local whisper)"
+usage = "<video> [--mode=classic] [--model=small] [--srt-only]"
+cmd = ["/opt/homebrew/bin/python3", "~/.claude/skills/caption-video/scripts/caption_video.py"]
+roots = ["~/Movies", "~/Documents/secondbrain/Areas"]
+flags = ["--mode", "--model", "--srt-only", "--rotate-highlight"]
+timeout_minutes = 120
+
+[jobs.stabilize]
+description = "Stabilize Insta360 ONE R footage with its gyro data (insta360-stabilize skill)"
+usage = "<VID_*.insv or .mp4> [--smoothness=0.8] [--zoom=static] [--test=SEC] [--dry-run]"
+cmd = ["/opt/homebrew/bin/python3", "~/.claude/skills/insta360-stabilize/scripts/stabilize.py"]
+roots = ["~/Movies", "/Volumes"]
+flags = ["--smoothness", "--horizon", "--zoom", "--fov", "--bitrate", "--test", "--start", "--dry-run"]
+timeout_minutes = 180
+
+[jobs.prep]
+description = "Copy a camera card or folder into a shoot folder with proxies (video-edit-prep ingest)"
+usage = "<card or folder> --dest=<shoot folder> --proxies=<proxy folder> [--min-duration=1]"
+cmd = ["/opt/homebrew/bin/python3", "~/.claude/skills/video-edit-prep/scripts/ingest.py"]
+roots = ["~/Movies", "/Volumes"]
+path_flags = ["--dest", "--proxies"]
+flags = ["--min-duration"]
+timeout_minutes = 240

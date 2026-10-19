@@ -51,6 +51,7 @@ class OrgSettings:
     timezone: str = "Asia/Tokyo"   # routines (05:30 stand-up) are in this zone, like the Hermes cron
     session_reset_days: int = 14
     max_turns: int = 60
+    bots_work_dir: str = ""      # cli-git's worktrees; bots with the code capability get it as --add-dir
     allowed_tools: tuple[str, ...] = ()
     denied_tools: tuple[str, ...] = ()
 
@@ -161,6 +162,7 @@ def load(path: str | Path) -> Settings:
             timezone=o.get("timezone", "Asia/Tokyo"),
             session_reset_days=int(o.get("session_reset_days", 14)),
             max_turns=int(o.get("max_turns", 60)),
+            bots_work_dir=str(o.get("bots_work_dir", "")),
             allowed_tools=tuple(defaults.get("allowed_tools", [])) + tuple(o.get("allowed_tools", [])),
             denied_tools=tuple(defaults.get("denied_tools", [])) + tuple(o.get("denied_tools", [])),
         )

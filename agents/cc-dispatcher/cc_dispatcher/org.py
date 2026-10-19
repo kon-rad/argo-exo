@@ -55,6 +55,7 @@ class OrgAgent:
     permission_mode: str = "acceptEdits"
     work: str | None = None               # research | coding | design | media | writing | sales | education | ops
     runtime: str = "claude-code"          # claude-code | hermes
+    capabilities: tuple[str, ...] = ()    # code | review | merge | deploy | m1 | web (tools come with them from the compiler)
 
     @property
     def is_hermes(self) -> bool:
@@ -74,6 +75,7 @@ def load_agents(path: Path) -> dict[str, OrgAgent]:
             wakes_per_day=int(a.get("wakes_per_day", 6)), cooldown_minutes=int(a.get("cooldown_minutes", 10)),
             max_runtime_minutes=int(a.get("max_runtime_minutes", 30)), routines=tuple(a.get("routines", [])),
             permission_mode=a.get("permission_mode", "acceptEdits"), work=a.get("work"), runtime=runtime,
+            capabilities=tuple(a.get("capabilities", [])),
         )
     return agents
 
@@ -173,7 +175,11 @@ def describe_wakeups(wakeups: list[dict]) -> list[str]:
         reason, ref = w.get("reason"), w.get("ref")
         # "owner" is the reason for a message the human wrote (the engine's name since its
         # owner-names migration); "konrad" is what older wakeups carried.
-        if reason in ("dm", "mention", "handoff", "owner", "konrad"):
+        if reason == "owner" and str(ref).startswith("ship:"):
+            sid = str(ref)[5:]
+            lines.append(f"the owner answered ship request #{sid} (`cli-org ship list` shows it; approved: merge or deploy now, "
+                         "denied: the note says what to fix)")
+        elif reason in ("dm", "mention", "handoff", "owner", "konrad"):
             who = {"dm": "a direct message", "mention": "a mention", "handoff": "a handoff",
                    "owner": "a message from konrad", "konrad": "a message from konrad"}[reason]
             lines.append(f"{who} (message {ref}; `cli-org thread {ref}` shows it)")
@@ -192,7 +198,12 @@ def wake_prompt(agent: OrgAgent, wakeups: list[dict], task: tuple[str, str] | No
     if task and not any(w.get("reason") == "task" for w in wakeups):
         reasons.append(f"kanban task {task[1]} on board {task[0]}")
     head = f"You are {agent.name}, {agent.role} on the {agent.team_name} team. You were woken because of:\n" + "\n".join(f"- {r}" for r in reasons)
-    steps = ["Run `cli-org whoami`, then `cli-org read` to see everything new in your channels."]
+    # Only what woke the bot: reading every channel on every wake was most of a short wake's tokens.
+    steps = ["Read only what woke you: `cli-org thread <id>` for each message above. Read a channel (`cli-org read <channel>`) "
+             "only when the work needs its history."]
+    if task:
+        steps.append("Before you start, `cli-org recall \"<the card's subject>\" --project <its project>` for what the company "
+                     "already knows; when you learn something others will need, `cli-org remember` it with its source.")
     if task:
         steps.append(f"Work kanban task {task[1]} on board {task[0]}: start with `hermes kanban --board {task[0]} show {task[1]} --json`, "
                      "do the work, and end it with `complete` or `block` (the kanban worker protocol below).")
@@ -237,6 +248,8 @@ def org_command(settings: Settings, agent: OrgAgent, lane: Lane | None, task: tu
         "--allowedTools", ",".join(dict.fromkeys(allowed)),
         "--disallowedTools", ",".join(dict.fromkeys(denied)),
     ]
+    if "code" in agent.capabilities and org.bots_work_dir:
+        cmd += ["--add-dir", org.bots_work_dir]     # cli-git worktrees: Edit and Write work there without a prompt
     if session_id:
         cmd += ["--resume", session_id]
     return cmd
@@ -366,12 +379,19 @@ class OrgRunner:
             log.warning("cli-org wakeups failed: %s", exc)
             return 0
         tasks: dict[str, tuple[str, str, dict]] = {}
+        order = lambda t: (-int(t.get("priority") or 0), int(t.get("created_at") or 0))   # noqa: E731
         for board_name, board in self.boards.items():
+            if hasattr(board, "ready_tasks"):
+                # One listing per board per tick, filtered here (was one `hermes kanban list` per bot, 22 every 30 s).
+                for t in sorted(self._safe(board.ready_tasks) or [], key=order):
+                    name = t.get("assignee")
+                    if name in self.agents and not self.agents[name].is_hermes:
+                        tasks.setdefault(name, (board_name, t["id"], t))
+                continue
             for name in self.agents:
                 if self.agents[name].is_hermes:
                     continue      # a Hermes profile's cards belong to Hermes's own dispatcher
-                for t in sorted(self._safe(board.tasks, name, "ready") or [],
-                                key=lambda t: (-int(t.get("priority") or 0), int(t.get("created_at") or 0))):
+                for t in sorted(self._safe(board.tasks, name, "ready") or [], key=order):
                     tasks.setdefault(name, (board_name, t["id"], t))
         for name in sorted(set(pending) | set(tasks), key=lambda n: (not self.agents[n].is_lead if n in self.agents else True, n)):
             agent = self.agents.get(name)

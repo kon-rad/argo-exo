@@ -1,0 +1,22 @@
+# Installed to /etc/secondbrain/deploy-targets.toml (root-owned, 644) by install.sh. The only things `cli-deploy` can
+# run, each after `cli-org ship check <card> --deploy <target>` passes. Steps run as hermes in `cwd`; `check` proves it
+# is live. Design: vault Areas/argo/second-brain/agent-company/bot-powers-and-shared-memory-design.md section 4.
+
+[targets.argo-web]
+description = "myargoquest.com: pull the droplet's luminalog-oss clone, then web/deploy.sh to the web host"
+cwd = "/home/hermes/luminalog-oss"
+pre = [["git", "pull", "--ff-only", "--quiet"]]
+cmd = ["bash", "-lc", "cd web && ./deploy.sh"]
+check = ["curl", "-fsS", "-o", "/dev/null", "--max-time", "30", "https://myargoquest.com/"]
+timeout_minutes = 25
+[targets.argo-web.env]
+LUMINALOG_DEPLOY_SERVER = "root@165.22.103.109"
+LUMINALOG_DEPLOY_SSH_KEY = "/home/hermes/.ssh/argo_web_deploy"
+
+[targets.argo-exo-agents]
+description = "agent-hub from argo-exo main (never cc-dispatcher: restarting it orphans its own workers)"
+cwd = "/home/hermes/argo-exo"
+pre = [["git", "pull", "--ff-only", "--quiet"]]
+cmd = ["sudo", "-n", "/usr/bin/systemctl", "restart", "agent-hub"]
+check = ["bash", "-lc", "sleep 3 && systemctl is-active --quiet agent-hub"]
+timeout_minutes = 5

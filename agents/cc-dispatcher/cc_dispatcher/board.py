@@ -66,6 +66,11 @@ class Board:
         self._call("unblock", "--reason", reason, "--", task_id)
 
     # -- used by agent-hub (the Second Brain app's Agents page) -------------------------------------------------
+    def ready_tasks(self) -> list[dict]:
+        """Every ready card on the board in one call; the org filters by assignee itself (was one call per bot)."""
+        rows = self._json("list", "--status", "ready", "--json")
+        return rows if isinstance(rows, list) else []
+
     def all_tasks(self) -> list[dict]:
         rows = self._json("list", "--json")
         return rows if isinstance(rows, list) else []

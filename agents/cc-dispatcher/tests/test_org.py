@@ -434,3 +434,47 @@ def test_recover_releases_wakeups_claimed_by_a_dead_dispatcher(tmp_path):
     d.tick()
     assert [s["agent"] for s in spawned] == ["atlas"]
 
+
+
+# -- bot powers (2026-10-19) ----------------------------------------------------------------------------------------
+class ListingBoard(FakeBoard):
+    """A board that answers one `list --status ready` for everyone, like the real one."""
+
+    def __init__(self, ready):
+        super().__init__(ready=ready)
+        self.listings = 0
+
+    def ready_tasks(self):
+        self.listings += 1
+        return list(self.ready)
+
+
+def test_one_listing_per_board_per_tick_filtered_by_assignee(tmp_path):
+    board = ListingBoard([{"id": "t_a", "assignee": "rune"}, {"id": "t_b", "assignee": "cc-coder"}, {"id": "t_c", "assignee": "argo-cmo"}])
+    d, runner, ob, spawned, clock = make(tmp_path, board=board)
+    runner.tick(clock["t"], lambda: True)
+    assert board.listings == 1
+    assert [(s["agent"], s["task"]) for s in spawned] == [("rune", ("exo", "t_a"))]   # lanes and Hermes profiles are not the org's
+
+
+def test_code_bots_get_the_worktree_dir_and_a_lean_prompt(tmp_path):
+    vault = org_vault(tmp_path)
+    lanes = lanes_with_org(tmp_path, vault)
+    lanes.write_text(lanes.read_text() + 'bots_work_dir = "/home/hermes/cc-work/bots"\n')
+    settings = load(lanes)
+    raw = json.loads((vault / ".agents" / "org" / "org-agents.json").read_text())
+    raw["agents"]["rune"]["capabilities"] = ["code"]
+    (vault / ".agents" / "org" / "org-agents.json").write_text(json.dumps(raw))
+    agents = orgmod.load_agents(settings.org.agents_file)
+    assert agents["rune"].capabilities == ("code",) and agents["atlas"].capabilities == ()
+    cmd = org_command(settings, agents["rune"], None, ("exo", "t_1"), "P", None)
+    assert cmd[cmd.index("--add-dir") + 1] == "/home/hermes/cc-work/bots"
+    assert "--add-dir" not in org_command(settings, agents["atlas"], None, None, "P", None)
+    text = wake_prompt(agents["rune"], [{"reason": "dm", "ref": "7"}], ("exo", "t_1"))
+    assert "cli-org thread <id>" in text and "`cli-org read` to see everything" not in text and "cli-org recall" in text
+
+
+def test_the_owners_ship_answer_is_described_as_one():
+    lines = describe_wakeups([{"reason": "owner", "ref": "ship:12"}])
+    assert lines == ["the owner answered ship request #12 (`cli-org ship list` shows it; approved: merge or deploy now, "
+                     "denied: the note says what to fix)"]
