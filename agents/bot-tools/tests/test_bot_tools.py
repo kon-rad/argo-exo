@@ -166,6 +166,15 @@ def test_public_repo_push_is_scanned_and_uncommit_redoes(env, capsys):
     assert call("cli-git", "pr", "create", "t_abc123", "t", "--body", "deployed to 165.22.103.109") == 2
 
 
+def test_tests_wait_for_memory(env, monkeypatch, capsys):
+    assert call("cli-git", "start", "argo-exo", "t_abc123") == 0
+    monkeypatch.setattr(bt, "mem_available_mb", lambda: 300)
+    assert call("cli-git", "test", "t_abc123") == 2
+    assert "300 MB free" in capsys.readouterr().err
+    monkeypatch.setattr(bt, "mem_available_mb", lambda: 3000)
+    assert call("cli-git", "test", "t_abc123") == 0
+
+
 def test_another_bot_cannot_work_in_my_worktree(env, monkeypatch, capsys):
     assert call("cli-git", "start", "argo-exo", "t_abc123") == 0
     monkeypatch.setenv("ORG_AGENT", "kael")

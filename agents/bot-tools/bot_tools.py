@@ -19,6 +19,7 @@ Design: vault Areas/argo/second-brain/agent-company/bot-powers-and-shared-memory
 from __future__ import annotations
 
 import base64
+import fcntl
 import json
 import os
 import re
@@ -221,9 +222,41 @@ def cmd_test(agent: dict, card: str) -> str:
         test = ["bash", "scripts/test.sh"]
     if not test:
         raise BotError(f"repo {repo} has no test command in bot-repos.toml")
-    p = run(test, cwd=str(wt), check=False, timeout=int(r.get("test_timeout_seconds", 900)))
+    # The droplet has 4 GB shared with production: one test at a time, at low priority, and only with memory to spare
+    # (2026-10-21: a luminalog-oss `npm ci` ran 31 min at 1.2 GB and left 283 MB for everything else).
+    need_mb = int(r.get("test_min_free_mb", 1500))
+    lock = open(work_root() / "test.lock", "a")
+    deadline = time.time() + 600
+    while True:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            break
+        except BlockingIOError:
+            if time.time() > deadline:
+                raise BotError("another bot's test has held the droplet for 10 min; try again later or block the card")
+            time.sleep(15)
+    try:
+        free = mem_available_mb()
+        if free is not None and free < need_mb:
+            raise BotError(f"not run: the droplet has {free} MB free and {repo}'s tests need about {need_mb} MB; "
+                           f"block the card \"tests need more memory than the droplet has free\" and stop")
+        prefix = [c for c in (shutil.which("nice") and ["nice", "-n", "15"], shutil.which("ionice") and ["ionice", "-c3"]) if c]
+        p = run([x for c in prefix for x in c] + test, cwd=str(wt), check=False, timeout=int(r.get("test_timeout_seconds", 900)))
+    finally:
+        fcntl.flock(lock, fcntl.LOCK_UN)
+        lock.close()
     tail = (p.stdout + p.stderr)[-3000:]
     return f"exit {p.returncode}\n{tail}"
+
+
+def mem_available_mb() -> int | None:
+    try:
+        for line in open("/proc/meminfo"):
+            if line.startswith("MemAvailable:"):
+                return int(line.split()[1]) // 1024
+    except OSError:
+        return None
+    return None
 
 
 def cmd_commit(agent: dict, card: str, message: str) -> str:
