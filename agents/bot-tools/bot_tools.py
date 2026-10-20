@@ -3,7 +3,8 @@
 
 One file, three commands, picked by the name it is called as (install.sh links them into /usr/local/bin):
 
-  cli-git     branches, commits, pushes, PRs and reviews for bots with `code`, `review` or `merge`
+  cli-git     branches, commits, pushes, PRs and reviews for bots with `code`, `review` or `merge`; new private
+              repos in the bots' own GitHub org for bots with `code` (there is no delete, here or in the token)
   cli-deploy  named deploy targets for bots with `deploy`
   m1-job      allowlisted jobs on the home M1 Max for bots with `m1`
 
@@ -110,7 +111,7 @@ def github_env() -> dict:
     try:
         token = token_file.read_text().strip()
     except FileNotFoundError:
-        raise BotError(f"no GitHub token at {token_file}; the owner creates it (fine-grained, contents + pull requests)")
+        raise BotError(f"no GitHub token at {token_file}; the owner creates it (the bot account's classic token: repo, read:org, never delete_repo)")
     env = {k: v for k, v in os.environ.items() if k in ("PATH", "HOME", "LANG", "TZ", "USER")}
     basic = base64.b64encode(f"x-access-token:{token}".encode()).decode()
     env.update({"GH_TOKEN": token, "GIT_TERMINAL_PROMPT": "0", "GIT_CONFIG_COUNT": "1",
@@ -118,8 +119,23 @@ def github_env() -> dict:
     return env
 
 
+def created_file() -> Path:
+    return work_root() / "created-repos.json"
+
+
+def created_repos() -> dict:
+    """Repos the bots made with `cli-git repo create`. The file is the bots' own (hermes-writable), so only entries
+    under the configured org count; what the token can reach is set on GitHub, not here."""
+    owner = load_toml("bot-repos.toml").get("create", {}).get("owner", "")
+    try:
+        data = json.loads(created_file().read_text())
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+    return {n: r for n, r in data.items() if owner and NAME.match(n) and r.get("github") == f"{owner}/{n}"}
+
+
 def repos() -> dict:
-    return load_toml("bot-repos.toml").get("repos", {})
+    return {**created_repos(), **load_toml("bot-repos.toml").get("repos", {})}
 
 
 def repo_conf(name: str) -> dict:
@@ -188,6 +204,10 @@ def cmd_test(agent: dict, card: str) -> str:
     need(agent, "code")
     repo, wt, r = own_worktree(agent, card)
     test = r.get("test")
+    if not test and r.get("created_by"):
+        if not (wt / "scripts" / "test.sh").exists():
+            raise BotError(f"{repo} is a bot-made repo: its tests are scripts/test.sh, which doesn't exist yet; add it")
+        test = ["bash", "scripts/test.sh"]
     if not test:
         raise BotError(f"repo {repo} has no test command in bot-repos.toml")
     p = run(test, cwd=str(wt), check=False, timeout=int(r.get("test_timeout_seconds", 900)))
@@ -283,6 +303,37 @@ def cmd_pr_merge(agent: dict, url: str, card: str) -> str:
     return f"merged {url} ({why})"
 
 
+def cmd_repo_create(agent: dict, name: str, card: str, description: str) -> str:
+    """A new private repo in the bots' org, with a README on main. Public is the owner's call (he flips it on GitHub);
+    deleting is nobody's here: no verb, no delete_repo scope, and the org lets only owners delete."""
+    need(agent, "code")
+    check_card(card)
+    conf = load_toml("bot-repos.toml").get("create", {})
+    owner = conf.get("owner", "")
+    if not owner:
+        raise BotError("repo creation is off: bot-repos.toml has no [create] owner (the owner sets up the bots' GitHub org)")
+    if not NAME.match(name):
+        raise BotError(f"bad repo name {name!r}: lowercase letters, digits and dashes")
+    if name in repos():
+        raise BotError(f"{name} already exists ({repos()[name]['github']}); `cli-git start {name} {card}`")
+    made = json.loads(created_file().read_text()) if created_file().exists() else {}
+    today = time.strftime("%Y-%m-%d", time.gmtime())
+    if sum(1 for r in made.values() if r.get("created", "").startswith(today)) >= int(conf.get("per_day", 3)):
+        raise BotError(f"the bots already made {conf.get('per_day', 3)} repos today; ask the owner")
+    full = f"{owner}/{name}"
+    gh(["repo", "create", full, "--private", "--add-readme",
+        "--description", (description.strip() or f"Made by {agent['name']} for {card}")[:300]])
+    made[name] = {"github": full, "default_branch": "main", "protected": ["main"], "created_by": agent["name"],
+                  "card": card, "created": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+    created_file().parent.mkdir(parents=True, exist_ok=True)
+    tmp = created_file().with_suffix(".tmp")
+    tmp.write_text(json.dumps(made, indent=2))
+    tmp.replace(created_file())
+    card_comment(card, f"{agent['name']} created private repo https://github.com/{full}", agent["name"])
+    return (f"created https://github.com/{full} (private, README on main); now `cli-git start {name} {card}`. "
+            "Its tests are scripts/test.sh; add one in your first PR")
+
+
 # -- deploy ----------------------------------------------------------------------------------------------------------
 def targets() -> dict:
     return load_toml("deploy-targets.toml").get("targets", {})
@@ -372,14 +423,17 @@ cli-git pr create <card> "<title>" --body "<what, why, tests run>"   (code)
 cli-git pr view|diff <url>             (code, review, merge)
 cli-git pr review <url> --approve|--request-changes|--comment "<text>"   not your own PR (review)
 cli-git pr merge <url> --card <card>   only with the owner's approval or a ship-now card (merge)
-cli-git repos                          the repos bots work in"""
+cli-git repo create <name> --card <card> [--description "..."]   new private repo in the bots' org (code)
+cli-git repos                          the repos bots work in (yours are marked)"""
 
 
 def main_git(argv: list[str]) -> str:
     if not argv or argv[0] in ("-h", "--help", "help"):
         return GIT_USAGE
     if argv[0] == "repos":
-        return "\n".join(f"{n}  {r['github']}  default {r.get('default_branch', 'main')}" for n, r in sorted(repos().items()))
+        return "\n".join(f"{n}  {r['github']}  default {r.get('default_branch', 'main')}"
+                         + (f"  (made by {r['created_by']} for {r['card']})" if r.get("created_by") else "")
+                         for n, r in sorted(repos().items()))
     agent = me()
     v = argv[0]
     if v == "start" and len(argv) == 3:
@@ -392,6 +446,11 @@ def main_git(argv: list[str]) -> str:
         return cmd_commit(agent, argv[1], argv[2])
     if v == "push" and len(argv) == 2:
         return cmd_push(agent, argv[1])
+    if v == "repo" and len(argv) >= 3 and argv[1] == "create":
+        card = opt(argv, "--card")
+        if not card:
+            raise BotError("repo create <name> --card <card> [--description \"...\"]")
+        return cmd_repo_create(agent, argv[2], card, opt(argv, "--description") or "")
     if v == "pr" and len(argv) >= 3:
         sub = argv[1]
         if sub == "create" and len(argv) >= 4:

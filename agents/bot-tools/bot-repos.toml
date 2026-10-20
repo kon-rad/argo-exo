@@ -2,10 +2,18 @@
 # owner reinstalls. The repos the org's bots may branch, push and open PRs in (cli-git). Design: vault
 # Areas/argo/second-brain/agent-company/bot-powers-and-shared-memory-design.md section 2.
 
-# Fine-grained GitHub token: Contents read/write and Pull requests read/write on these repos only. Mode 600, owned by
-# hermes; the bots' tool rules deny reading it. The owner creates it.
+# The token belongs to the bots' own GitHub account (a machine user, not kon-rad): a classic token with the `repo` and
+# `read:org` scopes and never `delete_repo`. What it reaches is set on GitHub: the account is a Write collaborator on
+# the repos below and a member of the bots' org, where members may create private repos and only owners may delete.
+# Mode 600, owned by hermes; the bots' tool rules deny reading it. The owner creates the account and the token.
 token_file = "/home/hermes/.config/bot-github/token"
-work_dir = "/home/hermes/cc-work/bots"     # base/<repo> clones and wt/<repo>-<card> worktrees
+work_dir = "/home/hermes/cc-work/bots"     # base/<repo> clones, wt/<repo>-<card> worktrees, created-repos.json
+
+# `cli-git repo create <name> --card <card>` (bots with `code`): a private repo in this org, listed in
+# work_dir/created-repos.json so `cli-git start` works on it. Empty owner = creation off. There is no delete verb.
+[create]
+owner = ""          # the bots' GitHub org, e.g. "argo-bots"; the owner fills it in once the org exists
+per_day = 3         # repos the bots may create per UTC day, all bots together
 
 [repos.argo-exo]
 github = "kon-rad/argo-exo"

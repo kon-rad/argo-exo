@@ -162,6 +162,36 @@ def test_merge_needs_merge_capability_the_card_and_approval(env, monkeypatch, ca
     assert "--squash" in merge and "--delete-branch" in merge
 
 
+def test_repo_create_is_private_in_the_bots_org_and_never_deletes(env, monkeypatch, capsys):
+    assert call("cli-git", "repo", "create", "pocket-tool", "--card", "t_abc123") == 2      # no [create] owner yet
+    assert "repo creation is off" in capsys.readouterr().err
+    conf = env["tmp"] / "etc" / "bot-repos.toml"
+    conf.write_text(conf.read_text().replace("[repos.argo-exo]", '[create]\nowner = "argo-bots"\nper_day = 2\n\n[repos.argo-exo]'))
+    monkeypatch.setenv("FAKE_CAPS", "web")
+    assert call("cli-git", "repo", "create", "pocket-tool", "--card", "t_abc123") == 2      # needs code
+    monkeypatch.setenv("FAKE_CAPS", "code")
+    assert call("cli-git", "repo", "create", "Bad_Name", "--card", "t_abc123") == 2
+    assert call("cli-git", "repo", "create", "argo-exo", "--card", "t_abc123") == 2        # already a repo
+    assert call("cli-git", "repo", "create", "pocket-tool", "--card", "t_abc123", "--description", "a tool") == 0
+    made = [c for c in env["calls"]() if c[1:3] == ["repo", "create"]][0]
+    assert made[3] == "argo-bots/pocket-tool" and "--private" in made and "--public" not in made
+    capsys.readouterr()
+    assert call("cli-git", "repos") == 0
+    assert "argo-bots/pocket-tool" in capsys.readouterr().out
+    assert bt.repo_conf("pocket-tool")["created_by"] == "rune"
+    # an entry pointing outside the org (the file is hermes-writable) is ignored
+    f = env["tmp"] / "work" / "created-repos.json"
+    data = json.loads(f.read_text())
+    data["sneaky"] = {"github": "kon-rad/private-thing", "created": "x"}
+    f.write_text(json.dumps(data))
+    assert "sneaky" not in bt.repos()
+    assert call("cli-git", "repo", "create", "second-tool", "--card", "t_abc123") == 0
+    assert call("cli-git", "repo", "create", "third-tool", "--card", "t_abc123") == 2      # per_day 2
+    assert "already made 2 repos today" in capsys.readouterr().err
+    assert call("cli-git", "repo", "delete", "pocket-tool") == 2                           # there is no delete
+    assert not any("delete" in c[1:3] for c in env["calls"]() if c[0].endswith("gh"))
+
+
 def test_deploy_runs_only_registered_approved_targets(env, monkeypatch, capsys):
     monkeypatch.setenv("ORG_AGENT", "sable")
     monkeypatch.setenv("FAKE_CAPS", "deploy")

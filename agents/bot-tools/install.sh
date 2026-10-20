@@ -30,6 +30,6 @@ if ! sudo -u "$APP_USER" grep -q '^m1max ' "$HOMEDIR/.ssh/known_hosts" 2>/dev/nu
 fi
 
 echo "installed: cli-git, cli-deploy, m1-job; registries in /etc/secondbrain"
-[[ -s "$HOMEDIR/.config/bot-github/token" ]] && echo "GitHub token: present" || echo "GitHub token: MISSING (owner: $HOMEDIR/.config/bot-github/token, mode 600, owner $APP_USER)"
+[[ -s "$HOMEDIR/.config/bot-github/token" ]] && echo "GitHub token: present" || echo "GitHub token: MISSING (owner: the bot account's classic token, scopes repo + read:org, no delete_repo; $HOMEDIR/.config/bot-github/token, mode 600, owner $APP_USER)"
 echo "M1 authorized_keys line (owner adds it on the M1):"
 echo "command=\"/Users/konrad/.local/bin/m1-jobd\",restrict $(cat "$HOMEDIR/.ssh/m1_jobs.pub")"
