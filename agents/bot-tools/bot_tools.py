@@ -235,6 +235,10 @@ def cmd_push(agent: dict, card: str) -> str:
     branch = branch_for(agent["name"], card)
     if branch in r.get("protected", ["main"]) or not branch.startswith("bot/"):
         raise BotError(f"{branch} is protected")
+    if r.get("pre_push"):   # e.g. a public repo's leak check: a pushed branch is public the moment it lands
+        p = run(r["pre_push"], cwd=str(wt), check=False, timeout=300)
+        if p.returncode != 0:
+            raise BotError(f"not pushed: `{shlex.join(r['pre_push'])}` failed (exit {p.returncode}):\n{(p.stdout + p.stderr)[-2000:]}")
     git(["push", "--quiet", "origin", f"HEAD:refs/heads/{branch}"], cwd=wt, env=github_env())
     return f"pushed {branch}"
 

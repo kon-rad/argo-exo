@@ -128,6 +128,19 @@ def test_branch_commit_push_pr(env, capsys):
     assert any(c[1:3] == ["kanban", "--board"] and PR in c[-1] for c in env["calls"]())
 
 
+def test_pre_push_check_blocks_the_push(env, capsys):
+    conf = env["tmp"] / "etc" / "bot-repos.toml"
+    conf.write_text(conf.read_text() + 'pre_push = ["bash", "-c", "! grep -rq SECRET --exclude-dir=.git ."]\n')
+    assert call("cli-git", "start", "argo-exo", "t_abc123") == 0
+    wt = env["tmp"] / "work" / "wt" / "argo-exo-t_abc123"
+    (wt / "leak.txt").write_text("SECRET\n")
+    assert call("cli-git", "commit", "t_abc123", "oops") == 0
+    assert call("cli-git", "push", "t_abc123") == 2
+    assert "not pushed" in capsys.readouterr().err
+    heads = subprocess.run(["git", "-C", str(env["bare"]), "branch", "--list"], capture_output=True, text=True).stdout
+    assert "bot/rune/t_abc123" not in heads
+
+
 def test_another_bot_cannot_work_in_my_worktree(env, monkeypatch, capsys):
     assert call("cli-git", "start", "argo-exo", "t_abc123") == 0
     monkeypatch.setenv("ORG_AGENT", "kael")

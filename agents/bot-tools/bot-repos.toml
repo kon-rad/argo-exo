@@ -12,7 +12,7 @@ work_dir = "/home/hermes/cc-work/bots"     # base/<repo> clones, wt/<repo>-<card
 # `cli-git repo create <name> --card <card>` (bots with `code`): a private repo in this org, listed in
 # work_dir/created-repos.json so `cli-git start` works on it. Empty owner = creation off. There is no delete verb.
 [create]
-owner = ""          # the bots' GitHub org, e.g. "argo-bots"; the owner fills it in once the org exists
+owner = "ArgoOrg"   # the bots' GitHub org (Konrad, 2026-10-21); members create private repos, only owners delete
 per_day = 3         # repos the bots may create per UTC day, all bots together
 
 [repos.argo-exo]
@@ -34,3 +34,34 @@ default_branch = "main"
 protected = ["main"]
 test = ["bash", "-lc", "cd web && npm ci --silent && npx tsc --noEmit"]
 test_timeout_seconds = 1200
+
+[repos.skillreg]
+github = "kon-rad/skillreg"
+default_branch = "main"
+protected = ["main"]
+test = ["bash", "-lc", "npm ci --silent && npm test"]
+test_timeout_seconds = 900
+
+[repos.m1MaxMonitor]
+github = "kon-rad/m1MaxMonitor"
+default_branch = "main"
+protected = ["main"]
+test = ["bash", "-lc", "python3 -m venv .venv && .venv/bin/pip install -q -e '.[dev]' && .venv/bin/python -m pytest -q -p no:cacheprovider"]
+test_timeout_seconds = 900
+
+# Public: a bot's branch is public as soon as it's pushed, so the repo's own leak check runs first.
+[repos.argo-lifeos]
+github = "kon-rad/argo-lifeos"
+default_branch = "main"
+protected = ["main"]
+test = ["bash", "scripts/check-public.sh"]
+pre_push = ["bash", "scripts/check-public.sh"]
+
+[repos.konradgnat]
+github = "kon-rad/konradgnat"
+default_branch = "master"
+protected = ["master"]
+test = ["bash", "-lc", "cd nextjs && npm ci --silent && npx tsc --noEmit"]
+test_timeout_seconds = 1200
+
+# Not here on purpose: kon-rad/secondbrain-app (retired 2026-10-16; the app lives in kon-rad/secondbrain).
