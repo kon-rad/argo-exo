@@ -23,6 +23,7 @@ import json
 import os
 import re
 import shlex
+import shutil
 import subprocess
 import sys
 import time
@@ -31,6 +32,16 @@ from pathlib import Path
 
 CARD = re.compile(r"^t_[0-9a-f]{6,32}$")
 NAME = re.compile(r"^[a-z0-9][a-z0-9-]{0,40}$")
+# What must not reach a public repo beyond what gitleaks finds: our hosts, people, paths and chat ids. A line ending
+# in `public-ok` is a reviewed exception. Each entry: (label, pattern).
+PUBLIC_LINE_RULES = [
+    ("ipv4", re.compile(r"(?<![\d.])(?!127\.|0\.0\.0\.0|192\.0\.2\.|198\.51\.100\.|203\.0\.113\.|255\.)(\d{1,3}\.){3}\d{1,3}(?![\d.])")),
+    ("email", re.compile(r"[A-Za-z0-9._%+-]+@(?!(?:[a-z0-9-]+\.)*(?:example\.(?:com|org|net)|noreply\.github\.com|anthropic\.com|bots\.argo\.local)\b)[A-Za-z0-9.-]+\.[A-Za-z]{2,}")),
+    ("telegram chat id", re.compile(r"(?<!\d)-100\d{9,}(?!\d)")),
+    ("private path", re.compile(r"/home/(?:hermes|konrad|trader)\b|/Users/konrad|/etc/secondbrain|/srv/exo-|\.config/bot-github")),
+    ("private vault folder", re.compile(r"(?<![\w/])(?:CURRENT/|Areas/Finance\b)")),
+]
+PUBLIC_FILE_RULE = re.compile(r"(?:^|/)(?:\.env(?:\.[\w-]+)?|id_(?:rsa|ed25519|ecdsa)|[^/]+\.(?:pem|key|p12|keystore))$")
 PR_URL = re.compile(r"^https://github\.com/([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)/pull/(\d+)$")
 
 
@@ -229,18 +240,82 @@ def cmd_commit(agent: dict, card: str, message: str) -> str:
     return git(["log", "-1", "--oneline"], cwd=wt).strip()
 
 
+def cmd_uncommit(agent: dict, card: str) -> str:
+    """Folds the commits not yet pushed back into the working files (git reset --soft), so a bad one can be redone.
+    Pushed commits stay: rewriting them would need a force push, which bots don't have."""
+    need(agent, "code")
+    _, wt, r = own_worktree(agent, card)
+    branch = branch_for(agent["name"], card)
+    git(["fetch", "--quiet", "origin"], cwd=wt, env=github_env())
+    remote = f"origin/{branch}"
+    has_remote = run([binary("GIT_BIN", "git"), "rev-parse", "--verify", "--quiet", remote], cwd=str(wt), check=False).returncode == 0
+    base = remote if has_remote else f"origin/{r.get('default_branch', 'main')}"
+    n = git(["rev-list", "--count", f"{base}..HEAD"], cwd=wt).strip()
+    git(["reset", "--soft", base], cwd=wt)
+    return f"{n} unpushed commit(s) undone; the changes are still in {wt}. Fix them, then `cli-git commit {card} \"<msg>\"`"
+
+
 def cmd_push(agent: dict, card: str) -> str:
     need(agent, "code")
     _, wt, r = own_worktree(agent, card)
     branch = branch_for(agent["name"], card)
     if branch in r.get("protected", ["main"]) or not branch.startswith("bot/"):
         raise BotError(f"{branch} is protected")
-    if r.get("pre_push"):   # e.g. a public repo's leak check: a pushed branch is public the moment it lands
+    if is_public(r):
+        public_check(wt, r)
+    if r.get("pre_push"):   # a repo's own extra check (argo-lifeos: check-public.sh with its private denylist)
         p = run(r["pre_push"], cwd=str(wt), check=False, timeout=300)
         if p.returncode != 0:
             raise BotError(f"not pushed: `{shlex.join(r['pre_push'])}` failed (exit {p.returncode}):\n{(p.stdout + p.stderr)[-2000:]}")
     git(["push", "--quiet", "origin", f"HEAD:refs/heads/{branch}"], cwd=wt, env=github_env())
     return f"pushed {branch}"
+
+
+def is_public(r: dict) -> bool:
+    """Asked of GitHub at push time, so a bot repo the owner later makes public is covered. Unknown counts as public."""
+    try:
+        return json.loads(gh(["api", f"repos/{r['github']}", "--jq", "{private: .private}"])).get("private") is not True
+    except (BotError, json.JSONDecodeError, subprocess.TimeoutExpired):
+        return True
+
+
+def scan_lines(lines: list[tuple[str, str]]) -> list[str]:
+    """(where, text) pairs → findings. Findings name the rule, never echo the matched value."""
+    hits = []
+    for where, text in lines:
+        if text.rstrip().endswith("public-ok"):
+            continue
+        for label, rx in PUBLIC_LINE_RULES:
+            if rx.search(text):
+                hits.append(f"{where}: {label}")
+    return hits
+
+
+def public_check(wt: Path, r: dict) -> None:
+    """Every commit the push would publish: gitleaks for secrets, then our own rules on each added line and file name.
+    Fails closed: no gitleaks on a public repo means no push."""
+    rng = f"origin/{r.get('default_branch', 'main')}..HEAD"
+    leaks = run([binary("GITLEAKS_BIN", "gitleaks"), "git", "--no-banner", "--redact", "--log-opts", rng, "."], cwd=str(wt), check=False, timeout=300) \
+        if shutil.which(binary("GITLEAKS_BIN", "gitleaks")) else None
+    if leaks is None:
+        raise BotError("not pushed: gitleaks is not installed, and this repo is public (owner: rerun install.sh)")
+    if leaks.returncode != 0:
+        raise BotError(f"not pushed: gitleaks found a secret in {rng}:\n{(leaks.stdout + leaks.stderr)[-1500:]}")
+    patch = git(["log", "-p", "--format=commit %h", "--no-color", rng], cwd=wt)
+    lines, files, commit, path = [], [], "?", "?"
+    for line in patch.splitlines():
+        if line.startswith("commit "):
+            commit = line.split()[1]
+        elif line.startswith("+++ b/"):
+            path = line[6:]
+            files.append((commit, path))
+        elif line.startswith("+") and not line.startswith("+++"):
+            lines.append((f"{commit} {path}", line[1:]))
+    hits = [f"{c} {f}: file that shouldn't be public" for c, f in files if PUBLIC_FILE_RULE.search(f)] + scan_lines(lines)
+    if hits:
+        raise BotError("not pushed: this repo is public and the branch adds what shouldn't be:\n" + "\n".join(hits[:40])
+                       + f"\nA fix in a new commit won't do (the old commit still ships): `cli-git uncommit <card>`, fix the files, "
+                       "commit again. A reviewed, harmless line can end with `public-ok`")
 
 
 def gh(args: list[str], cwd: Path | str | None = None, timeout: int = 300) -> str:
@@ -251,6 +326,10 @@ def cmd_pr_create(agent: dict, card: str, title: str, body: str) -> str:
     need(agent, "code")
     _, wt, r = own_worktree(agent, card)
     branch = branch_for(agent["name"], card)
+    if is_public(r):
+        hits = scan_lines([("title", title)] + [("body", l) for l in body.splitlines()])
+        if hits:
+            raise BotError("this repo is public; the PR text has: " + ", ".join(hits))
     out = gh(["pr", "create", "--repo", r["github"], "--head", branch, "--base", r.get("default_branch", "main"),
               "--title", title.strip()[:200], "--body", f"{body.strip()}\n\nCard: {card}\nBot: {agent['name']}"], cwd=wt).strip()
     url = out.splitlines()[-1] if out else ""
@@ -422,7 +501,9 @@ GIT_USAGE = """cli-git start <repo> <card>            worktree on bot/<you>/<car
 cli-git status|diff <card>             in the card's worktree (code, review)
 cli-git test <card>                    the repo's test command in your worktree (code)
 cli-git commit <card> "<message>"      add everything, commit as you (code)
-cli-git push <card>                    push bot/<you>/<card>; never the default branch, never --force (code)
+cli-git push <card>                    push bot/<you>/<card>; never the default branch, never --force; a public repo's
+                                       push is scanned first (gitleaks + our hosts, emails, paths, chat ids) (code)
+cli-git uncommit <card>                undo your unpushed commits, keeping the changes, to redo a bad one (code)
 cli-git pr create <card> "<title>" --body "<what, why, tests run>"   (code)
 cli-git pr view|diff <url>             (code, review, merge)
 cli-git pr review <url> --approve|--request-changes|--comment "<text>"   not your own PR (review)
@@ -448,6 +529,8 @@ def main_git(argv: list[str]) -> str:
         return cmd_test(agent, argv[1])
     if v == "commit" and len(argv) == 3:
         return cmd_commit(agent, argv[1], argv[2])
+    if v == "uncommit" and len(argv) == 2:
+        return cmd_uncommit(agent, argv[1])
     if v == "push" and len(argv) == 2:
         return cmd_push(agent, argv[1])
     if v == "repo" and len(argv) >= 3 and argv[1] == "create":

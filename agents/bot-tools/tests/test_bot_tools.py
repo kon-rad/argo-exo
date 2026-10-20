@@ -82,6 +82,8 @@ elif sys.argv[1:3] == ['pr', 'view'] and '--json' in sys.argv:
     ssh = script(tmp_path / "ssh", f"import json, sys\n{log}\nprint('job 20261019-120000-caption started on the M1 for t_abc123')\n")
     monkeypatch.setenv("BOT_TOOLS_ETC", str(etc))
     monkeypatch.setenv("BOT_TOOLS_LOGS", str(tmp_path / "logs"))
+    leaks = script(tmp_path / "gitleaks", "import sys, pathlib\nsys.exit(1 if pathlib.Path('FAKE_LEAK').exists() else 0)\n")
+    monkeypatch.setenv("GITLEAKS_BIN", leaks)
     for var, path in (("CLI_ORG", clio), ("GH_BIN", gh), ("HERMES_BIN", hermes), ("SSH_BIN", ssh)):
         monkeypatch.setenv(var, path)
     monkeypatch.setenv("ORG_AGENT", "rune")
@@ -139,6 +141,29 @@ def test_pre_push_check_blocks_the_push(env, capsys):
     assert "not pushed" in capsys.readouterr().err
     heads = subprocess.run(["git", "-C", str(env["bare"]), "branch", "--list"], capture_output=True, text=True).stdout
     assert "bot/rune/t_abc123" not in heads
+
+
+def test_public_repo_push_is_scanned_and_uncommit_redoes(env, capsys):
+    assert call("cli-git", "start", "argo-exo", "t_abc123") == 0       # the fake gh can't say, so it counts as public
+    wt = env["tmp"] / "work" / "wt" / "argo-exo-t_abc123"
+    (wt / "notes.md").write_text("ssh root@" + "165.22.103.109 then mail konrad" + "@gmail.com\nchat -1001234567890\n")
+    (wt / ".env").write_text("X=1\n")
+    assert call("cli-git", "commit", "t_abc123", "leaky") == 0
+    assert call("cli-git", "push", "t_abc123") == 2
+    err = capsys.readouterr().err
+    for label in ("ipv4", "email", "telegram chat id", ".env: file that shouldn't be public"):
+        assert label in err
+    assert "165.22" not in err and "gmail" not in err                    # findings never echo the value
+    assert call("cli-git", "uncommit", "t_abc123") == 0
+    (wt / "notes.md").write_text("ssh to the droplet; see the runbook\nlocalhost is 127.0.0.1\nsee 10.1.2.3 # public-ok\n")
+    (wt / ".env").unlink()
+    assert call("cli-git", "commit", "t_abc123", "clean") == 0
+    assert call("cli-git", "push", "t_abc123") == 0
+    (wt / "FAKE_LEAK").write_text("x\n")                                 # gitleaks says no
+    assert call("cli-git", "commit", "t_abc123", "secret") == 0
+    assert call("cli-git", "push", "t_abc123") == 2
+    assert "gitleaks found a secret" in capsys.readouterr().err
+    assert call("cli-git", "pr", "create", "t_abc123", "t", "--body", "deployed to 165.22.103.109") == 2
 
 
 def test_another_bot_cannot_work_in_my_worktree(env, monkeypatch, capsys):
