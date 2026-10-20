@@ -5,7 +5,7 @@
 [jobs.caption]
 description = "Caption a video: SRT, transcript markdown, burned karaoke captions (caption-video skill, local whisper)"
 usage = "<video> [--mode=classic] [--model=small] [--srt-only]"
-cmd = ["/opt/homebrew/bin/python3", "~/.claude/skills/caption-video/scripts/caption_video.py"]
+cmd = ["/opt/homebrew/bin/python3", "~/.claude/skills/caption-video/scripts/caption_video.py", "--engine=whispercpp"]  # whisper.cpp on the GPU; model ~/.cache/whisper-cpp/models/ggml-large-v3-turbo.bin
 roots = ["~/Movies", "~/Documents/secondbrain/Areas"]
 flags = ["--mode", "--model", "--srt-only", "--rotate-highlight"]
 timeout_minutes = 120
