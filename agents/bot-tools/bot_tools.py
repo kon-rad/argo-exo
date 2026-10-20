@@ -215,6 +215,10 @@ def cmd_status(agent: dict, card: str, diff: bool = False) -> str:
 def cmd_test(agent: dict, card: str) -> str:
     need(agent, "code")
     repo, wt, r = own_worktree(agent, card)
+    if r.get("test_on") == "mac":
+        return (f"not run here: {repo}'s tests are too heavy for the droplet (4 GB, shared with production; an npm ci took "
+                "1.2 GB and filled swap on 2026-10-21). Commit, push and open the PR, and write in its body: "
+                "\"tests not run on the droplet; a Mac session runs them\". The reviewer and the ship request wait for that run.")
     test = r.get("test")
     if not test and r.get("created_by"):
         if not (wt / "scripts" / "test.sh").exists():

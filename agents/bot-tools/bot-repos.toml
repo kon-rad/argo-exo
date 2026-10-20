@@ -22,6 +22,7 @@ protected = ["main"]
 test = ["/home/hermes/.venvs/exo-verify/bin/python", "-m", "pytest", "-q", "-p", "no:cacheprovider"]
 
 [repos.secondbrain]
+test_on = "mac"          # too heavy for the droplet; `cli-git test` says so and a Mac session runs `test`
 github = "kon-rad/secondbrain"
 default_branch = "main"
 protected = ["main"]
@@ -29,6 +30,7 @@ test = ["bash", "-lc", "cd app && npm ci --silent && npx tsc --noEmit -p server 
 test_timeout_seconds = 1200
 
 [repos.luminalog-oss]
+test_on = "mac"          # too heavy for the droplet; `cli-git test` says so and a Mac session runs `test`
 github = "kon-rad/luminalog-oss"
 default_branch = "main"
 protected = ["main"]
@@ -36,6 +38,7 @@ test = ["bash", "-lc", "cd web && npm ci --silent && npx tsc --noEmit"]
 test_timeout_seconds = 1200
 
 [repos.skillreg]
+test_on = "mac"          # too heavy for the droplet; `cli-git test` says so and a Mac session runs `test`
 github = "kon-rad/skillreg"
 default_branch = "main"
 protected = ["main"]
@@ -58,6 +61,7 @@ test = ["bash", "scripts/check-public.sh"]
 pre_push = ["bash", "scripts/check-public.sh"]
 
 [repos.konradgnat]
+test_on = "mac"          # too heavy for the droplet; `cli-git test` says so and a Mac session runs `test`
 github = "kon-rad/konradgnat"
 default_branch = "master"
 protected = ["master"]

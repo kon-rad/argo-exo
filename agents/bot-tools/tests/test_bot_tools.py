@@ -188,6 +188,16 @@ def test_pr_view_uses_named_fields_and_checks(env, monkeypatch, capsys):
     assert "pass" in capsys.readouterr().out
 
 
+def test_heavy_repo_tests_are_left_to_a_mac(env, capsys):
+    conf = env["tmp"] / "etc" / "bot-repos.toml"
+    conf.write_text(conf.read_text().replace('default_branch = "main"', 'default_branch = "main"\ntest_on = "mac"', 1))
+    assert call("cli-git", "start", "argo-exo", "t_abc123") == 0
+    capsys.readouterr()
+    assert call("cli-git", "test", "t_abc123") == 0
+    out = capsys.readouterr().out
+    assert "not run here" in out and "3 passed" not in out
+
+
 def test_another_bot_cannot_work_in_my_worktree(env, monkeypatch, capsys):
     assert call("cli-git", "start", "argo-exo", "t_abc123") == 0
     monkeypatch.setenv("ORG_AGENT", "kael")
