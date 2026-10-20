@@ -74,6 +74,10 @@ elif sys.argv[1:3] == ['ship', 'check']:
 assert os.environ.get('GH_TOKEN') == 'ghp_test'
 if sys.argv[1:3] == ['pr', 'create']:
     print('{PR}')
+elif sys.argv[1:3] == ['pr', 'view'] and 'files' in sys.argv[-1]:
+    print(json.dumps({{'number': 7, 'title': 't', 'state': 'OPEN', 'author': {{'login': 'myargoquest'}}, 'headRefName': 'bot/rune/t_abc123', 'baseRefName': 'main', 'mergeable': 'MERGEABLE', 'reviewDecision': '', 'body': 'b', 'files': [{{'path': 'a.py', 'additions': 3, 'deletions': 1}}], 'statusCheckRollup': [{{'name': 'app', 'conclusion': 'SUCCESS'}}]}}))
+elif sys.argv[1:3] == ['pr', 'checks']:
+    print('app\tpass')
 elif sys.argv[1:3] == ['pr', 'view'] and '--json' in sys.argv:
     head = open({str(tmp_path / 'head.txt')!r}).read() if os.path.exists({str(tmp_path / 'head.txt')!r}) else 'bot/rune/t_abc123'
     print(json.dumps({{'headRefName': head, 'body': os.environ.get('FAKE_BODY', 'x\\n\\nCard: t_abc123'), 'state': 'OPEN', 'title': 't'}}))
@@ -173,6 +177,15 @@ def test_tests_wait_for_memory(env, monkeypatch, capsys):
     assert "300 MB free" in capsys.readouterr().err
     monkeypatch.setattr(bt, "mem_available_mb", lambda: 3000)
     assert call("cli-git", "test", "t_abc123") == 0
+
+
+def test_pr_view_uses_named_fields_and_checks(env, monkeypatch, capsys):
+    monkeypatch.setenv("FAKE_CAPS", "merge")
+    assert call("cli-git", "pr", "view", PR) == 0
+    out = capsys.readouterr().out
+    assert "app: SUCCESS" in out and "a.py (+3 -1)" in out
+    assert call("cli-git", "pr", "checks", PR) == 0
+    assert "pass" in capsys.readouterr().out
 
 
 def test_another_bot_cannot_work_in_my_worktree(env, monkeypatch, capsys):

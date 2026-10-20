@@ -385,10 +385,28 @@ def pr_info(url: str) -> dict:
     return json.loads(gh(["pr", "view", num, "--repo", full, "--json", "headRefName,body,state,title,mergeable"]))
 
 
+PR_FIELDS = "number,title,state,author,headRefName,baseRefName,mergeable,reviewDecision,body,files,statusCheckRollup"
+
+
 def cmd_pr_view(agent: dict, url: str, diff: bool) -> str:
+    """`gh pr view`'s default output asks GitHub for a retired field (classic projects) and fails, so ask for named fields."""
     need(agent, "code", "review", "merge")
     full, num = pr_parts(url)
-    return gh(["pr", "diff" if diff else "view", num, "--repo", full])[:30000]
+    if diff:
+        return gh(["pr", "diff", num, "--repo", full])[:30000]
+    d = json.loads(gh(["pr", "view", num, "--repo", full, "--json", PR_FIELDS]))
+    checks = [f"  {c.get('name') or c.get('context')}: {c.get('conclusion') or c.get('state') or c.get('status')}" for c in d.get("statusCheckRollup") or []]
+    files = [f"  {f['path']} (+{f['additions']} -{f['deletions']})" for f in d.get("files") or []]
+    return "\n".join([f"#{d['number']} {d['title']} [{d['state']}] by {(d.get('author') or {}).get('login')}",
+                      f"{d['headRefName']} -> {d['baseRefName']}, mergeable {d.get('mergeable')}, review {d.get('reviewDecision') or 'none'}",
+                      "checks:", *(checks or ["  none"]), f"files ({len(files)}):", *files[:80], "", (d.get("body") or "")[:6000]])[:30000]
+
+
+def cmd_pr_checks(agent: dict, url: str) -> str:
+    need(agent, "code", "review", "merge")
+    full, num = pr_parts(url)
+    p = run([binary("GH_BIN", "gh"), "pr", "checks", num, "--repo", full], env=github_env(), check=False, timeout=120)
+    return (p.stdout or p.stderr).strip() or f"exit {p.returncode}"
 
 
 def cmd_pr_review(agent: dict, url: str, verdict: str, text: str) -> str:
@@ -538,7 +556,7 @@ cli-git push <card>                    push bot/<you>/<card>; never the default 
                                        push is scanned first (gitleaks + our hosts, emails, paths, chat ids) (code)
 cli-git uncommit <card>                undo your unpushed commits, keeping the changes, to redo a bad one (code)
 cli-git pr create <card> "<title>" --body "<what, why, tests run>"   (code)
-cli-git pr view|diff <url>             (code, review, merge)
+cli-git pr view|diff|checks <url>      title, state, CI, files and body | the diff | CI checks (code, review, merge)
 cli-git pr review <url> --approve|--request-changes|--comment "<text>"   not your own PR (review)
 cli-git pr merge <url> --card <card>   only with the owner's approval or a ship-now card (merge)
 cli-git repo create <name> --card <card> [--description "..."]   new private repo in the bots' org (code)
@@ -577,6 +595,8 @@ def main_git(argv: list[str]) -> str:
             return cmd_pr_create(agent, argv[2], argv[3], opt(argv, "--body") or "")
         if sub in ("view", "diff"):
             return cmd_pr_view(agent, argv[2], diff=sub == "diff")
+        if sub == "checks":
+            return cmd_pr_checks(agent, argv[2])
         if sub == "review":
             for flag, verdict in (("--approve", "approve"), ("--request-changes", "request-changes"), ("--comment", "comment")):
                 text = opt(argv, flag)
