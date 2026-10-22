@@ -38,7 +38,7 @@ denied_tools = ["Bash(sudo *)", "Bash(git push *)", "Bash(ssh *)", "Bash(systemc
 
 [lanes.cc-coder]
 description = "Writes and fixes code in its own git worktree, runs the tests, and leaves a branch for review. Never pushes."
-model = "opus"
+model = "sonnet"             # was opus; set "opus" here only for a lane that needs it (cost incident 2026-10-21)
 cwd = "/home/hermes/argo-exo"
 worktree = true
 max_runtime_minutes = 60
@@ -48,7 +48,7 @@ allowed_tools = ["Bash(git add *)", "Bash(git commit *)", "Bash(git checkout *)"
 
 [lanes.cc-research]
 description = "Researches a question from primary sources and writes a vault research note in house style; answers in the task result."
-model = "opus"
+model = "sonnet"             # was opus; see cc-coder
 allowed_tools = ["WebSearch", "WebFetch"]
 
 [lanes.cc-writer]
