@@ -22,28 +22,22 @@ protected = ["main"]
 test = ["/home/hermes/.venvs/exo-verify/bin/python", "-m", "pytest", "-q", "-p", "no:cacheprovider"]
 
 [repos.secondbrain]
-test_on = "mac"          # too heavy for the droplet; `cli-git test` says so and a Mac session runs `test`
+test_on = "m1"           # too heavy for the droplet: `cli-git test` runs [tests.<repo>] in ~/.config/m1-jobs/jobs.toml on the M1
 github = "kon-rad/secondbrain"
 default_branch = "main"
 protected = ["main"]
-test = ["bash", "-lc", "cd app && npm ci --silent && npx tsc --noEmit -p server && npx vitest run --project web"]
-test_timeout_seconds = 1200
 
 [repos.luminalog-oss]
-test_on = "mac"          # too heavy for the droplet; `cli-git test` says so and a Mac session runs `test`
+test_on = "m1"           # too heavy for the droplet: `cli-git test` runs [tests.<repo>] in ~/.config/m1-jobs/jobs.toml on the M1
 github = "kon-rad/luminalog-oss"
 default_branch = "main"
 protected = ["main"]
-test = ["bash", "-lc", "cd web && npm ci --silent && npx tsc --noEmit"]
-test_timeout_seconds = 1200
 
 [repos.skillreg]
-test_on = "mac"          # too heavy for the droplet; `cli-git test` says so and a Mac session runs `test`
+test_on = "m1"           # too heavy for the droplet: `cli-git test` runs [tests.<repo>] in ~/.config/m1-jobs/jobs.toml on the M1
 github = "kon-rad/skillreg"
 default_branch = "main"
 protected = ["main"]
-test = ["bash", "-lc", "npm ci --silent && npm test"]
-test_timeout_seconds = 900
 
 [repos.m1MaxMonitor]
 github = "kon-rad/m1MaxMonitor"
@@ -61,11 +55,9 @@ test = ["bash", "scripts/check-public.sh"]
 pre_push = ["bash", "scripts/check-public.sh"]
 
 [repos.konradgnat]
-test_on = "mac"          # too heavy for the droplet; `cli-git test` says so and a Mac session runs `test`
+test_on = "m1"           # too heavy for the droplet: `cli-git test` runs [tests.<repo>] in ~/.config/m1-jobs/jobs.toml on the M1
 github = "kon-rad/konradgnat"
 default_branch = "master"
 protected = ["master"]
-test = ["bash", "-lc", "cd nextjs && npm ci --silent && npx tsc --noEmit"]
-test_timeout_seconds = 1200
 
 # Not here on purpose: kon-rad/secondbrain-app (retired 2026-10-16; the app lives in kon-rad/secondbrain).

@@ -33,3 +33,38 @@ usage = "no args (benchmark all models)"
 cmd = ["/opt/homebrew/bin/python3", "~/Documents/secondbrain/.agents/skills/flint-bench/scripts/bench_flint.py"]
 roots = ["~/Documents/secondbrain"]
 timeout_minutes = 240
+
+# `cli-git test <card>` for repos marked test_on = "m1" in bot-repos.toml: the droplet sends the bot's worktree as a
+# tar.gz and m1-jobd runs [tests.<repo>].cmd in it, under sandbox-exec (see m1_jobd.TEST_PROFILE), one at a time.
+# The command comes from this file, never from the droplet. Design: vault
+# Areas/argo/second-brain/agent-company/m1-coding-base-design.md, "Step 1: tests on the M1".
+
+# The server tests drop and rebuild their database and create roles, so they get a throwaway Postgres inside the test
+# folder on a private port (127.0.0.1:55432), never the M1's real ones (m1MaxMonitor's :5435). The folder is deleted
+# after the run.
+[tests.secondbrain]
+cmd = ["/bin/bash", "-c", """
+set -e
+export PGDATA="$PWD/.m1-pg" PGHOST=127.0.0.1 PGPORT=55432
+initdb -A trust -D "$PGDATA" >/dev/null
+pg_ctl -D "$PGDATA" -o "-c listen_addresses=127.0.0.1 -p $PGPORT -k $PGDATA" -w -l "$PWD/.m1-pg.log" start >/dev/null
+trap 'pg_ctl -D "$PGDATA" -m immediate stop >/dev/null' EXIT
+cd app
+npm ci --silent --no-audit --no-fund
+echo '== tsc server'; npx tsc --noEmit -p server
+echo '== tsc web'; npx tsc --noEmit -p web
+echo '== vitest'; npx vitest run
+"""]
+timeout_minutes = 30
+
+[tests.luminalog-oss]
+cmd = ["/bin/bash", "-c", "set -e; cd web; npm ci --silent --no-audit --no-fund; npx tsc --noEmit"]
+timeout_minutes = 20
+
+[tests.skillreg]
+cmd = ["/bin/bash", "-c", "set -e; npm ci --silent --no-audit --no-fund; npm test"]
+timeout_minutes = 15
+
+[tests.konradgnat]
+cmd = ["/bin/bash", "-c", "set -e; cd nextjs; npm ci --silent --no-audit --no-fund; npx tsc --noEmit"]
+timeout_minutes = 20

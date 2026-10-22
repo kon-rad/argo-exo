@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import base64
 import fcntl
+import io
 import json
 import os
 import re
@@ -27,6 +28,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import tarfile
 import time
 import tomllib
 from pathlib import Path
@@ -215,10 +217,8 @@ def cmd_status(agent: dict, card: str, diff: bool = False) -> str:
 def cmd_test(agent: dict, card: str) -> str:
     need(agent, "code")
     repo, wt, r = own_worktree(agent, card)
-    if r.get("test_on") == "mac":
-        return (f"not run here: {repo}'s tests are too heavy for the droplet (4 GB, shared with production; an npm ci took "
-                "1.2 GB and filled swap on 2026-10-21). Commit, push and open the PR, and write in its body: "
-                "\"tests not run on the droplet; a Mac session runs them\". The reviewer and the ship request wait for that run.")
+    if r.get("test_on") == "m1":
+        return test_on_m1(agent, repo, card, wt)
     test = r.get("test")
     if not test and r.get("created_by"):
         if not (wt / "scripts" / "test.sh").exists():
@@ -251,6 +251,38 @@ def cmd_test(agent: dict, card: str) -> str:
         lock.close()
     tail = (p.stdout + p.stderr)[-3000:]
     return f"exit {p.returncode}\n{tail}"
+
+
+MAX_TREE = 300 * 1024 * 1024
+
+
+def pack_worktree(wt: Path) -> bytes:
+    """The files git would see (tracked plus untracked, minus .gitignore'd ones like node_modules), uncommitted edits
+    included, as a tar.gz. No .git: the M1 tests the tree, it doesn't need history."""
+    names = git(["ls-files", "-z", "--cached", "--others", "--exclude-standard"], cwd=wt).split("\0")
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w:gz") as tar:
+        for n in sorted(set(filter(None, names))):
+            f = wt / n
+            if f.is_symlink() or f.is_file():   # a tracked file deleted in the worktree is skipped
+                tar.add(f, arcname=n, recursive=False)
+    if buf.tell() > MAX_TREE:
+        raise BotError(f"the worktree packs to {buf.tell() >> 20} MB, over the M1's {MAX_TREE >> 20} MB limit; is a build folder untracked but not ignored?")
+    return buf.getvalue()
+
+
+def test_on_m1(agent: dict, repo: str, card: str, wt: Path) -> str:
+    """Heavy tests (npm ci, a JS suite) don't fit the droplet (4 GB, shared with production; an npm ci filled swap on
+    2026-10-21). The M1 runs them from its own allowlist and reports to the card; it never falls back to the droplet."""
+    sha = git(["rev-parse", "HEAD"], cwd=wt).strip()
+    dirty = bool(git(["status", "--porcelain"], cwd=wt).strip())
+    try:
+        out = m1(["test", repo, card, agent["name"], sha], timeout=300, data=pack_worktree(wt))
+    except BotError as exc:
+        return (f"not run: the M1 is off or unreachable ({exc}). Heavy tests never run on the droplet. "
+                f"`hermes kanban block {card} \"M1 off: {repo} tests wait for it\"` and stop; unblock it when the M1 is back.")
+    return (f"{out}{' (with your uncommitted changes)' if dirty else ''}\nNow `hermes kanban block {card} \"waiting on M1 tests\"` "
+            "and stop: the M1 comments PASSED or FAILED with the log tail on the card and unblocks it, which wakes you.")
 
 
 def mem_available_mb() -> int | None:
@@ -516,15 +548,17 @@ def cmd_deploy(agent: dict, target: str, card: str) -> str:
 
 
 # -- M1 jobs ---------------------------------------------------------------------------------------------------------
-def m1(args: list[str], timeout: int = 60) -> str:
-    """The droplet's key for the M1 can only run m1-jobd (a forced command), so the arguments travel as the command."""
+def m1(args: list[str], timeout: int = 60, data: bytes | None = None) -> str:
+    """The droplet's key for the M1 can only run m1-jobd (a forced command), so the arguments travel as the command;
+    `data` (a test's worktree) goes on stdin."""
     host = os.environ.get("M1_JOBS_HOST", "konrad@m1max")
     key = os.environ.get("M1_JOBS_KEY", "/home/hermes/.ssh/m1_jobs")
-    p = run([binary("SSH_BIN", "ssh"), "-i", key, "-o", "IdentitiesOnly=yes", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10",
-             host, shlex.join(args)], timeout=timeout, check=False)
+    p = subprocess.run([binary("SSH_BIN", "ssh"), "-i", key, "-o", "IdentitiesOnly=yes", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10",
+                        host, shlex.join(args)], input=data or b"", capture_output=True, timeout=timeout)
+    out, err = p.stdout.decode(errors="replace").strip(), p.stderr.decode(errors="replace").strip()
     if p.returncode != 0:
-        raise BotError(f"m1: {(p.stderr or p.stdout).strip()[-600:] or f'exit {p.returncode}'} (is the M1 awake and on the tailnet?)")
-    return p.stdout.strip()
+        raise BotError(f"m1: {(err or out)[-600:] or f'exit {p.returncode}'} (is the M1 awake and on the tailnet?)")
+    return out
 
 
 def cmd_m1(agent: dict, argv: list[str]) -> str:
@@ -554,7 +588,8 @@ def opt(argv: list[str], flag: str) -> str | None:
 
 GIT_USAGE = """cli-git start <repo> <card>            worktree on bot/<you>/<card> off the default branch (code)
 cli-git status|diff <card>             in the card's worktree (code, review)
-cli-git test <card>                    the repo's test command in your worktree (code)
+cli-git test <card>                    the repo's test command in your worktree; heavy repos run on the M1 and report
+                                       to the card (code)
 cli-git commit <card> "<message>"      add everything, commit as you (code)
 cli-git push <card>                    push bot/<you>/<card>; never the default branch, never --force; a public repo's
                                        push is scanned first (gitleaks + our hosts, emails, paths, chat ids) (code)

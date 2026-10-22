@@ -83,7 +83,14 @@ elif sys.argv[1:3] == ['pr', 'view'] and '--json' in sys.argv:
     print(json.dumps({{'headRefName': head, 'body': os.environ.get('FAKE_BODY', 'x\\n\\nCard: t_abc123'), 'state': 'OPEN', 'title': 't'}}))
 """)
     hermes = script(tmp_path / "hermes", f"import json, sys\n{log}\n")
-    ssh = script(tmp_path / "ssh", f"import json, sys\n{log}\nprint('job 20261019-120000-caption started on the M1 for t_abc123')\n")
+    ssh = script(tmp_path / "ssh", f"""import json, os, sys
+{log}
+open({str(tmp_path / 'ssh-stdin')!r}, 'wb').write(sys.stdin.buffer.read())
+if os.environ.get('FAKE_M1_OFF'):
+    print('ssh: connect to host m1max port 22: Operation timed out', file=sys.stderr)
+    sys.exit(255)
+print('job 20261019-120000-caption started on the M1 for t_abc123')
+""")
     monkeypatch.setenv("BOT_TOOLS_ETC", str(etc))
     monkeypatch.setenv("BOT_TOOLS_LOGS", str(tmp_path / "logs"))
     leaks = script(tmp_path / "gitleaks", "import sys, pathlib\nsys.exit(1 if pathlib.Path('FAKE_LEAK').exists() else 0)\n")
@@ -188,14 +195,30 @@ def test_pr_view_uses_named_fields_and_checks(env, monkeypatch, capsys):
     assert "pass" in capsys.readouterr().out
 
 
-def test_heavy_repo_tests_are_left_to_a_mac(env, capsys):
+def test_heavy_repo_tests_go_to_the_m1_with_the_worktree(env, monkeypatch, capsys):
     conf = env["tmp"] / "etc" / "bot-repos.toml"
-    conf.write_text(conf.read_text().replace('default_branch = "main"', 'default_branch = "main"\ntest_on = "mac"', 1))
+    conf.write_text(conf.read_text().replace('default_branch = "main"', 'default_branch = "main"\ntest_on = "m1"', 1))
     assert call("cli-git", "start", "argo-exo", "t_abc123") == 0
+    wt = env["tmp"] / "work" / "wt" / "argo-exo-t_abc123"
+    (wt / "new.py").write_text("x = 1\n")                       # uncommitted, untracked: goes along
+    (wt / ".gitignore").write_text("node_modules/\n")
+    (wt / "node_modules").mkdir()
+    (wt / "node_modules" / "big.js").write_text("ignored")     # ignored: stays behind
     capsys.readouterr()
     assert call("cli-git", "test", "t_abc123") == 0
     out = capsys.readouterr().out
-    assert "not run here" in out and "3 passed" not in out
+    assert "started on the M1" in out and "uncommitted" in out and "waiting on M1 tests" in out and "3 passed" not in out
+    ssh = [c for c in env["calls"]() if c[0].endswith("ssh")][-1]
+    verb = ssh[-1].split()
+    assert verb[:4] == ["test", "argo-exo", "t_abc123", "rune"] and len(verb[4]) == 40
+    with __import__("tarfile").open(env["tmp"] / "ssh-stdin", "r:gz") as tar:
+        names = tar.getnames()
+    assert {"README.md", "new.py", ".gitignore"} <= set(names) and not any(n.startswith(("node_modules", ".git/")) for n in names)
+
+    monkeypatch.setenv("FAKE_M1_OFF", "1")
+    assert call("cli-git", "test", "t_abc123") == 0
+    out = capsys.readouterr().out
+    assert "M1 off" in out and "never run on the droplet" in out
 
 
 def test_another_bot_cannot_work_in_my_worktree(env, monkeypatch, capsys):
@@ -345,3 +368,55 @@ def test_exec_is_refused_over_ssh(m1, monkeypatch, capsys):
     assert m1_jobd.main() == 2
     monkeypatch.setenv("SSH_ORIGINAL_COMMAND", "rm -rf ~")
     assert m1_jobd.main() == 2
+
+
+def test_m1_tests_come_from_the_allowlist_run_sandboxed_and_clean_up(m1, monkeypatch, tmp_path):
+    import io, tarfile, time
+    jobs = m1_jobd.JOBS_FILE
+    jobs.write_text(jobs.read_text() + f"""
+[tests.demo]
+cmd = ["{sys.executable}", "-c", "import os, sys; print('SRC', sorted(os.listdir('.')), 'CI', os.environ.get('CI')); sys.exit(int(open('rc').read()))"]
+timeout_minutes = 1
+""")
+    sandbox = script(tmp_path / "sandbox-exec", "import os, sys\na = sys.argv[1:]\nwhile a and a[0] in ('-p', '-D'):\n    a = a[2:]\nos.execvp(a[0], a)\n")
+    monkeypatch.setattr(m1_jobd, "SANDBOX", sandbox)
+    monkeypatch.setattr(m1_jobd, "TESTS_DIR", tmp_path / "bot-tests")
+    for var, val in (("M1_JOBS_FILE", jobs), ("M1_JOBS_STATE", m1_jobd.STATE), ("M1_JOBS_KB", m1_jobd.KB)):
+        monkeypatch.setenv(var, str(val))
+
+    def tree(rc: str, evil: bool = False) -> bytes:
+        buf = io.BytesIO()
+        with tarfile.open(fileobj=buf, mode="w:gz") as tar:
+            for name, body in (("rc", rc), ("app.py", "x")) + ((("../escape", "x"),) if evil else ()):
+                info = tarfile.TarInfo(name)
+                info.size = len(body)
+                tar.addfile(info, io.BytesIO(body.encode()))
+        return buf.getvalue()
+
+    with pytest.raises(m1_jobd.JobError, match="no tests"):
+        m1_jobd.cmd_test("rm", "t_abc123", "rune", "a" * 40, tree("0"))
+    with pytest.raises(m1_jobd.JobError, match="stdin"):
+        m1_jobd.cmd_test("demo", "t_abc123", "rune", "a" * 40, b"")
+    with pytest.raises(m1_jobd.JobError):
+        m1_jobd.cmd_test("demo", "t_abc123", "rune", "not-a-sha", tree("0"))
+    with pytest.raises(m1_jobd.JobError, match="bad worktree archive"):
+        m1_jobd.cmd_test("demo", "t_abc123", "rune", "a" * 40, tree("0", evil=True))
+    assert not (tmp_path / "escape").exists() and not list((tmp_path / "bot-tests").iterdir())
+
+    for rc, verdict in (("0", "PASSED"), ("1", "FAILED (exit 1)")):
+        if m1["kb_log"].exists():
+            m1["kb_log"].unlink()
+        out = m1_jobd.cmd_test("demo", "t_abc123", "rune", "b" * 40, tree(rc))
+        job_id = out.split()[1]
+        d = m1_jobd.STATE / job_id
+        for _ in range(100):
+            if m1["kb_log"].exists() and "unblock" in m1["kb_log"].read_text():
+                break
+            time.sleep(0.1)
+        spec = json.loads((d / "job.json").read_text())
+        assert spec["argv"][3] == sandbox and spec["argv"][4] == "-p" and "file-read*" in spec["argv"][5]
+        assert "SRC ['app.py', 'rc'] CI 1" in (d / "log").read_text()
+        assert json.loads((d / "result.json").read_text())["exit"] == int(rc)
+        assert not (tmp_path / "bot-tests" / job_id).exists()   # the tree and its node_modules are gone; the log stays
+        assert m1["kb_log"].read_text().splitlines() == ["comment t_abc123", "unblock t_abc123"]
+        time.sleep(1.1)   # job ids are per second

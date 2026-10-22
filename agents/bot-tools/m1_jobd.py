@@ -9,44 +9,75 @@ so whatever the bot asks for arrives as SSH_ORIGINAL_COMMAND and this script dec
 
   list                                  the jobs in ~/.config/m1-jobs/jobs.toml
   run <job> <card> <bot> [args...]      start a job detached; prints its id
+  test <repo> <card> <bot> <sha>        stdin is a tar.gz of a bot's worktree; runs that repo's [tests.<repo>] command
+                                        detached, sandboxed, one at a time; prints its id
   status <id> | log <id>                where a job is, the tail of its log
 
 The allowlist lives outside the vault on purpose (bots can edit the vault on the droplet and it syncs here). Path
 arguments must resolve under the job's roots; flags must be in the job's `flags`. When a job ends, its result goes to
 the card as a comment and the card is unblocked with `kb` (the M1's own route to the droplet's kanban), which wakes the
 bot that asked. Design: vault Areas/argo/second-brain/agent-company/bot-powers-and-shared-memory-design.md section 5.
+
+Tests run bot-written code as konrad, so they run under sandbox-exec (TEST_PROFILE): no reads of ~/.ssh, ~/.config,
+the vault, the keychain and the other private folders, writes only to the test's own folder, the package caches and
+temp. Design: vault Areas/argo/second-brain/agent-company/m1-coding-base-design.md, "Step 1: tests on the M1".
 """
 from __future__ import annotations
 
 import json
 import os
 import re
+import fcntl
+import io
 import shlex
+import shutil
 import subprocess
 import sys
 import time
+import tarfile
 import tomllib
 from pathlib import Path
 
 HOME = Path.home()
 JOBS_FILE = Path(os.environ.get("M1_JOBS_FILE", HOME / ".config" / "m1-jobs" / "jobs.toml"))
 STATE = Path(os.environ.get("M1_JOBS_STATE", HOME / "m1-jobs"))
+TESTS_DIR = Path(os.environ.get("M1_TESTS_DIR", HOME / "bot-tests"))   # outside STATE: the sandbox hides ~/m1-jobs
+MAX_TREE = 300 * 1024 * 1024
+SANDBOX = os.environ.get("M1_SANDBOX", "/usr/bin/sandbox-exec")
 KB = os.environ.get("M1_JOBS_KB", str(HOME / "Documents" / "secondbrain" / ".hermes" / "scripts" / "kb"))
 CARD = re.compile(r"^t_[0-9a-f]{6,32}$")
 NAME = re.compile(r"^[a-z0-9][a-z0-9-]{0,40}$")
 JOB_ID = re.compile(r"^[0-9]{8}-[0-9]{6}-[a-z0-9-]{1,40}$")
 SAFE_VALUE = re.compile(r"^[A-Za-z0-9_.,:+-]{1,80}$")
+REPO = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,60}$")
+SHA = re.compile(r"^[0-9a-f]{7,40}$")
+PRIVATE = [".ssh", ".config", ".claude", ".hermes", ".aws", ".gnupg", ".local", "Documents", "Desktop", "Downloads",
+           "Movies", "Pictures", "m1-jobs", "Library/Keychains", "Library/Application Support", "Library/Messages",
+           "Library/Mail"]
+WRITABLE = [".npm", ".bun", ".cache", "Library/Caches"]
+TEST_PROFILE = """(version 1)
+(allow default)
+(deny file-read* file-write* %s)
+(deny mach-lookup (global-name "com.apple.SecurityServer") (global-name "com.apple.securityd"))
+(deny file-write* (require-not (require-any (subpath (param "SRC")) %s
+  (subpath "/private/tmp") (subpath "/private/var/folders") (subpath "/dev"))))
+""" % (" ".join(f'(subpath (string-append (param "HOME") "/{d}"))' for d in PRIVATE),
+       " ".join(f'(subpath (string-append (param "HOME") "/{d}"))' for d in WRITABLE))
 
 
 class JobError(Exception):
     pass
 
 
-def jobs() -> dict:
+def allowlist() -> dict:
     try:
-        return tomllib.loads(JOBS_FILE.read_text()).get("jobs", {})
+        return tomllib.loads(JOBS_FILE.read_text())
     except FileNotFoundError:
         raise JobError(f"no allowlist at {JOBS_FILE}")
+
+
+def jobs() -> dict:
+    return allowlist().get("jobs", {})
 
 
 def expand(p: str) -> Path:
@@ -95,6 +126,8 @@ def cmd_list() -> str:
         script = expand(j["cmd"][-1]) if j.get("cmd") else None
         ready = "" if script is None or not str(j["cmd"][-1]).startswith(("~", "/")) or script.exists() else "  (NOT INSTALLED)"
         lines.append(f"{name}  {j.get('description', '')}  args: {j.get('usage', 'paths')}{ready}")
+    for repo in sorted(allowlist().get("tests", {})):
+        lines.append(f"tests: {repo}  (cli-git test)")
     return "\n".join(lines) or "no jobs"
 
 
@@ -106,15 +139,46 @@ def cmd_run(name: str, card: str, bot: str, args: list[str]) -> str:
         raise JobError("run <job> <card> <bot> [args]")
     argv = [os.path.expanduser(c) for c in j["cmd"]] + check_args(j, args)
     job_id = f"{time.strftime('%Y%m%d-%H%M%S')}-{name}"
+    spawn(job_id, {"job": name, "card": card, "bot": bot, "argv": argv, "timeout_minutes": j.get("timeout_minutes", 60),
+                   "cwd": os.path.expanduser(j.get("cwd", "~"))})
+    return f"job {job_id} started on the M1 for {card}"
+
+
+def cmd_test(repo: str, card: str, bot: str, sha: str, tree: bytes) -> str:
+    """A bot's worktree arrives as a tar.gz on stdin (the M1 has no GitHub token); its tests run from this allowlist,
+    never from a command the droplet sends."""
+    t = allowlist().get("tests", {}).get(repo)
+    if not REPO.match(repo) or not t:
+        raise JobError(f"no tests for {repo!r} on the M1 (m1-jobd list)")
+    if not CARD.match(card) or not NAME.match(bot) or not SHA.match(sha):
+        raise JobError("test <repo> <card> <bot> <sha>, with the worktree as a tar.gz on stdin")
+    if not tree or len(tree) > MAX_TREE:
+        raise JobError(f"the worktree must arrive on stdin, under {MAX_TREE >> 20} MB (got {len(tree) >> 20} MB)")
+    job_id = f"{time.strftime('%Y%m%d-%H%M%S')}-test-" + re.sub(r"[^a-z0-9-]", "-", repo.lower())[:30]
+    src = TESTS_DIR / job_id / "src"
+    src.mkdir(parents=True)
+    try:
+        with tarfile.open(fileobj=io.BytesIO(tree), mode="r:gz") as tar:
+            tar.extractall(src, filter="data")   # no absolute paths, no links out, no devices
+    except (tarfile.TarError, OSError) as exc:
+        shutil.rmtree(src.parent, ignore_errors=True)
+        raise JobError(f"bad worktree archive: {exc}")
+    src = src.resolve()
+    sandbox = [SANDBOX, "-p", TEST_PROFILE, "-D", f"HOME={HOME.resolve()}", "-D", f"SRC={src}"]
+    spawn(job_id, {"job": f"tests for {repo} at {sha[:9]}", "kind": "test", "card": card, "bot": bot,
+                   "argv": ["/usr/bin/nice", "-n", "10", *sandbox, *t["cmd"]], "cwd": str(src), "cleanup": str(src.parent),
+                   "timeout_minutes": int(t.get("timeout_minutes", 30))})
+    return f"job {job_id} started on the M1 for {card}: {repo} tests at {sha[:9]}"
+
+
+def spawn(job_id: str, spec: dict) -> None:
     d = STATE / job_id
     d.mkdir(parents=True, exist_ok=False)
-    (d / "job.json").write_text(json.dumps({"job": name, "card": card, "bot": bot, "argv": argv, "started": time.time(),
-                                            "timeout_minutes": j.get("timeout_minutes", 60), "cwd": os.path.expanduser(j.get("cwd", "~"))}))
+    (d / "job.json").write_text(json.dumps({**spec, "started": time.time()}))
     child_env = {k: v for k, v in os.environ.items() if not k.startswith("SSH_")}   # `_exec` is refused over ssh
     with open(d / "log", "ab") as log:
         subprocess.Popen([sys.executable, os.path.abspath(__file__), "_exec", job_id], stdin=subprocess.DEVNULL, stdout=log,
                          stderr=subprocess.STDOUT, start_new_session=True, close_fds=True, env=child_env)
-    return f"job {job_id} started on the M1 for {card}"
 
 
 def report(card: str, text: str) -> None:
@@ -128,6 +192,11 @@ def cmd_exec(job_id: str) -> int:
     spec = json.loads((d / "job.json").read_text())
     env = dict(os.environ)
     env["PATH"] = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
+    lock = None
+    if spec.get("kind") == "test":
+        env["CI"] = "1"   # vitest and friends run once instead of watching
+        lock = open(STATE / "test.lock", "a")
+        fcntl.flock(lock, fcntl.LOCK_EX)   # one bot test at a time; the timeout starts once it has the M1
     start = time.time()
     try:
         with open(d / "log", "ab") as log:
@@ -139,10 +208,18 @@ def cmd_exec(job_id: str) -> int:
     except OSError as exc:
         (d / "log").open("a").write(f"\ncould not start: {exc}\n")
         code = 127
+    finally:
+        if lock:
+            lock.close()
+        if spec.get("cleanup"):
+            shutil.rmtree(spec["cleanup"], ignore_errors=True)   # node_modules are big; the log stays in STATE
     tail = (d / "log").read_text(errors="replace")[-1500:]
     result = {"exit": code, "seconds": round(time.time() - start), "ended": time.time()}
     (d / "result.json").write_text(json.dumps(result))
-    verdict = "finished" if code == 0 else ("timed out" if code == 124 else f"FAILED (exit {code})")
+    if spec.get("kind") == "test":
+        verdict = "PASSED" if code == 0 else ("timed out" if code == 124 else f"FAILED (exit {code})")
+    else:
+        verdict = "finished" if code == 0 else ("timed out" if code == 124 else f"FAILED (exit {code})")
     report(spec["card"], f"M1 job {job_id} ({spec['job']}) {verdict} in {result['seconds']} s. Log on the M1: {d / 'log'}\n\n{tail}")
     return code
 
@@ -157,12 +234,15 @@ def cmd_status(job_id: str, tail: bool) -> str:
     return f"{job_id}: " + (f"done, {r.read_text()}" if r.exists() else "running")
 
 
+USAGE = "m1-jobd list | run <job> <card> <bot> [args] | test <repo> <card> <bot> <sha> < tree.tgz | status <id> | log <id>"
+
+
 def main() -> int:
     raw = os.environ.get("SSH_ORIGINAL_COMMAND")
     argv = shlex.split(raw) if raw is not None else sys.argv[1:]
     try:
         if not argv:
-            raise JobError("m1-jobd list | run <job> <card> <bot> [args] | status <id> | log <id>")
+            raise JobError(USAGE)
         v = argv[0]
         if v == "_exec" and raw is None and len(argv) == 2:
             return cmd_exec(argv[1])
@@ -170,10 +250,12 @@ def main() -> int:
             print(cmd_list())
         elif v == "run" and len(argv) >= 4:
             print(cmd_run(argv[1], argv[2], argv[3], argv[4:]))
+        elif v == "test" and len(argv) == 5:
+            print(cmd_test(argv[1], argv[2], argv[3], argv[4], sys.stdin.buffer.read(MAX_TREE + 1)))
         elif v in ("status", "log") and len(argv) == 2:
             print(cmd_status(argv[1], tail=v == "log"))
         else:
-            raise JobError("m1-jobd list | run <job> <card> <bot> [args] | status <id> | log <id>")
+            raise JobError(USAGE)
     except JobError as exc:
         print(str(exc), file=sys.stderr)
         return 2
