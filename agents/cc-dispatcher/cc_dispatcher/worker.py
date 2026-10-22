@@ -15,7 +15,7 @@ PASS_THROUGH = ("HOME", "USER", "LOGNAME", "LANG", "LC_ALL", "TZ")
 
 def kanban_tools(hermes_bin: str, board: str) -> list[str]:
     """Allow rules for the board verbs a worker needs, pinned to its board. Both spellings of the binary."""
-    verbs = ("show", "list", "comment", "complete", "block", "create", "attach")
+    verbs = ("show", "list", "comment", "complete", "block", "schedule", "create", "attach")
     rules = []
     for exe in (hermes_bin, "hermes"):
         rules += [f"Bash({exe} kanban --board {board} {v} *)" for v in verbs]

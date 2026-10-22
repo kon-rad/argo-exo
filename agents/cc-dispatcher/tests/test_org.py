@@ -391,6 +391,7 @@ def test_command_and_env(tmp_path):
     allowed = cmd[cmd.index("--allowedTools") + 1].split(",")
     assert "Read" in allowed and "Bash(cli-org *)" in allowed and "Bash(git commit *)" in allowed
     assert "Bash(/opt/hermes/hermes kanban --board exo complete *)" in allowed
+    assert "Bash(hermes kanban --board exo schedule *)" in allowed  # waits on M1 tests and jobs (2026-10-22)
     assert cmd[cmd.index("--disallowedTools") + 1] == "Bash(sudo *),Read(CURRENT/**)"
     assert cmd[cmd.index("--max-turns") + 1] == "60" and "--permission-prompts" in cmd
     no_task = org_command(settings, agents["atlas"], None, None, "P", None)
