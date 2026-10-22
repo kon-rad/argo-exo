@@ -167,6 +167,7 @@ def cmd_test(repo: str, card: str, bot: str, sha: str, tree: bytes) -> str:
     sandbox = [SANDBOX, "-p", TEST_PROFILE, "-D", f"HOME={HOME.resolve()}", "-D", f"SRC={src}"]
     spawn(job_id, {"job": f"tests for {repo} at {sha[:9]}", "kind": "test", "card": card, "bot": bot,
                    "argv": ["/usr/bin/nice", "-n", "10", *sandbox, *t["cmd"]], "cwd": str(src), "cleanup": str(src.parent),
+                   "output": str(src.parent / "output"),
                    "timeout_minutes": int(t.get("timeout_minutes", 30))})
     return f"job {job_id} started on the M1 for {card}: {repo} tests at {sha[:9]}"
 
@@ -194,12 +195,15 @@ def cmd_exec(job_id: str) -> int:
     env["PATH"] = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
     lock = None
     if spec.get("kind") == "test":
-        env["CI"] = "1"   # vitest and friends run once instead of watching
+        env.update(CI="1", NO_COLOR="1", FORCE_COLOR="0")   # run once instead of watching; plain text for the card
         lock = open(STATE / "test.lock", "a")
         fcntl.flock(lock, fcntl.LOCK_EX)   # one bot test at a time; the timeout starts once it has the M1
+    # A sandboxed test can't see ~/m1-jobs, and node aborts at start when it can't fstat its own stdout (2026-10-22),
+    # so a test writes to a file in its own folder, copied into the log when it ends.
+    out_path = Path(spec.get("output") or d / "log")
     start = time.time()
     try:
-        with open(d / "log", "ab") as log:
+        with open(out_path, "ab") as log:
             p = subprocess.run(spec["argv"], cwd=spec["cwd"], env=env, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT,
                                timeout=int(spec["timeout_minutes"]) * 60)
         code = p.returncode
@@ -211,6 +215,9 @@ def cmd_exec(job_id: str) -> int:
     finally:
         if lock:
             lock.close()
+        if out_path != d / "log" and out_path.exists():
+            with open(d / "log", "ab") as log:
+                log.write(out_path.read_bytes())
         if spec.get("cleanup"):
             shutil.rmtree(spec["cleanup"], ignore_errors=True)   # node_modules are big; the log stays in STATE
     tail = (d / "log").read_text(errors="replace")[-1500:]
@@ -229,7 +236,8 @@ def cmd_status(job_id: str, tail: bool) -> str:
     if not d.exists():
         raise JobError(f"no job {job_id}")
     if tail:
-        return (d / "log").read_text(errors="replace")[-4000:]
+        live = Path(json.loads((d / "job.json").read_text()).get("output") or d / "log")
+        return (live if live.exists() else d / "log").read_text(errors="replace")[-4000:]
     r = d / "result.json"
     return f"{job_id}: " + (f"done, {r.read_text()}" if r.exists() else "running")
 
