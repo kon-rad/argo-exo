@@ -280,9 +280,10 @@ def test_on_m1(agent: dict, repo: str, card: str, wt: Path) -> str:
         out = m1(["test", repo, card, agent["name"], sha], timeout=300, data=pack_worktree(wt))
     except BotError as exc:
         return (f"not run: the M1 is off or unreachable ({exc}). Heavy tests never run on the droplet. "
-                f"`hermes kanban block {card} \"M1 off: {repo} tests wait for it\"` and stop; unblock it when the M1 is back.")
-    return (f"{out}{' (with your uncommitted changes)' if dirty else ''}\nNow `hermes kanban block {card} \"waiting on M1 tests\"` "
-            "and stop: the M1 comments PASSED or FAILED with the log tail on the card and unblocks it, which wakes you.")
+                f"`hermes kanban block {card} \"M1 off: {repo} tests wait for it\"` and stop.")
+    return (f"{out}{' (with your uncommitted changes)' if dirty else ''}\nNow `hermes kanban schedule {card} \"waiting on M1 tests\"` "
+            "and stop: the M1 comments PASSED or FAILED with the log tail on the card and puts it back in ready, which wakes "
+            "you. Schedule, not block: a block repeated for the same reason trips the board's loop breaker into triage.")
 
 
 def mem_available_mb() -> int | None:
@@ -571,8 +572,8 @@ def cmd_m1(agent: dict, argv: list[str]) -> str:
         job, card = argv[1], check_card(argv[3])
         rest = argv[5:] if len(argv) > 4 and argv[4] == "--" else argv[4:]
         out = m1(["run", job, card, agent["name"], *rest])
-        return (f"{out}\nNow `hermes kanban block {card} \"waiting on m1 job\"` and stop: the M1 comments the result on the card "
-                "and unblocks it when the job ends, which wakes you.")
+        return (f"{out}\nNow `hermes kanban schedule {card} \"waiting on m1 job\"` and stop: the M1 comments the result on the card "
+                "and puts it back in ready when the job ends, which wakes you.")
     return m1(argv)
 
 

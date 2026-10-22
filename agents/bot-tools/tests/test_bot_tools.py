@@ -303,7 +303,7 @@ def test_m1_job_goes_through_ssh_and_says_to_block(env, monkeypatch, capsys):
     monkeypatch.setenv("FAKE_CAPS", "m1")
     assert call("m1-job", "run", "caption", "--card", "t_abc123", "--", "~/Movies/a b.mp4") == 0
     out = capsys.readouterr().out
-    assert "started on the M1" in out and "hermes kanban block t_abc123" in out
+    assert "started on the M1" in out and "hermes kanban schedule t_abc123" in out
     ssh = [c for c in env["calls"]() if c[0].endswith("ssh")][0]
     assert ssh[-1] == "run caption t_abc123 echo '~/Movies/a b.mp4'"
 
