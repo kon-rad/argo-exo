@@ -31,7 +31,7 @@ def build(env: dict) -> Hub:
     home = Path(env.get("HOME", "/home/hermes"))
     chats = ChatManager(ChatSettings(
         root=Path(env.get("AGENT_HUB_CHATS", home / "cc-chats")), claude_bin=lanes.claude_bin,
-        cwd=env.get("AGENT_HUB_CWD", str(home / "secondBrain")), model=env.get("AGENT_HUB_MODEL", "opus"),
+        cwd=env.get("AGENT_HUB_CWD", str(home / "secondBrain")), model=env.get("AGENT_HUB_MODEL", "sonnet"),
         max_live=int(env.get("AGENT_HUB_MAX_LIVE", "2")), denied_tools=deny, base_env=dict(env)))
     return Hub(token=token, lanes=lanes, chats=chats, hermes_bin=lanes.hermes_bin,
                telegram_script=env.get("TELEGRAM_AGENT_SCRIPT",

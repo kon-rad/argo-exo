@@ -48,7 +48,7 @@ class ChatSettings:
     root: Path                 # ~/cc-chats
     claude_bin: str
     cwd: str                   # default working directory (the vault)
-    model: str = "opus"
+    model: str = "sonnet"
     max_live: int = 2          # live claude processes for chats
     idle_close_seconds: int = 900
     denied_tools: tuple[str, ...] = ()
