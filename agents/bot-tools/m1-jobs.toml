@@ -26,3 +26,10 @@ roots = ["~/Movies", "/Volumes"]
 path_flags = ["--dest", "--proxies"]
 flags = ["--min-duration"]
 timeout_minutes = 240
+
+[jobs.flint]
+description = "Benchmark Flint (Recursive 40B) vs Qwen 3.6 on the M1 via Ollama: installs Ollama if needed, pulls the models, runs coding tasks, writes a report into the vault"
+usage = "no args (benchmark all models)"
+cmd = ["/opt/homebrew/bin/python3", "~/Documents/secondbrain/.agents/skills/flint-bench/scripts/bench_flint.py"]
+roots = ["~/Documents/secondbrain"]
+timeout_minutes = 240
