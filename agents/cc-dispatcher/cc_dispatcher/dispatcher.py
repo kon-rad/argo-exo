@@ -13,7 +13,7 @@ from typing import Callable
 from zoneinfo import ZoneInfo
 
 from . import verify, worker
-from .board import Board, BoardError
+from .board import Board, BoardError, BoardLike
 from .config import Lane, Settings
 from .local_gate import LocalGate
 from .org import OrgBoard, OrgRunner
@@ -60,7 +60,7 @@ class State:
 @dataclass
 class Dispatcher:
     settings: Settings
-    boards: dict[str, Board]
+    boards: dict[str, BoardLike]
     spawn: Callable = worker.spawn
     prepare_cwd: Callable = worker.prepare_cwd
     clock: Callable[[], float] = time.time
@@ -96,7 +96,7 @@ class Dispatcher:
                     if task["id"] in self.running:
                         continue
                     self._safe(board.block, task["id"],
-                               "cc-dispatcher restarted while this task ran; unblock to retry", "transient")
+                               "cc-dispatcher restarted while this task ran; unblock to retry", "transient", lane.name)
                     blocked.append(task["id"])
         return blocked
 
@@ -161,9 +161,9 @@ class Dispatcher:
             return False
         return in_progress < s.max_in_progress
 
-    def _start(self, board_name: str, board: Board, lane: Lane, task_id: str, now: float) -> None:
+    def _start(self, board_name: str, board: BoardLike, lane: Lane, task_id: str, now: float) -> None:
         ttl = lane.max_runtime_minutes * 60 + 900   # outlives our own runtime limit, so only we end the run
-        if not board.claim(task_id, ttl):
+        if not board.claim(task_id, ttl, lane.name):
             return
         log_path = self.settings.runs_dir / f"{task_id}.jsonl"
         try:
@@ -181,7 +181,7 @@ class Dispatcher:
             proc = self.spawn(self.settings, lane, board_name, task_id, cwd, log_path)
         except Exception as exc:   # worktree or exec failure: the task must not sit claimed until the TTL ends
             log.exception("spawn failed for %s", task_id)
-            self._safe(board.block, task_id, f"cc-dispatcher could not start the worker: {exc}"[:500], "capability")
+            self._safe(board.block, task_id, f"cc-dispatcher could not start the worker: {exc}"[:500], "capability", lane.name)
             return
         self.running[task_id] = Running(board_name, task_id, lane, proc, log_path, now, cwd=cwd)
         self.state.spawned_today += 1
@@ -225,9 +225,9 @@ class Dispatcher:
             else:
                 why = f"exited (code {code}) without complete or block"
             self._safe(board.block, task_id,
-                       f"Claude worker {why}. Last output:\n{worker.tail(r.log_path)}"[:3500], "transient")
+                       f"Claude worker {why}. Last output:\n{worker.tail(r.log_path)}"[:3500], "transient", r.lane.name)
 
-    def _verify(self, r: Running, board: Board, task_id: str) -> None:
+    def _verify(self, r: Running, board: BoardLike, task_id: str) -> None:
         """Never raises: a crash in the check must not take the dispatcher loop down with it."""
         try:
             self._verify_inner(r, board, task_id)
@@ -240,7 +240,7 @@ class Dispatcher:
             except Exception:
                 log.exception("could not report the verify crash for %s", task_id)
 
-    def _verify_inner(self, r: Running, board: Board, task_id: str) -> None:
+    def _verify_inner(self, r: Running, board: BoardLike, task_id: str) -> None:
         """A completed card that names a verifier is checked by code, never by the worker's own word."""
         task = self._safe(board.task, task_id) or {}
         body = task.get("body") or ""
@@ -274,12 +274,12 @@ class Dispatcher:
         if runnable and k < n:
             made = self._safe(board.create, f"[retry {k + 1}/{n}] {title}",
                               verify.retry_body(body, outcome, k + 1, n, task_id),
-                              r.lane.name, AUTHOR, (task_id,), None)
+                              r.lane.name, r.lane.name, (task_id,), None)
             said = (f"Verify {name} failed{metric}; opened retry {k + 1}/{n}." if made
                     else f"Verify {name} failed{metric}; could not open the retry card.")
         else:
             made = self._safe(board.create, f"[needs Konrad] {title}", verify.escalation_body(body, outcome, k, n, task_id),
-                              r.lane.name, AUTHOR, (task_id,), "blocked")
+                              r.lane.name, r.lane.name, (task_id,), "blocked")
             said = (f"Verify {name} failed{metric}; blocked for Konrad." if made
                     else f"Verify {name} failed{metric}; could not open the escalation card.")
         self._safe(board.comment, task_id, said, AUTHOR)

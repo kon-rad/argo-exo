@@ -82,13 +82,23 @@ class Settings:
     max_attempts: int = 3
     org: OrgSettings | None = None
     local: LocalSettings | None = None
+    # "hermes" (default): dispatcher and workers speak `hermes kanban` against the Hermes SQLite board.
+    # "engine": both speak `cli-board` against the Second Brain app's own Postgres board instead (board-design.md
+    # section 7, the `claude-code` lane). A per-install switch, not per-lane: the board a card lives on doesn't
+    # change per card, so splitting lanes across backends would just mean half the lanes can't see the other's cards.
+    board_backend: str = "hermes"
+    cli_board_bin: str = "cli-board"
 
 
 def load(path: str | Path) -> Settings:
     path = Path(path)
     raw = tomllib.loads(path.read_text())
     d, defaults = raw.get("dispatcher", {}), raw.get("defaults", {})
-    protocol = (path.parent / "worker-protocol.md").read_text()
+    board_backend = str(d.get("board_backend", "hermes"))
+    if board_backend not in ("hermes", "engine"):
+        raise ValueError(f"board_backend must be 'hermes' or 'engine', got {board_backend!r}")
+    protocol_file = "worker-protocol-engine.md" if board_backend == "engine" else "worker-protocol.md"
+    protocol = (path.parent / protocol_file).read_text()
     lanes: dict[str, Lane] = {}
     for name, cfg in raw.get("lanes", {}).items():
         if not LANE_NAME.match(name):
@@ -182,4 +192,5 @@ def load(path: str | Path) -> Settings:
         claude_bin=d.get("claude_bin", "claude"), hermes_bin=d.get("hermes_bin", "hermes"),
         lanes=lanes, verifiers=verifiers, max_attempts=max_attempts, org=org,
         local=LocalSettings(health_url=str(lo["health_url"]), profiles=tuple(lo.get("profiles", []))) if lo.get("health_url") else None,
+        board_backend=board_backend, cli_board_bin=str(d.get("cli_board_bin", "cli-board")),
     )
