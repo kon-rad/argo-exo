@@ -48,6 +48,19 @@ path_flags = ["--kit"]
 flags = ["--only", "--force", "--no-sync"]
 timeout_minutes = 60
 
+# Reel and video renders, the other half of the same block (card t_a286ddc6 said "Reel rendering needs the M1 Max"
+# next to the capture line). argo-reel's heavy steps (`reel_job.py`: assets, voice, sheet, draft, spell, render) run in
+# the M1's own checkout and push reel.mp4 and the sheet to B2 under reels/<name>/, so a droplet caller can fetch them.
+# `--reel=` may name a folder that is not here yet: the job's git pull brings it, so push the storyboard first.
+[jobs.reel]
+description = "Run an Argo reel step on the M1 (argo-reel draft or render), then push reel.mp4 and the contact sheet to B2"
+usage = "--reel=<path under the vault, or a reel name> [--step=draft|render|all|assets|voice|sheet|spell] [--only=s01,s02] [--force] [--no-push]"
+cmd = ["~/srv/render/.venv-reel/bin/python", "~/Documents/secondbrain/.agents/skills/argo-reel/scripts/reel_job.py"]
+roots = ["~/Documents/secondbrain"]
+path_flags = ["--reel"]
+flags = ["--step", "--only", "--force", "--no-push"]
+timeout_minutes = 120
+
 # `cli-git test <card>` for repos marked test_on = "m1" in bot-repos.toml: the droplet sends the bot's worktree as a
 # tar.gz and m1-jobd runs [tests.<repo>].cmd in it, under sandbox-exec (see m1_jobd.TEST_PROFILE), one at a time.
 # The command comes from this file, never from the droplet. Design: vault
