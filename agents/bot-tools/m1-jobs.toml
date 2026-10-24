@@ -34,6 +34,20 @@ cmd = ["/opt/homebrew/bin/python3", "~/Documents/secondbrain/.agents/skills/flin
 roots = ["~/Documents/secondbrain"]
 timeout_minutes = 240
 
+# Media captures: the droplet has no headless Chrome and no poppler, so `kit.py fetch` and `web` cannot run there.
+# This is the route that replaced "hand the card to someone with M1 access" (card t_06cbd6ca blocked for six hours
+# while the M1 was up, 2026-10-24). The job pulls the M1's checkout, captures, and pushes assets/, web/ and the sheet
+# to B2, so the caller gets them back with `kit.py pull <kit>` and no machine needs a route to any other.
+# Skill: vault .agents/skills/argo-media-pipeline/ (`--kit=` may name a kit that does not exist here yet: the pull brings it).
+[jobs.kit]
+description = "Capture an Argo media kit's images on the M1 (argo-media-pipeline fetch + web), then push them to B2 for the caller"
+usage = "--kit=<path under the vault, or a kit name> [--only=a,b] [--force] [--no-sync]"
+cmd = ["~/srv/render/.venv-reel/bin/python", "~/Documents/secondbrain/.agents/skills/argo-media-pipeline/scripts/kit_job.py"]
+roots = ["~/Documents/secondbrain"]
+path_flags = ["--kit"]
+flags = ["--only", "--force", "--no-sync"]
+timeout_minutes = 60
+
 # `cli-git test <card>` for repos marked test_on = "m1" in bot-repos.toml: the droplet sends the bot's worktree as a
 # tar.gz and m1-jobd runs [tests.<repo>].cmd in it, under sandbox-exec (see m1_jobd.TEST_PROFILE), one at a time.
 # The command comes from this file, never from the droplet. Design: vault
