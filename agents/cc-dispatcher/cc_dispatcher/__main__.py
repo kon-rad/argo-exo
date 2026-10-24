@@ -9,7 +9,7 @@ import sys
 import time
 from pathlib import Path
 
-from .board import Board
+from .board import Board, EngineBoard
 from .config import load
 from .dispatcher import Dispatcher
 
@@ -29,7 +29,11 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     settings = load(args.config)
     settings.runs_dir.mkdir(parents=True, exist_ok=True)
-    d = Dispatcher(settings, {b: Board(settings.hermes_bin, b) for b in settings.boards})
+    if settings.board_backend == "engine":
+        boards = {b: EngineBoard(settings.cli_board_bin, b) for b in settings.boards}
+    else:
+        boards = {b: Board(settings.hermes_bin, b) for b in settings.boards}
+    d = Dispatcher(settings, boards)
     blocked = d.recover()
     if blocked:
         logging.warning("blocked %d task(s) orphaned by a previous run: %s", len(blocked), ", ".join(blocked))

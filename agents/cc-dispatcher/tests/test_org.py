@@ -295,7 +295,7 @@ def test_a_kanban_task_assigned_to_an_agent_runs_as_that_agent_in_its_lane(tmp_p
     assert len(spawned) == 1
     s = spawned[0]
     assert s["agent"] == "rune" and s["task"] == ("exo", "t_org1") and s["lane"] == "cc-test" and s["cwd"] == "/work/t_org1"
-    assert board.claims == [("t_org1", 30 * 60 + 900)]
+    assert board.claims == [("t_org1", 30 * 60 + 900, "rune")]
     assert "kanban task t_org1 on board exo" in s["prompt"] and "complete" in s["prompt"]
     assert any("rune (sonnet) started" in c[1] for c in board.comments)
     s["proc"].code = 1

@@ -22,6 +22,15 @@ def kanban_tools(hermes_bin: str, board: str) -> list[str]:
     return sorted(set(rules))
 
 
+def engine_board_tools(cli_board_bin: str) -> list[str]:
+    """Allow rules for the engine board's verbs a worker needs (board-design.md section 5.2): no --board on any of
+    these (a card id already names its board), and no per-worker --author (the engine's author is always the
+    caller's ORG_AGENT, set once in worker_env, never a flag the worker could spoof)."""
+    verbs = ("show", "comment", "create", "finish", "move")
+    rules = [f"Bash({exe} {v} *)" for exe in (cli_board_bin, "cli-board") for v in verbs]
+    return sorted(set(rules))
+
+
 def worker_env(base: dict, settings: Settings, lane: Lane, board: str, task_id: str) -> dict:
     env = {k: base[k] for k in PASS_THROUGH if k in base}
     bindir = str(Path(settings.claude_bin).parent)
@@ -31,13 +40,21 @@ def worker_env(base: dict, settings: Settings, lane: Lane, board: str, task_id: 
         "HERMES_PROFILE": lane.name,              # default --author for `hermes kanban comment`
         "CC_LANE": lane.name,
     })
+    if settings.board_backend == "engine":
+        # The engine's board_card_* functions check "only its own cards" against this identity; the worker is
+        # always its own lane (never cc-dispatcher's), so it can only ever touch the card it was started for.
+        env["ORG_AGENT"] = lane.name
     return env
 
 
 def command(settings: Settings, lane: Lane, board: str, task_id: str) -> list[str]:
-    prompt = (f"Work kanban task {task_id} on board {board}. Start by reading it: "
-              f"hermes kanban --board {board} show {task_id} --json")
-    allowed = list(lane.allowed_tools) + kanban_tools(settings.hermes_bin, board)
+    if settings.board_backend == "engine":
+        prompt = f"Work card {task_id} on board {board}. Start by reading it: cli-board show {task_id} --json"
+        allowed = list(lane.allowed_tools) + engine_board_tools(settings.cli_board_bin)
+    else:
+        prompt = (f"Work kanban task {task_id} on board {board}. Start by reading it: "
+                  f"hermes kanban --board {board} show {task_id} --json")
+        allowed = list(lane.allowed_tools) + kanban_tools(settings.hermes_bin, board)
     return [
         settings.claude_bin, "-p", prompt,
         "--output-format", "stream-json", "--verbose",

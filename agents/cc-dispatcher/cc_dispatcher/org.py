@@ -423,7 +423,7 @@ class OrgRunner:
         if task:
             board_name, task_id, _ = task
             board = self.boards[board_name]
-            if board.claim(task_id, agent.max_runtime_minutes * 60 + 900):
+            if board.claim(task_id, agent.max_runtime_minutes * 60 + 900, agent.name):
                 task_ref = (board_name, task_id)
             elif not wakeups:
                 return False

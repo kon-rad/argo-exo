@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from cc_dispatcher import verify, worker
-from cc_dispatcher.board import Board, BoardError
+from cc_dispatcher.board import Board, BoardError, EngineBoard
 from cc_dispatcher.config import load
 from cc_dispatcher.dispatcher import Dispatcher
 
@@ -15,11 +15,12 @@ REPO_LANES = Path(__file__).resolve().parents[2] / "cc-lanes" / "lanes.toml"
 
 
 # -- fixtures ------------------------------------------------------------------------------------------------------
-def lanes_dir(tmp_path, extra="", mode="acceptEdits", name="cc-test"):
+def lanes_dir(tmp_path, extra="", mode="acceptEdits", name="cc-test", dispatcher_extra=""):
     tmp_path.mkdir(parents=True, exist_ok=True)
     d = tmp_path / "lanes"
     d.mkdir()
     (d / "worker-protocol.md").write_text("PROTOCOL")
+    (d / "worker-protocol-engine.md").write_text("ENGINE PROTOCOL")
     (d / f"{name}.md").write_text("ROLE")
     (d / "lanes.toml").write_text(f"""
 [dispatcher]
@@ -30,6 +31,7 @@ runs_dir = "{tmp_path / 'runs'}"
 work_dir = "{tmp_path / 'work'}"
 claude_bin = "/opt/claude/claude"
 hermes_bin = "/opt/hermes/hermes"
+{dispatcher_extra}
 
 [defaults]
 cwd = "/vault"
@@ -63,8 +65,8 @@ class FakeBoard:
         rows = self.ready if status == "ready" else self.running_tasks
         return [t for t in rows if t.get("assignee", assignee) == assignee]
 
-    def claim(self, task_id, ttl):
-        self.claims.append((task_id, ttl))
+    def claim(self, task_id, ttl, as_agent=None):
+        self.claims.append((task_id, ttl, as_agent))
         if self.claimable:
             self.ready = [t for t in self.ready if t["id"] != task_id]
         return self.claimable
@@ -75,8 +77,8 @@ class FakeBoard:
     def comment(self, task_id, text, author):
         self.comments.append((task_id, text))
 
-    def block(self, task_id, reason, kind="transient"):
-        self.blocks.append((task_id, reason, kind))
+    def block(self, task_id, reason, kind="transient", as_agent=None):
+        self.blocks.append((task_id, reason, kind, as_agent))
 
     def attach(self, task_id, path, author):
         self.attached.append((task_id, path))
@@ -280,6 +282,28 @@ def test_worker_env_is_built_from_scratch(tmp_path):
     assert env["HOME"] == "/home/hermes" and env["TZ"] == "Asia/Tokyo"
     assert env["HERMES_KANBAN_TASK"] == "t_1" and env["HERMES_PROFILE"] == "cc-test"
     assert env["PATH"].startswith("/opt/claude:/opt/hermes:")
+    assert "ORG_AGENT" not in env    # the hermes backend never needs one
+
+
+def test_bad_board_backend_is_rejected(tmp_path):
+    with pytest.raises(ValueError, match="board_backend"):
+        load(lanes_dir(tmp_path, dispatcher_extra='board_backend = "sqlite"'))
+
+
+def test_engine_backend_command_speaks_cli_board_not_hermes_kanban(tmp_path):
+    s = load(lanes_dir(tmp_path, dispatcher_extra='board_backend = "engine"\ncli_board_bin = "/opt/hermes/cli-board"'))
+    cmd = worker.command(s, s.lanes["cc-test"], "exo", "t_1")
+    assert "cli-board show t_1 --json" in cmd[2] and "hermes kanban" not in cmd[2]
+    allowed = cmd[cmd.index("--allowedTools") + 1].split(",")
+    assert "Bash(/opt/hermes/cli-board finish *)" in allowed and "Bash(cli-board finish *)" in allowed
+    assert not any("hermes kanban" in a for a in allowed)
+    assert not any("--board" in a for a in allowed)     # card-scoped verbs don't take one
+
+
+def test_engine_backend_worker_env_carries_the_lanes_own_identity(tmp_path):
+    s = load(lanes_dir(tmp_path, dispatcher_extra='board_backend = "engine"'))
+    env = worker.worker_env({"HOME": "/home/hermes"}, s, s.lanes["cc-test"], "exo", "t_1")
+    assert env["ORG_AGENT"] == "cc-test"
 
 
 def test_tail_and_rate_limit(tmp_path):
@@ -323,6 +347,99 @@ def test_board_calls():
 
 def test_failed_claim_is_false_not_an_error():
     assert Board("hermes", "exo", Runner(code=1, stderr="not ready")).claim("t_1", 60) is False
+
+
+# -- EngineBoard (the engine's /api/board, through the cli-board CLI) -----------------------------------------------
+class EngineRunner:
+    """Like Runner, but keeps each call's env too, so a test can check the identity cli-board actually saw."""
+    def __init__(self, stdout="[]", code=0, stderr=""):
+        self.calls, self.out, self.code, self.err = [], stdout, code, stderr
+
+    def __call__(self, cmd, **kw):
+        self.calls.append((cmd, kw.get("env")))
+        assert kw["timeout"] <= 30
+        return subprocess.CompletedProcess(cmd, self.code, self.out, self.err)
+
+
+def test_engine_board_reads_need_no_identity():
+    r = EngineRunner(json.dumps([{"id": "t_1"}]))
+    b = EngineBoard("cli-board", "exo", r)
+    assert b.tasks("cc-coder", "ready") == [{"id": "t_1"}]
+    cmd, env = r.calls[0]
+    assert cmd == ["cli-board", "list", "--assignee", "cc-coder", "--status", "ready", "--board", "exo", "--json"]
+    assert env is None    # no ORG_AGENT forced on a read
+
+
+def test_engine_board_claim_passes_the_agent_as_identity_and_as_the_claim_target():
+    r = EngineRunner(json.dumps({"id": "t_1", "status": "running"}))
+    b = EngineBoard("cli-board", "exo", r)
+    assert b.claim("t_1", 4500, "cc-coder") is True
+    cmd, env = r.calls[0]
+    assert cmd == ["cli-board", "claim", "--agent", "cc-coder", "--task", "t_1", "--lease", "75", "--board", "exo", "--json"]
+    assert env["ORG_AGENT"] == "cc-coder"
+
+
+def test_engine_board_claim_is_false_when_the_card_was_already_taken():
+    assert EngineBoard("cli-board", "exo", EngineRunner(code=3, stdout="null")).claim("t_1", 60, "cc-coder") is False
+
+
+def test_engine_board_claim_is_false_not_an_error_on_any_other_failure():
+    assert EngineBoard("cli-board", "exo", EngineRunner(code=1, stderr="t_1 not found")).claim("t_1", 60, "cc-coder") is False
+
+
+def test_engine_board_comment_has_no_author_flag_the_env_carries_identity_instead():
+    r = EngineRunner("")
+    EngineBoard("cli-board", "exo", r).comment("t_1", "on it", "cc-writer")
+    cmd, env = r.calls[0]
+    assert cmd == ["cli-board", "comment", "--", "t_1", "on it"]
+    assert "--author" not in cmd and env["ORG_AGENT"] == "cc-writer"
+
+
+def test_engine_board_block_maps_hermes_kinds_to_a_block_kind_the_engine_knows():
+    r = EngineRunner("")
+    EngineBoard("cli-board", "exo", r).block("t_1", "crashed", "transient", "cc-coder")
+    cmd, env = r.calls[0]
+    assert cmd == ["cli-board", "finish", "t_1", "--blocked", "tool-error", "crashed"]
+    assert env["ORG_AGENT"] == "cc-coder"
+    r2 = EngineRunner("")
+    EngineBoard("cli-board", "exo", r2).block("t_1", "no retries left", "other", "cc-coder")
+    assert r2.calls[0][0] == ["cli-board", "finish", "t_1", "--blocked", "other", "no retries left"]
+
+
+def test_engine_board_create_self_assigns_identity_so_no_dispatch_capability_is_needed():
+    r = EngineRunner(json.dumps({"card": {"id": "t_new1"}}))
+    card = EngineBoard("cli-board", "exo", r).create("[retry 2/3] Fix it", "the body", "cc-coder", "cc-coder", ("t_1",))
+    assert card == {"id": "t_new1"}
+    cmd, env = r.calls[0]
+    assert cmd == ["cli-board", "create", "[retry 2/3] Fix it", "--to", "cc-coder", "--board", "exo", "--json",
+                   "--body", "the body", "--after", "t_1"]
+    assert env["ORG_AGENT"] == "cc-coder"
+    assert len(r.calls) == 1    # no initial_status: one call, no move
+
+
+def test_engine_board_create_blocked_moves_the_new_card_there_right_after():
+    r = EngineRunner(json.dumps({"card": {"id": "t_new2"}}))
+    EngineBoard("cli-board", "exo", r).create("[needs Konrad] x", "escalation body", "cc-coder", "cc-coder", ("t_1",), "blocked")
+    assert len(r.calls) == 2
+    assert r.calls[1][0] == ["cli-board", "move", "t_new2", "blocked"]
+
+
+def test_engine_board_task_and_status_read_the_card_shape():
+    r = EngineRunner(json.dumps({"card": {"title": "Fix it", "body": "details", "status": "running"}}))
+    b = EngineBoard("cli-board", "exo", r)
+    assert b.task("t_1") == {"title": "Fix it", "body": "details", "status": "running"}
+    assert b.status("t_1") == "running"
+
+
+def test_engine_board_attach_becomes_a_comment_no_attachments_table_yet():
+    r = EngineRunner("")
+    EngineBoard("cli-board", "exo", r).attach("t_1", "/home/hermes/cc-runs/t_1.jsonl", "cc-dispatcher")
+    cmd, env = r.calls[0]
+    assert cmd == ["cli-board", "comment", "--", "t_1", "Live log: /home/hermes/cc-runs/t_1.jsonl"]
+    assert env["ORG_AGENT"] == "cc-dispatcher"
+
+
+def test_board_raises_on_a_real_error():
     with pytest.raises(BoardError, match="boom"):
         Board("hermes", "exo", Runner(code=1, stderr="boom")).tasks("cc-x", "ready")
 
@@ -333,7 +450,7 @@ def test_claims_and_spawns_up_to_capacity(tmp_path):
     d, procs, _ = make(tmp_path, board)
     d.tick()
     assert [p[0] for p in procs] == ["t_0", "t_1"]          # max_in_progress = 2
-    assert board.claims[0] == ("t_0", 10 * 60 + 900)        # TTL outlives the runtime limit
+    assert board.claims[0] == ("t_0", 10 * 60 + 900, "cc-test")        # TTL outlives the runtime limit
     assert len(board.comments) == 2 and d.state.spawned_today == 2
 
 
@@ -383,7 +500,7 @@ def test_worker_that_exits_without_complete_is_blocked(tmp_path):
     (tmp_path / "runs" / "t_1.jsonl").write_text(json.dumps({"type": "result", "subtype": "success", "result": "hi"}))
     procs[0][2].code = 0
     d.tick()
-    task_id, reason, kind = board.blocks[0]
+    task_id, reason, kind, as_agent = board.blocks[0]
     assert task_id == "t_1" and "without complete or block" in reason and "[result] success: hi" in reason
 
 
