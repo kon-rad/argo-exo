@@ -219,10 +219,21 @@ def test_agents_lists_lanes_and_profiles(tmp_path, fake_claude):
     assert [p["name"] for p in out["profiles"]] == ["default", "researcher", "trader"]
 
 
+def test_task_log_reads_the_dispatcher_runs_dir(tmp_path, fake_claude):
+    h, _ = hub(tmp_path, fake_claude)
+    h.lanes = h.lanes.__class__(**{**h.lanes.__dict__, "runs_dir": tmp_path})
+    (tmp_path / "t_abc123.jsonl").write_text(json.dumps({"type": "assistant"}) + "\n")
+    status, out = h.handle("GET", "/tasks/t_abc123/log", {"offset": "0"}, None, AUTH)
+    assert status == 200 and out["events"] == [{"type": "assistant"}]
+    assert h.handle("GET", "/tasks/../../etc/log", {}, None, AUTH)[0] in (400, 404)
+    assert h.handle("GET", "/tasks/not-an-id/log", {}, None, AUTH)[0] == 400
+    assert h.handle("GET", "/tasks/t_abc123/log", {}, None, "")[0] == 401
+
+
 def test_board_routes_are_gone(tmp_path, fake_claude):
     h, _ = hub(tmp_path, fake_claude)
     for method, path in [("GET", "/boards"), ("GET", "/board"), ("POST", "/tasks"), ("GET", "/tasks/t_abc123"),
-                         ("GET", "/tasks/t_abc123/log"), ("POST", "/tasks/t_abc123/assign"), ("POST", "/tasks/t_abc123/comment")]:
+                         ("POST", "/tasks/t_abc123/assign"), ("POST", "/tasks/t_abc123/comment")]:
         assert h.handle(method, path, {}, {}, AUTH)[0] == 404
     assert not any("kanban" in " ".join(c) for c in h.run.calls)
 

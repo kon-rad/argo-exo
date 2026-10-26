@@ -2,7 +2,7 @@
 
 The app runs sandboxed (NoNewPrivileges, read-only home), so it can't start Claude or run systemctl. This service
 runs as hermes on 127.0.0.1 only, behind a bearer token the app holds, and exposes exactly the actions the page needs.
-The board (cards, assignment, comments) is the engine's own and is not served here. Stdlib only. Plan: Areas/argo/argo-exo/plans/10-claude-code-agents.md §2.3 in the vault.
+The board (cards, assignment, comments) is the engine's own; only a card's worker log is served here. Stdlib only. Plan: Areas/argo/argo-exo/plans/10-claude-code-agents.md §2.3 in the vault.
 """
 from __future__ import annotations
 
@@ -19,6 +19,7 @@ from cc_dispatcher.config import Settings as LaneSettings
 
 from .chats import ChatError, ChatManager, read_from
 
+TASK_ID = re.compile(r"^t_[0-9a-f]{6,32}$")
 PROFILE_ROW = re.compile(r"^\s*[◆*]?\s*([a-z0-9][a-z0-9_-]*)\s")
 
 
@@ -64,6 +65,11 @@ class Hub:
             raise HttpError(400, 'send {"default": "claude"|"hermes"} or {"claude": "on"|"off"}')
         if m == ("GET", "agents"):
             return self.agents()
+        if method == "GET" and len(parts) == 3 and parts[0] == "tasks" and parts[2] == "log":
+            # A card's worker log, for the engine's board page: the dispatcher's <card>.jsonl under runs_dir.
+            if not TASK_ID.match(parts[1]):
+                raise HttpError(400, "bad task id")
+            return read_from(self.lanes.runs_dir / f"{parts[1]}.jsonl", int(q.get("offset", 0) or 0))
         if m == ("GET", "chats"):
             return {"chats": self.chats.list()}
         if m == ("POST", "chats"):
