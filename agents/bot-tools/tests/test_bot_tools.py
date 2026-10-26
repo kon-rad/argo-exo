@@ -442,10 +442,10 @@ def test_m1_report_uses_the_engine_board_when_the_m1_has_a_token(monkeypatch, tm
     posts = []
     monkeypatch.setattr(m1_jobd, "board_post", lambda door, path, body: posts.append((door, path, body)) or True)
     env_file = tmp_path / ".env"
-    env_file.write_text('BOARD_URL="https://board.example/"\nBOARD_TOKEN=sbb_x\n')
+    env_file.write_text('BOARD_URL="https://board.example/api/board/"\nBOARD_TOKEN=sbb_x\n')
     monkeypatch.setenv("M1_JOBS_VAULT_ENV", str(env_file))
     monkeypatch.delenv("BOARD_URL", raising=False)
     monkeypatch.delenv("BOARD_TOKEN", raising=False)
     m1_jobd.report("t_abc123", "tests passed")
-    assert posts == [(("https://board.example", "sbb_x"), "/cards/t_abc123/comment", {"body": "tests passed"}),
-                     (("https://board.example", "sbb_x"), "/cards/t_abc123/move", {"status": "ready", "note": "m1 job finished"})]
+    assert posts == [(("https://board.example/api/board", "sbb_x"), "/cards/t_abc123/comment", {"body": "tests passed"}),
+                     (("https://board.example/api/board", "sbb_x"), "/cards/t_abc123/move", {"status": "ready", "note": "m1 job finished"})]

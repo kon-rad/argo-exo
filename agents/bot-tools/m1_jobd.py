@@ -183,7 +183,7 @@ def spawn(job_id: str, spec: dict) -> None:
 
 
 def board_door() -> tuple[str, str] | None:
-    """BOARD_URL and BOARD_TOKEN for the engine board: the environment, else the M1's own vault .env."""
+    """BOARD_URL (it already ends in /api/board, as cli-board expects) and BOARD_TOKEN: the environment, else the M1's own vault .env."""
     url, token = os.environ.get("BOARD_URL", ""), os.environ.get("BOARD_TOKEN", "")
     if not (url and token):
         env_file = Path(os.environ.get("M1_JOBS_VAULT_ENV", HOME / "Documents" / "secondbrain" / ".env"))
@@ -201,7 +201,7 @@ def board_door() -> tuple[str, str] | None:
 
 def board_post(door: tuple[str, str], path: str, body: dict) -> bool:
     import urllib.request
-    req = urllib.request.Request(f"{door[0]}/api/board{path}", data=json.dumps(body).encode(), method="POST",
+    req = urllib.request.Request(f"{door[0]}{path}", data=json.dumps(body).encode(), method="POST",
                                  headers={"Authorization": f"Bearer {door[1]}", "Content-Type": "application/json"})
     try:
         with urllib.request.urlopen(req, timeout=60) as r:
