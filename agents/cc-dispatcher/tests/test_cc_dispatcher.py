@@ -756,3 +756,41 @@ def test_prepare_cwd_falls_back_to_head_when_the_parent_branch_is_gone(tmp_path)
     retry = Path(worker.prepare_cwd(s, lane, "t_2", base="cc/t_missing"))
     assert not (retry / "feature.py").exists()
     assert _git("rev-parse", "HEAD", cwd=retry) == _git("rev-parse", "main", cwd=tmp_path / "repo")
+
+
+# -- shadow check (cutover phase 2) ------------------------------------------------------------------------------
+class ListBoard:
+    def __init__(self, rows):
+        self.rows = rows
+
+    def ready_tasks(self):
+        return self.rows
+
+
+def test_shadow_compare_reports_each_kind_of_difference():
+    from cc_dispatcher import shadow
+    d = shadow.compare({"t_a": "rune", "t_b": "vera", "t_c": "atlas"}, {"t_a": "rune", "t_c": "sol", "t_d": "rune"})
+    assert d == {"only_hermes": ["t_b"], "only_engine": ["t_d"], "assignee_differs": ["t_c"]}
+
+
+def test_shadow_only_calls_a_difference_stable_when_two_runs_agree(tmp_path):
+    from cc_dispatcher import shadow
+    lines = []
+    h, e = ListBoard([{"id": "t_a", "assignee": "rune"}]), ListBoard([])
+    first = shadow.run({"exo": h}, {"exo": e}, tmp_path / "s.json", lines.append, clock=lambda: 1)
+    assert first["shadow"]["exo"]["only_hermes"] == ["t_a"] and first["shadow"]["exo"]["ok"] is True   # one run: not yet stable
+    second = shadow.run({"exo": h}, {"exo": e}, tmp_path / "s.json", lines.append, clock=lambda: 2)
+    assert second["shadow"]["exo"]["stable"]["only_hermes"] == ["t_a"] and second["shadow"]["exo"]["ok"] is False
+    e.rows = [{"id": "t_a", "assignee": "rune"}]                  # the engine catches up: clean again
+    third = shadow.run({"exo": h}, {"exo": e}, tmp_path / "s.json", lines.append, clock=lambda: 3)
+    assert third["shadow"]["exo"]["ok"] is True and len(lines) == 3
+
+
+def test_engine_board_lists_ready_cards_in_one_call():
+    calls = []
+
+    def run(cmd, **kw):
+        calls.append(cmd)
+        return subprocess.CompletedProcess(cmd, 0, stdout='[{"id": "t_a"}]', stderr="")
+    rows = EngineBoard("cli-board", "exo", run=run).ready_tasks()
+    assert rows == [{"id": "t_a"}] and calls[0][1:] == ["list", "--status", "ready", "--board", "exo", "--json"]

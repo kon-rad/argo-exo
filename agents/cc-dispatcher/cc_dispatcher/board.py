@@ -144,6 +144,11 @@ class EngineBoard:
         rows = self._json(None, "list", "--assignee", assignee, "--status", status, "--board", self.board, "--json")
         return rows if isinstance(rows, list) else []
 
+    def ready_tasks(self) -> list[dict]:
+        """Every ready card on the board in one call (same surface as `Board.ready_tasks`)."""
+        rows = self._json(None, "list", "--status", "ready", "--board", self.board, "--json")
+        return rows if isinstance(rows, list) else []
+
     def claim(self, task_id: str, ttl_seconds: int, as_agent: str | None = None) -> bool:
         lease = max(1, min(1440, -(-int(ttl_seconds) // 60)))   # ceil to minutes, clamped to the engine's max lease
         agent = as_agent or task_id   # a caller must always be given for a real claim; task_id here would just fail cleanly
