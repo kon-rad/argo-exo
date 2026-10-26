@@ -15,8 +15,8 @@ so whatever the bot asks for arrives as SSH_ORIGINAL_COMMAND and this script dec
 
 The allowlist lives outside the vault on purpose (bots can edit the vault on the droplet and it syncs here). Path
 arguments must resolve under the job's roots; flags must be in the job's `flags`. When a job ends, its result goes to
-the card as a comment and the card is unblocked with `kb` (the M1's own route to the droplet's kanban), which wakes the
-bot that asked. Design: vault Areas/argo/second-brain/agent-company/bot-powers-and-shared-memory-design.md section 5.
+the card as a comment and the card goes back to `ready` on the engine board (HTTPS, BOARD_URL + BOARD_TOKEN), which wakes
+the bot that asked. Design: vault Areas/argo/second-brain/agent-company/bot-powers-and-shared-memory-design.md section 5.
 
 Tests run bot-written code as konrad, so they run under sandbox-exec (TEST_PROFILE): no reads of ~/.ssh, ~/.config,
 the vault, the keychain and the other private folders, writes only to the test's own folder, the package caches and
@@ -44,7 +44,6 @@ STATE = Path(os.environ.get("M1_JOBS_STATE", HOME / "m1-jobs"))
 TESTS_DIR = Path(os.environ.get("M1_TESTS_DIR", HOME / "bot-tests"))   # outside STATE: the sandbox hides ~/m1-jobs
 MAX_TREE = 300 * 1024 * 1024
 SANDBOX = os.environ.get("M1_SANDBOX", "/usr/bin/sandbox-exec")
-KB = os.environ.get("M1_JOBS_KB", str(HOME / "Documents" / "secondbrain" / ".hermes" / "scripts" / "kb"))
 CARD = re.compile(r"^t_[0-9a-f]{6,32}$")
 NAME = re.compile(r"^[a-z0-9][a-z0-9-]{0,40}$")
 JOB_ID = re.compile(r"^[0-9]{8}-[0-9]{6}-[a-z0-9-]{1,40}$")
@@ -217,8 +216,8 @@ def report(card: str, text: str) -> None:
         board_post(door, f"/cards/{card}/comment", {"body": text[:3800]})
         board_post(door, f"/cards/{card}/move", {"status": "ready", "note": "m1 job finished"})
         return
-    subprocess.run([KB, "comment", card, text[:3800]], timeout=60, capture_output=True)
-    subprocess.run([KB, "unblock", card], timeout=60, capture_output=True)
+    # No door: the result stays in the job's own folder (result.json and log); say so where `m1-job log` shows it.
+    print(f"no BOARD_URL/BOARD_TOKEN: could not report to card {card}", file=sys.stderr)
 
 
 def cmd_exec(job_id: str) -> int:

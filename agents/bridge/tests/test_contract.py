@@ -2,7 +2,7 @@
 import pytest
 from exo_bridge.app import create_app
 from exo_bridge.config import Config
-from exo_bridge.kanban import KanbanError
+from exo_bridge.board import BoardError
 from exo_bridge.talk import TalkError
 from exo_deck.bridge_client import Bridge, BridgeError
 
@@ -12,15 +12,12 @@ TOKEN = "t" * 40
 class K:
     fail = False
 
-    def create(self, title, body, assignee, max_runtime, idempotency_key):
+    def create(self, title, body, assignee, idempotency_key):
         if self.fail:
-            raise KanbanError("nope")
+            raise BoardError("nope")
         return {"id": "t_1", "title": title, "assignee": assignee, "status": "ready"}
 
-    def subscribe(self, *a):
-        pass
-
-    def list(self):
+    def list(self, assignees):
         return [{"id": "t_1", "title": "x", "assignee": "builder", "status": "ready"}]
 
 

@@ -9,7 +9,8 @@ from .app import create_app
 from .config import Config
 from .fund_routes import cli_runner, fund_blueprint
 from .guardian_routes import guardian_blueprint
-from .kanban import Kanban
+from .board import Board
+from .notify import Watcher
 from .ledger import Ledger
 from .ledger_routes import ledger_blueprint
 from .talk import Talker
@@ -67,7 +68,11 @@ def main() -> int:
         return 2
     if ledger is None:
         log.info("ledger: EXO_LEDGER_DSN unset, /ledger/* answer 503")
-    app = create_app(cfg, Kanban(cfg.hermes_bin, cfg.board), Talker(cfg.api_server_url, cfg.api_server_key),
+    board = Board(cfg.cli_board_bin, cfg.board)
+    watcher = Watcher(board, cfg.notify_cmd)
+    if not watcher.enabled:
+        log.info("EXO_NOTIFY_CMD unset: no Telegram ping when a card finishes")
+    app = create_app(cfg, board, Talker(cfg.api_server_url, cfg.api_server_key), watcher=watcher,
                      blueprints=(guardian_blueprint(guardian), ledger_blueprint(ledger, cfg.cre_manifest),
                                  fund_blueprint(cli_runner(os.environ["FUND_TRADE_CMD"]) if os.environ.get("FUND_TRADE_CMD") else None)))
     serve(app, host=cfg.host, port=cfg.port, threads=4)

@@ -11,7 +11,7 @@ TODO(konrad): Exo is a wearable Raspberry Pi. Push-to-talk speaks to your own He
 | `deck/` | Pi side: buttons, bin, collector, kiosk, voice, ring |
 | `firmware/xiao-clip/` | Clip firmware |
 | `fund/` | **Argo Fund**: five-partner AI investment committee (skills, personas), `fund-trade` CLI, 2-of-3 Safe on Base |
-| `agents/bridge/` | exo-bridge service on the droplet (talk, kanban, fund routes) |
+| `agents/bridge/` | exo-bridge service on the droplet (talk, board cards, fund routes) |
 | `chain/` | Hackathon-era Guardian: ExoModule.sol and the Chainlink CRE workflow (not deployed; superseded by `fund/`) |
 | `packages/` | NOWNodes client libraries |
 | `infra/` | Proxy and deployment config |

@@ -7,7 +7,8 @@ BASE = {"EXO_BRIDGE_TOKEN": "t" * 40, "EXO_BRIDGE_HOST": "100.64.0.5", "API_SERV
 def test_valid_config():
     c = Config.from_env(BASE)
     assert c.port == 8765 and c.board == "exo" and "researcher" in c.agents
-    assert c.api_server_url == "http://127.0.0.1:8642" and c.max_runtime == "30m"
+    assert c.api_server_url == "http://127.0.0.1:8642" and c.agent_map == {"researcher": "vega", "librarian": "vega", "builder": "rune"}
+    assert c.cli_board_bin == "cli-board" and c.notify_cmd == ""
 
 
 @pytest.mark.parametrize("host", ["0.0.0.0", "::", "", "[::]", "0:0:0:0:0:0:0:0", "0000:0000::", "not-an-ip"])
@@ -27,8 +28,19 @@ def test_refuses_missing_api_key():
 
 
 def test_agents_default_is_exact():
-    assert Config.from_env(BASE).agents == ("librarian", "trader", "portfolio", "wallet", "builder", "researcher",
+    assert Config.from_env(BASE).agents == ("librarian", "builder", "researcher",
                                             "cc-coder", "cc-research", "cc-writer", "cc-reviewer")
+
+
+def test_agent_map_default_targets_exist_on_the_roster_names():
+    assert set(Config.from_env(BASE).agent_map.values()) <= {"vega", "tau", "rune"}
+    assert Config.from_env(dict(BASE, BRIDGE_AGENT_MAP="researcher=tau")).agent_map == {"researcher": "tau"}
+
+
+@pytest.mark.parametrize("raw", ["researcher", "=vega", "researcher=", "trader=vega", "researcher=wallet"])
+def test_bad_agent_map_is_refused(raw):
+    with pytest.raises(ValueError, match="BRIDGE_AGENT_MAP"):
+        Config.from_env(dict(BASE, BRIDGE_AGENT_MAP=raw))
 
 
 def test_default_cc_lanes_match_lanes_toml():

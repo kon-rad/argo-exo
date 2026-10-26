@@ -1,5 +1,5 @@
 [Unit]
-Description=cc-dispatcher: Claude Code workers for the cc-* lanes on the Hermes kanban board
+Description=cc-dispatcher: Claude Code workers for the cc-* lanes on the engine board
 After=network-online.target
 Wants=network-online.target
 

@@ -1,4 +1,4 @@
-"""Bot tools against a local bare repo, a fake cli-org, a fake gh, a fake kanban and a fake ssh."""
+"""Bot tools against a local bare repo, a fake cli-org, a fake gh, a fake cli-board and a fake ssh."""
 from __future__ import annotations
 
 import json
@@ -82,7 +82,7 @@ elif sys.argv[1:3] == ['pr', 'view'] and '--json' in sys.argv:
     head = open({str(tmp_path / 'head.txt')!r}).read() if os.path.exists({str(tmp_path / 'head.txt')!r}) else 'bot/rune/t_abc123'
     print(json.dumps({{'headRefName': head, 'body': os.environ.get('FAKE_BODY', 'x\\n\\nCard: t_abc123'), 'state': 'OPEN', 'title': 't'}}))
 """)
-    hermes = script(tmp_path / "hermes", f"import json, sys\n{log}\n")
+    cli_board = script(tmp_path / "cli-board", f"import json, sys\n{log}\n")
     ssh = script(tmp_path / "ssh", f"""import json, os, sys
 {log}
 open({str(tmp_path / 'ssh-stdin')!r}, 'wb').write(sys.stdin.buffer.read())
@@ -95,7 +95,7 @@ print('job 20261019-120000-caption started on the M1 for t_abc123')
     monkeypatch.setenv("BOT_TOOLS_LOGS", str(tmp_path / "logs"))
     leaks = script(tmp_path / "gitleaks", "import sys, pathlib\nsys.exit(1 if pathlib.Path('FAKE_LEAK').exists() else 0)\n")
     monkeypatch.setenv("GITLEAKS_BIN", leaks)
-    for var, path in (("CLI_ORG", clio), ("GH_BIN", gh), ("HERMES_BIN", hermes), ("SSH_BIN", ssh)):
+    for var, path in (("CLI_ORG", clio), ("GH_BIN", gh), ("CLI_BOARD_BIN", cli_board), ("SSH_BIN", ssh)):
         monkeypatch.setenv(var, path)
     monkeypatch.setenv("ORG_AGENT", "rune")
     monkeypatch.setenv("FAKE_CAPS", "code")
@@ -138,7 +138,7 @@ def test_branch_commit_push_pr(env, capsys):
     gh_create = [c for c in env["calls"]() if c[1:3] == ["pr", "create"]][0]
     assert gh_create[gh_create.index("--head") + 1] == "bot/rune/t_abc123"
     assert "Card: t_abc123" in gh_create[gh_create.index("--body") + 1]
-    assert any(c[1:3] == ["kanban", "--board"] and PR in c[-1] for c in env["calls"]())
+    assert any(c[1:2] == ["comment"] and PR in c[-1] for c in env["calls"]())
 
 
 def test_pre_push_check_blocks_the_push(env, capsys):
@@ -295,7 +295,7 @@ def test_deploy_runs_only_registered_approved_targets(env, monkeypatch, capsys):
     assert call("cli-deploy", "demo", "--card", "t_abc123") == 0
     assert env["marker"].exists() and "check passed" in capsys.readouterr().out
     assert call("cli-deploy", "broken", "--card", "t_abc123") == 2
-    assert any("FAILED" in c[-1] for c in env["calls"]() if c[1:2] == ["kanban"])
+    assert any("FAILED" in c[-1] for c in env["calls"]() if c[1:2] == ["comment"])
 
 
 def test_m1_job_goes_through_ssh_and_says_to_block(env, monkeypatch, capsys):
@@ -303,7 +303,7 @@ def test_m1_job_goes_through_ssh_and_says_to_block(env, monkeypatch, capsys):
     monkeypatch.setenv("FAKE_CAPS", "m1")
     assert call("m1-job", "run", "caption", "--card", "t_abc123", "--", "~/Movies/a b.mp4") == 0
     out = capsys.readouterr().out
-    assert "started on the M1" in out and "hermes kanban schedule t_abc123" in out
+    assert "started on the M1" in out and "cli-board finish t_abc123 --blocked dependency" in out
     ssh = [c for c in env["calls"]() if c[0].endswith("ssh")][0]
     assert ssh[-1] == "run caption t_abc123 echo '~/Movies/a b.mp4'"
 
@@ -324,12 +324,29 @@ flags = ["--mode"]
 path_flags = ["--dest"]
 timeout_minutes = 1
 """)
-    kb_log = tmp_path / "kb.log"
-    kb = script(tmp_path / "kb", f"import sys\nopen({str(kb_log)!r}, 'a').write(' '.join(sys.argv[1:3]) + '\\n')\n")
+    # A stand-in for the engine board's HTTPS door: the detached job reports to it as it would to the real one.
+    import http.server
+    import threading
+    posts = []
+
+    class Door(http.server.BaseHTTPRequestHandler):
+        def do_POST(self):  # noqa: N802
+            n = int(self.headers.get("Content-Length") or 0)
+            posts.append((self.path, json.loads(self.rfile.read(n) or b"{}")))
+            self.send_response(200)
+            self.end_headers()
+
+        def log_message(self, *a):
+            pass
+
+    srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Door)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    monkeypatch.setenv("BOARD_URL", f"http://127.0.0.1:{srv.server_port}/api/board")
+    monkeypatch.setenv("BOARD_TOKEN", "sbb_test")
     monkeypatch.setattr(m1_jobd, "JOBS_FILE", jobs)
     monkeypatch.setattr(m1_jobd, "STATE", tmp_path / "state")
-    monkeypatch.setattr(m1_jobd, "KB", kb)
-    return {"movies": movies, "kb_log": kb_log, "tmp": tmp_path}
+    yield {"movies": movies, "posts": posts, "tmp": tmp_path}
+    srv.shutdown()
 
 
 def test_m1_args_stay_inside_roots(m1):
@@ -350,20 +367,18 @@ def test_m1_args_stay_inside_roots(m1):
 def test_m1_job_runs_detached_and_reports_to_the_card(m1, monkeypatch):
     monkeypatch.setenv("M1_JOBS_FILE", str(m1_jobd.JOBS_FILE))
     monkeypatch.setenv("M1_JOBS_STATE", str(m1_jobd.STATE))
-    monkeypatch.setenv("M1_JOBS_KB", m1_jobd.KB)
     monkeypatch.setenv("M1_JOBS_VAULT_ENV", str(m1_jobd.STATE / "no-such.env"))   # never reach a real board from a test
-    monkeypatch.delenv("BOARD_URL", raising=False)
-    monkeypatch.delenv("BOARD_TOKEN", raising=False)
     out = m1_jobd.cmd_run("echo", "t_abc123", "echo", [str(m1["movies"] / "clip.mp4")])
     job_id = out.split()[1]
     d = m1_jobd.STATE / job_id
     for _ in range(100):
-        if (d / "result.json").exists() and m1["kb_log"].exists() and "unblock" in m1["kb_log"].read_text():
+        if (d / "result.json").exists() and len(m1["posts"]) >= 2:
             break
         __import__("time").sleep(0.1)
     assert json.loads((d / "result.json").read_text())["exit"] == 0
     assert "ARGS" in (d / "log").read_text()
-    assert m1["kb_log"].read_text().splitlines() == ["comment t_abc123", "unblock t_abc123"]
+    assert [p for p, _ in m1["posts"]] == ["/api/board/cards/t_abc123/comment", "/api/board/cards/t_abc123/move"]
+    assert m1["posts"][1][1]["status"] == "ready"
 
 
 def test_exec_is_refused_over_ssh(m1, monkeypatch, capsys):
@@ -384,11 +399,9 @@ timeout_minutes = 1
     sandbox = script(tmp_path / "sandbox-exec", "import os, sys\na = sys.argv[1:]\nwhile a and a[0] in ('-p', '-D'):\n    a = a[2:]\nos.execvp(a[0], a)\n")
     monkeypatch.setattr(m1_jobd, "SANDBOX", sandbox)
     monkeypatch.setattr(m1_jobd, "TESTS_DIR", tmp_path / "bot-tests")
-    for var, val in (("M1_JOBS_FILE", jobs), ("M1_JOBS_STATE", m1_jobd.STATE), ("M1_JOBS_KB", m1_jobd.KB),
+    for var, val in (("M1_JOBS_FILE", jobs), ("M1_JOBS_STATE", m1_jobd.STATE),
                      ("M1_JOBS_VAULT_ENV", tmp_path / "no-such.env")):
         monkeypatch.setenv(var, str(val))
-    monkeypatch.delenv("BOARD_URL", raising=False)
-    monkeypatch.delenv("BOARD_TOKEN", raising=False)
 
     def tree(rc: str, evil: bool = False) -> bytes:
         buf = io.BytesIO()
@@ -410,13 +423,12 @@ timeout_minutes = 1
     assert not (tmp_path / "escape").exists() and not list((tmp_path / "bot-tests").iterdir())
 
     for rc, verdict in (("0", "PASSED"), ("1", "FAILED (exit 1)")):
-        if m1["kb_log"].exists():
-            m1["kb_log"].unlink()
+        m1["posts"].clear()
         out = m1_jobd.cmd_test("demo", "t_abc123", "rune", "b" * 40, tree(rc))
         job_id = out.split()[1]
         d = m1_jobd.STATE / job_id
         for _ in range(100):
-            if m1["kb_log"].exists() and "unblock" in m1["kb_log"].read_text():
+            if len(m1["posts"]) >= 2:
                 break
             time.sleep(0.1)
         spec = json.loads((d / "job.json").read_text())
@@ -424,16 +436,12 @@ timeout_minutes = 1
         assert "SRC ['app.py', 'rc'] CI 1" in (d / "log").read_text()
         assert json.loads((d / "result.json").read_text())["exit"] == int(rc)
         assert not (tmp_path / "bot-tests" / job_id).exists()   # the tree and its node_modules are gone; the log stays
-        assert m1["kb_log"].read_text().splitlines() == ["comment t_abc123", "unblock t_abc123"]
+        assert [p.rsplit("/", 1)[1] for p, _ in m1["posts"]] == ["comment", "move"]
         time.sleep(1.1)   # job ids are per second
 
 
-def test_park_and_block_hints_follow_the_board_in_use(monkeypatch):
+def test_park_and_block_hints_are_cli_board(monkeypatch):
     import bot_tools
-    monkeypatch.delenv("CC_BOARD_BACKEND", raising=False)
-    assert bot_tools.park_hint("t_1", "waiting") == '`hermes kanban schedule t_1 "waiting"`'
-    assert bot_tools.block_hint("t_1", "off") == '`hermes kanban block t_1 "off"`'
-    monkeypatch.setenv("CC_BOARD_BACKEND", "engine")
     assert bot_tools.park_hint("t_1", "waiting") == '`cli-board finish t_1 --blocked dependency "waiting"`'
     assert bot_tools.block_hint("t_1", "off") == '`cli-board finish t_1 --blocked tool-error "off"`'
 

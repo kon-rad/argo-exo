@@ -1,29 +1,35 @@
 import pytest
 from exo_bridge.app import create_app
 from exo_bridge.config import Config
-from exo_bridge.kanban import KanbanError
+from exo_bridge.board import BoardError
 from exo_bridge.talk import TalkError
 
 TOKEN = "t" * 40
 AUTH = {"Authorization": f"Bearer {TOKEN}"}
 
 
-class FakeKanban:
+class FakeBoard:
     def __init__(self, fail=False):
-        self.created, self.subs, self.fail = [], [], fail
+        self.created, self.listed, self.fail = [], [], fail
 
-    def create(self, title, body, assignee, max_runtime, idempotency_key):
+    def create(self, title, body, assignee, idempotency_key):
         if self.fail:
-            raise KanbanError("boom")
-        self.created.append((title, body, assignee, max_runtime))
+            raise BoardError("boom")
+        self.created.append((title, body, assignee))
         return {"id": "t_9", "title": title, "assignee": assignee, "status": "ready"}
 
-    def subscribe(self, task_id, chat_id):
-        self.subs.append((task_id, chat_id))
-
-    def list(self):
+    def list(self, assignees):
+        self.listed.append(assignees)
         return [{"id": "t_9", "title": "x", "assignee": "builder", "status": "running",
                  "created_at": 1, "completed_at": None, "result": None, "body": "secret-long-body"}]
+
+
+class FakeWatcher:
+    def __init__(self):
+        self.watched = []
+
+    def watch(self, card_id):
+        self.watched.append(card_id)
 
 
 class FakeTalker:
@@ -37,10 +43,10 @@ class FakeTalker:
         return "You hold 0.4 ETH."
 
 
-def client(kanban=None, talker=None, chat_id=""):
+def client(board=None, talker=None, watcher=None, **extra):
     env = {"EXO_BRIDGE_TOKEN": TOKEN, "EXO_BRIDGE_HOST": "100.64.0.5",  # public-ok
-           "API_SERVER_KEY": "k", "EXO_TELEGRAM_CHAT_ID": chat_id}
-    app = create_app(Config.from_env(env), kanban or FakeKanban(), talker or FakeTalker())
+           "API_SERVER_KEY": "k", **extra}
+    app = create_app(Config.from_env(env), board or FakeBoard(), talker or FakeTalker(), watcher=watcher)
     return app.test_client()
 
 
@@ -70,27 +76,43 @@ def test_talk_upstream_failure_is_502():
     assert r.status_code == 502 and r.json == {"error": "hermes unavailable"}
 
 
-def test_create_task_and_subscribe():
-    k = FakeKanban()
-    r = client(kanban=k, chat_id="777").post("/tasks", json={"text": "look into gas price APIs for a tile", "agent": "researcher"}, headers=AUTH)
+def test_create_task_maps_the_agent_to_a_roster_bot_and_watches_it():
+    b, w = FakeBoard(), FakeWatcher()
+    r = client(board=b, watcher=w).post("/tasks", json={"text": "look into gas price APIs for a tile", "agent": "researcher"}, headers=AUTH)
     assert r.status_code == 201 and r.json["task"]["id"] == "t_9"
-    title, body, assignee, runtime = k.created[0]
-    assert assignee == "researcher" and runtime == "30m" and body.startswith("look into")
-    assert len(title) <= 80
-    assert k.subs == [("t_9", "777")]
+    title, body, assignee = b.created[0]
+    assert assignee == "vega" and body.startswith("look into") and len(title) <= 80
+    assert w.watched == ["t_9"]
+
+
+def test_lanes_and_the_override_map_pass_through():
+    b = FakeBoard()
+    c = client(board=b, BRIDGE_AGENT_MAP="builder=kael")
+    c.post("/tasks", json={"text": "x", "agent": "cc-coder"}, headers=AUTH)
+    c.post("/tasks", json={"text": "y", "agent": "builder"}, headers=AUTH)
+    assert [a for _, _, a in b.created] == ["cc-coder", "kael"]
 
 
 def test_unknown_agent_is_400():
     assert client().post("/tasks", json={"text": "x", "agent": "weather"}, headers=AUTH).status_code == 400
 
 
-def test_kanban_failure_is_502():
-    assert client(kanban=FakeKanban(fail=True)).post("/tasks", json={"text": "x", "agent": "builder"}, headers=AUTH).status_code == 502
+@pytest.mark.parametrize("agent", ["trader", "portfolio", "wallet"])
+def test_money_agents_are_refused(agent):
+    b = FakeBoard()
+    assert client(board=b, EXO_AGENTS=f"{agent},builder").post("/tasks", json={"text": "x", "agent": agent}, headers=AUTH).status_code == 400
+    assert b.created == []
 
 
-def test_board_is_trimmed():
-    tasks = client().get("/board", headers=AUTH).json["tasks"]
+def test_board_failure_is_502():
+    assert client(board=FakeBoard(fail=True)).post("/tasks", json={"text": "x", "agent": "builder"}, headers=AUTH).status_code == 502
+
+
+def test_board_is_trimmed_and_filtered_to_the_mapped_bots():
+    b = FakeBoard()
+    tasks = client(board=b).get("/board", headers=AUTH).json["tasks"]
     assert tasks[0]["status"] == "running" and "body" not in tasks[0]
+    assert b.listed == [("vega", "rune", "cc-coder", "cc-research", "cc-writer", "cc-reviewer")]
 
 
 def test_oversized_request_is_rejected():
@@ -111,28 +133,28 @@ def test_register_extension_routes():
         return {"pong": True}
 
     env = {"EXO_BRIDGE_TOKEN": TOKEN, "EXO_BRIDGE_HOST": "100.64.0.5", "API_SERVER_KEY": "k"}  # public-ok
-    app = create_app(Config.from_env(env), FakeKanban(), FakeTalker(), blueprints=[bp])
+    app = create_app(Config.from_env(env), FakeBoard(), FakeTalker(), blueprints=[bp])
     c = app.test_client()
     assert c.get("/ping").status_code == 401           # extension routes are authed too
     assert c.get("/ping", headers=AUTH).json == {"pong": True}
 
 
 def test_502_bodies_do_not_leak_detail():
-    class Leaky(FakeKanban):
+    class Leaky(FakeBoard):
         def create(self, *a):
-            raise KanbanError("create: SECRET stderr http://127.0.0.1:8642")
+            raise BoardError("create: SECRET stderr http://127.0.0.1:8642")
 
-        def list(self):
-            raise KanbanError("SECRET")
+        def list(self, assignees):
+            raise BoardError("SECRET")
 
     class LeakyTalker(FakeTalker):
         def ask(self, *a):
             raise TalkError("SECRET http://127.0.0.1:8642")
 
-    c = client(kanban=Leaky(), talker=LeakyTalker())
+    c = client(board=Leaky(), talker=LeakyTalker())
     for r in (c.post("/talk", json={"text": "hi"}, headers=AUTH),
               c.post("/tasks", json={"text": "x", "agent": "builder"}, headers=AUTH),
               c.get("/board", headers=AUTH)):
         assert r.status_code == 502
         assert "SECRET" not in r.get_data(as_text=True) and "127.0.0.1" not in r.get_data(as_text=True)
-    assert c.post("/tasks", json={"text": "x", "agent": "builder"}, headers=AUTH).json == {"error": "kanban failed"}
+    assert c.post("/tasks", json={"text": "x", "agent": "builder"}, headers=AUTH).json == {"error": "board failed"}

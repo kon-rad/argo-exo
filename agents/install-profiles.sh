@@ -23,7 +23,6 @@
 #   hermes profile list            (prints a TABLE: Profile, Model, Gateway, Alias, Distribution; active prefixed ◆)
 #   hermes config set KEY VALUE
 #   hermes gateway restart
-#   hermes kanban boards create SLUG   (and: boards list)
 # Profiles live in ~/.hermes/profiles/<name>; existence is tested on that directory, not by grepping the table.
 set -euo pipefail
 
@@ -51,8 +50,6 @@ command -v hermes >/dev/null || die "hermes not on PATH (run as the hermes user,
 probe() { hermes "$@" --help >/dev/null 2>&1 || die "this hermes has no 'hermes $*'; check 'hermes --help' and adjust the script"; }
 probe profile create
 probe profile describe
-probe kanban boards list
-probe kanban boards create
 
 cd "$AGENTS_DIR/profiles"
 HOME_DIR="${HERMES_HOME:-$HOME/.hermes}"
@@ -121,8 +118,4 @@ if [[ $VENV_STEP -eq 1 ]]; then
   echo "skills venv ok: $SKILLS_VENV"
 fi
 
-boards="$(hermes kanban boards list 2>/dev/null || true)"
-if ! grep -Eq '(^|[[:space:]])exo([[:space:]]|$)' <<<"$boards"; then
-  hermes kanban boards create exo
-fi
-echo "board exo ok"
+# The board `exo` is the Second Brain engine's (cli-board), not a Hermes kanban board: nothing to create here.

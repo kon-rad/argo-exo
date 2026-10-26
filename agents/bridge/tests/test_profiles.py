@@ -29,9 +29,10 @@ def test_no_profile_holds_a_dsn_or_secret():
 
 
 def test_router_and_bridge_agree_on_names():
-    from exo_bridge.config import DEFAULT_AGENTS
+    from exo_bridge.config import DEFAULT_AGENTS, MONEY_AGENTS
     names = set(DEFAULT_AGENTS.split(","))
-    assert {n for n in names if not n.startswith("cc-")} == EXPECTED   # the cc- lanes are Claude Code, not profiles
+    # The cc- lanes are Claude Code, not profiles; the money agents are the deck's names but the bridge refuses them.
+    assert {n for n in names if not n.startswith("cc-")} == EXPECTED - set(MONEY_AGENTS)
 
 
 def test_scripts_keep_the_constraints():
@@ -61,7 +62,6 @@ def _run_install(tmp_path, *args):
 echo "$@" >> {log}
 [[ "$*" == *--help* ]] && exit 0
 if [[ "$1 $2" == "profile create" ]]; then mkdir -p "{home}/profiles/${{@: -1}}"; fi
-if [[ "$1 $2 $3" == "kanban boards list" ]]; then echo "exo-old"; fi
 exit 0
 """)
     stub.chmod(0o755)
@@ -79,7 +79,7 @@ def test_install_profiles_checks_directory_not_table(tmp_path):
     assert (home / "profiles" / "wallet" / "SOUL.md").read_text().startswith("# wallet")
     assert (home / "profiles" / "researcher" / "SOUL.md").read_text() == "old"
     assert "create --no-alias --description Reads balances" in calls
-    assert "boards create exo" in calls  # exo-old must not satisfy the check
+    assert "kanban" not in calls          # the board is the engine's now
 
 
 def test_install_profiles_force_backs_up(tmp_path):
