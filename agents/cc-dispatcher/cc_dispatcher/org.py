@@ -9,7 +9,9 @@ A `runtime: hermes` agent is a Hermes profile of the same name (its model on the
 while the local gate says the host is down. Those wakes don't count toward the daily cap (no Claude quota).
 
 One wake = one `claude -p` run as that agent: identity from .claude/agents/<name>.md plus the org-member skill as the
-appended system prompt, ORG_AGENT in the environment, the agent's last session resumed. All open wakeups of an agent
+appended system prompt, ORG_AGENT in the environment. The agent's last session is resumed only when the wake
+continues earlier work: a reply in a message thread, a message about a ticket the session handled, a ticket it already
+worked, an answer to a ship request. A new task, a new top-level message or a routine starts fresh. All open wakeups of an agent
 are claimed together (coalescing); an agent runs at most once per cooldown and `wakes_per_day` times a day; the
 dispatcher's global max_in_progress and daily cap still apply.
 """
@@ -127,6 +129,20 @@ class OrgBoard:
     def session(self, agent: str) -> dict:
         return self._json("session", agent) or {}
 
+    def message(self, agent: str, ref: str) -> dict | None:
+        """{"thread_id", "task_id"} of one message, read as the agent (it must be a member of the channel); None if unknown."""
+        try:
+            p = self.run([self.bin, "thread", str(ref), "--json"], capture_output=True, text=True, timeout=30,
+                         env={**os.environ, "ORG_AGENT": agent})
+            if p.returncode != 0:
+                return None
+            for m in json.loads(p.stdout):
+                if str(m.get("id")) == str(ref):
+                    return {"thread_id": m.get("thread_id"), "task_id": m.get("task_id")}
+        except (OSError, subprocess.TimeoutExpired, ValueError, TypeError, AttributeError):
+            pass
+        return None
+
     def release(self) -> int:
         return int((self._json("wake-release") or {}).get("released", 0))
 
@@ -144,6 +160,7 @@ class OrgRun:
     log_path: Path
     started: float
     resumed: bool
+    task_ids: tuple = ()                   # kanban task ids this wake worked on (kept with the session)
     interrupted_at: float | None = None
     timed_out: bool = False
 
@@ -153,6 +170,7 @@ class OrgState:
     """runs_dir/org-state.json: per-agent wake counts and last wake, and which routines fired today."""
     wakes: dict = field(default_factory=dict)       # agent -> {"day": "YYYY-MM-DD", "n": int, "last": float}
     routines: dict = field(default_factory=dict)    # "agent/routine" -> "YYYY-MM-DD"
+    session_tasks: dict = field(default_factory=dict)  # agent -> kanban task ids its saved session has worked
 
     @classmethod
     def load(cls, path: Path) -> "OrgState":
@@ -436,6 +454,8 @@ class OrgRunner:
             return False
         lane = self.settings.lanes.get(agent.lane) if agent.lane else None
         session = self._session_to_resume(agent)
+        if session and not self._continues_work(agent, claimed, task_ref):
+            session = None                      # new work: a fresh context; the saved session is replaced when this run ends
         log_path = self.settings.runs_dir / f"{run_id}.{'log' if agent.is_hermes else 'jsonl'}"
         try:
             cwd = self.prepare_cwd(self.settings, lane, task_ref[1]) if (lane and lane.worktree and task_ref) else str(self.org.vault)
@@ -454,7 +474,8 @@ class OrgRunner:
             if claimed:
                 self._safe(self.org_board.done, [w["id"] for w in claimed], run_id, 127, f"could not start the worker: {exc}")
             return False
-        self.running[agent.name] = OrgRun(agent, run_id, [w["id"] for w in claimed], task_ref, proc, log_path, now, bool(session))
+        self.running[agent.name] = OrgRun(agent, run_id, [w["id"] for w in claimed], task_ref, proc, log_path, now, bool(session),
+                                        task_ids=self._task_ids(claimed, task_ref))
         day = self._day(now)
         s = self.state.wakes.get(agent.name) or {}
         self.state.wakes[agent.name] = {"day": day, "n": (s.get("n", 0) if s.get("day") == day else 0) + 1, "last": now}
@@ -464,6 +485,33 @@ class OrgRunner:
         log.info("woke %s for %s (pid %s)", agent.name, ", ".join(describe_wakeups(claimed)) or f"task {task_ref[1] if task_ref else '?'}",
                  getattr(proc, "pid", "?"))
         return True
+
+    @staticmethod
+    def _task_ids(claimed: list[dict], task_ref: tuple[str, str] | None) -> tuple:
+        ids = {str(w["ref"]) for w in claimed if w.get("reason") == "task" and w.get("ref")}
+        if task_ref:
+            ids.add(task_ref[1])
+        return tuple(sorted(ids))
+
+    def _continues_work(self, agent: OrgAgent, claimed: list[dict], task_ref: tuple[str, str] | None) -> bool:
+        """True when this wake picks up what the saved session was doing, so its context is needed: a ticket that session
+        worked, a reply inside a thread, a message about such a ticket, or the owner's answer to a ship request.
+        A new task, a top-level message and a routine start fresh."""
+        worked = set(self.state.session_tasks.get(agent.name, []))
+        if task_ref and task_ref[1] in worked:
+            return True
+        for w in claimed:
+            reason, ref = w.get("reason"), str(w.get("ref") or "")
+            if reason == "task":
+                if ref in worked:
+                    return True
+            elif reason == "owner" and ref.startswith("ship:"):
+                return True
+            elif reason in ("dm", "mention", "handoff", "owner", "konrad"):
+                ctx = self.org_board.message(agent.name, ref)
+                if ctx and (ctx.get("thread_id") or (ctx.get("task_id") and str(ctx["task_id"]) in worked)):
+                    return True
+        return False
 
     def _session_to_resume(self, agent: OrgAgent) -> str | None:
         try:
@@ -498,6 +546,9 @@ class OrgRunner:
                 text = f"hit its max runtime ({r.agent.max_runtime_minutes} min). {text}"
             if session and (code == 0 or saw):
                 self._safe(self.org_board.set_session, name, session)
+                kept = set(self.state.session_tasks.get(name, [])) if r.resumed else set()
+                self.state.session_tasks[name] = sorted(kept | set(r.task_ids))[-50:]
+                self.state.save(self.state_path)
             elif r.resumed and not saw:
                 # The resume itself failed (session gone or unreadable): start fresh next time.
                 self._safe(self.org_board.set_session, name, None)

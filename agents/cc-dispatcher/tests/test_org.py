@@ -87,6 +87,10 @@ class FakeOrgBoard:
         self.wakeups = [dict(w) for w in wakeups]
         self.claims, self.finished, self.added, self.sessions, self.session_sets = [], [], [], {}, []
         self.fail_claim = False
+        self.messages = {}            # ref -> {"thread_id", "task_id"}; an unknown ref is a new top-level message
+
+    def message(self, agent, ref):
+        return self.messages.get(str(ref), {"thread_id": None, "task_id": None})
 
     def open_wakeups(self):
         return [w for w in self.wakeups if not w.get("claimed_at")]
@@ -219,6 +223,7 @@ def test_every_wake_opens_its_log_with_a_header_the_ledger_can_read(tmp_path):
         {"id": 2, "agent_name": "atlas", "reason": "mention", "ref": "9"},
     ])
     ob.sessions["atlas"] = {"session_id": "sess-old", "session_started": datetime.now(TZ).date().isoformat()}
+    ob.messages["9"] = {"thread_id": 3, "task_id": None}      # a reply in a thread: the session continues
     d.tick()
     atlas = spawned[0]
     head = json.loads(Path(atlas["log"]).read_text().splitlines()[0])
@@ -271,6 +276,7 @@ def test_cooldown_and_daily_cap_hold_an_agent_back(tmp_path):
     log_result(spawned[1]["log"])
     d.tick()
     ob.add("atlas", "dm", "4")
+    ob.messages["4"] = {"thread_id": 3, "task_id": None}      # a reply: resumes
     clock["t"] += 5 * 60
     d.tick()
     assert len(spawned) == 2
@@ -310,6 +316,7 @@ def test_a_kanban_task_assigned_to_an_agent_runs_as_that_agent_in_its_lane(tmp_p
 def test_resume_failure_clears_the_session(tmp_path):
     d, runner, ob, spawned, clock = make(tmp_path, wakeups=[{"id": 1, "agent_name": "atlas", "reason": "dm", "ref": "1"}])
     ob.sessions["atlas"] = {"session_id": "old", "session_started": datetime.now(TZ).date().isoformat()}
+    ob.messages["1"] = {"thread_id": 1, "task_id": None}
     d.tick()
     assert spawned[0]["session"] == "old"
     spawned[0]["proc"].code = 1
@@ -317,6 +324,54 @@ def test_resume_failure_clears_the_session(tmp_path):
     d.tick()
     assert ob.session_sets == [("atlas", None)]
     assert ob.finished[0][2] == 1 and "No conversation found" in ob.finished[0][3]
+
+
+def _saved(ob, agent="atlas"):
+    ob.sessions[agent] = {"session_id": "old", "session_started": datetime.now(TZ).date().isoformat()}
+
+
+def test_a_new_top_level_message_starts_fresh(tmp_path):
+    d, runner, ob, spawned, clock = make(tmp_path, wakeups=[{"id": 1, "agent_name": "atlas", "reason": "dm", "ref": "7"}])
+    _saved(ob)
+    d.tick()
+    assert spawned[0]["session"] is None
+
+
+def test_a_reply_in_a_thread_resumes(tmp_path):
+    d, runner, ob, spawned, clock = make(tmp_path, wakeups=[{"id": 1, "agent_name": "atlas", "reason": "mention", "ref": "8"}])
+    _saved(ob)
+    ob.messages["8"] = {"thread_id": 5, "task_id": None}
+    d.tick()
+    assert spawned[0]["session"] == "old"
+
+
+def test_a_routine_starts_fresh(tmp_path):
+    d, runner, ob, spawned, clock = make(tmp_path, wakeups=[{"id": 1, "agent_name": "atlas", "reason": "routine", "ref": "weekly-reflection"}])
+    _saved(ob)
+    d.tick()
+    assert spawned[0]["session"] is None
+
+
+def test_the_owners_ship_answer_resumes(tmp_path):
+    d, runner, ob, spawned, clock = make(tmp_path, wakeups=[{"id": 1, "agent_name": "atlas", "reason": "owner", "ref": "ship:3"}])
+    _saved(ob)
+    d.tick()
+    assert spawned[0]["session"] == "old"
+
+
+def test_a_ticket_resumes_only_after_the_session_worked_it(tmp_path):
+    d, runner, ob, spawned, clock = make(tmp_path, wakeups=[{"id": 1, "agent_name": "atlas", "reason": "task", "ref": "t_new"}])
+    _saved(ob)
+    d.tick()
+    assert spawned[0]["session"] is None                 # a new task: fresh
+    spawned[0]["log"].write_text(json.dumps({"type": "result", "session_id": "s2", "result": "done"}) + "\n")
+    spawned[0]["proc"].code = 0
+    d.tick()
+    assert d.org.state.session_tasks["atlas"] == ["t_new"]
+    clock["t"] += 3600
+    ob.wakeups.append({"id": 9, "agent_name": "atlas", "reason": "task", "ref": "t_new"})
+    d.tick()
+    assert spawned[1]["session"] == "s2"                 # the same ticket again: resume
 
 
 def test_old_sessions_are_not_resumed(tmp_path):
