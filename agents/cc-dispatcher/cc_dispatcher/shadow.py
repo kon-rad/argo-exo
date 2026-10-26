@@ -16,8 +16,11 @@ from pathlib import Path
 from .board import BoardError
 
 
-def ids(rows: list[dict]) -> dict[str, str]:
-    return {r["id"]: (r.get("assignee") or "") for r in rows if r.get("id")}
+def ids(rows: list[dict], claimable: set[str] | None = None) -> dict[str, str]:
+    """Ready cards by id. With `claimable`, only cards a lane or roster bot would claim: the owner's and unassigned
+    cards sit `ready` forever and are not a difference between the boards."""
+    return {r["id"]: (r.get("assignee") or "") for r in rows
+            if r.get("id") and (claimable is None or (r.get("assignee") or "") in claimable)}
 
 
 def compare(hermes: dict[str, str], engine: dict[str, str]) -> dict:
@@ -36,7 +39,7 @@ def stable(now_diff: dict, before: dict | None) -> dict:
     return {k: sorted(set(now_diff[k]) & set(before.get(k, []))) for k in now_diff}
 
 
-def run(hermes_boards: dict, engine_boards: dict, state_path: Path, log, clock=time.time) -> dict:
+def run(hermes_boards: dict, engine_boards: dict, state_path: Path, log, clock=time.time, claimable: set[str] | None = None) -> dict:
     previous = {}
     try:
         previous = json.loads(state_path.read_text())
@@ -45,7 +48,7 @@ def run(hermes_boards: dict, engine_boards: dict, state_path: Path, log, clock=t
     report, current = {}, {}
     for name in hermes_boards:
         try:
-            diff = compare(ids(hermes_boards[name].ready_tasks()), ids(engine_boards[name].ready_tasks()))
+            diff = compare(ids(hermes_boards[name].ready_tasks(), claimable), ids(engine_boards[name].ready_tasks(), claimable))
         except BoardError as exc:
             report[name] = {"error": str(exc)[:200]}
             continue
