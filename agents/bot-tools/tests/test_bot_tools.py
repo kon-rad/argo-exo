@@ -174,7 +174,7 @@ def test_public_repo_push_is_scanned_and_uncommit_redoes(env, capsys):
     assert call("cli-git", "commit", "t_abc123", "secret") == 0
     assert call("cli-git", "push", "t_abc123") == 2
     assert "gitleaks found a secret" in capsys.readouterr().err
-    assert call("cli-git", "pr", "create", "t_abc123", "t", "--body", "deployed to 165.22.103.109") == 2
+    assert call("cli-git", "pr", "create", "t_abc123", "t", "--body", "deployed to 165.22.103.109") == 2  # public-ok: the refusal test needs a real address
 
 
 def test_tests_wait_for_memory(env, monkeypatch, capsys):
