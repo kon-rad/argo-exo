@@ -102,6 +102,12 @@ class Board:
         self._call("attach", "--author", author, "--content-type", "application/x-ndjson", task_id, path)
 
 
+def _arg(text: str) -> str:
+    """cli-board's argument parser has no `--` separator and reads any argument starting with `--` as a flag, so a
+    comment that starts with it gets a leading space."""
+    return " " + text if text.startswith("--") else text
+
+
 class EngineBoard:
     """The engine's own board (the Second Brain app's `/api/board`, door 3: direct Postgres as `sb_org`), through
     the `cli-board` CLI wrapper already installed at ~/.local/bin/cli-board (it sources /etc/secondbrain/env itself,
@@ -168,7 +174,7 @@ class EngineBoard:
 
     def comment(self, task_id: str, text: str, author: str) -> None:
         # "--": a comment can start with "-". No --author: the engine's author is always ORG_AGENT, never a flag.
-        self._call(author, "comment", "--", task_id, text)
+        self._call(author, "comment", task_id, _arg(text))
 
     def block(self, task_id: str, reason: str, kind: str = "transient", as_agent: str | None = None) -> None:
         # The engine's block_kind vocabulary isn't Hermes's free-text kind: "transient" (a worker crash or restart,
@@ -206,7 +212,7 @@ class EngineBoard:
 
     def attach(self, task_id: str, path: str, author: str) -> None:
         # No attachments table yet (board-design.md section 9): the log path rides as a comment instead.
-        self._call(author, "comment", "--", task_id, f"Live log: {path}")
+        self._call(author, "comment", task_id, f"Live log: {path}")
 
 
 BoardLike = Board | EngineBoard

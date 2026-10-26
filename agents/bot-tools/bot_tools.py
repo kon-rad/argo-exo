@@ -114,7 +114,7 @@ def engine_board() -> bool:
 def card_comment(card: str, text: str, author: str) -> None:
     if engine_board():
         # The engine's author is the caller's ORG_AGENT (already set for the run), never a flag.
-        run([binary("CLI_BOARD_BIN", "cli-board"), "comment", "--", card, text[:4000]], check=False)
+        run([binary("CLI_BOARD_BIN", "cli-board"), "comment", card, (" " + text if text.startswith("--") else text)[:4000]], check=False)
         return
     run([binary("HERMES_BIN", "hermes"), "kanban", "--board", os.environ.get("HERMES_KANBAN_BOARD", "exo"), "comment",
          "--author", author, card, text[:4000]], check=False)

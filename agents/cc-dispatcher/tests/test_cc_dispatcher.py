@@ -391,7 +391,7 @@ def test_engine_board_comment_has_no_author_flag_the_env_carries_identity_instea
     r = EngineRunner("")
     EngineBoard("cli-board", "exo", r).comment("t_1", "on it", "cc-writer")
     cmd, env = r.calls[0]
-    assert cmd == ["cli-board", "comment", "--", "t_1", "on it"]
+    assert cmd == ["cli-board", "comment", "t_1", "on it"]
     assert "--author" not in cmd and env["ORG_AGENT"] == "cc-writer"
 
 
@@ -435,7 +435,7 @@ def test_engine_board_attach_becomes_a_comment_no_attachments_table_yet():
     r = EngineRunner("")
     EngineBoard("cli-board", "exo", r).attach("t_1", "/home/hermes/cc-runs/t_1.jsonl", "cc-dispatcher")
     cmd, env = r.calls[0]
-    assert cmd == ["cli-board", "comment", "--", "t_1", "Live log: /home/hermes/cc-runs/t_1.jsonl"]
+    assert cmd == ["cli-board", "comment", "t_1", "Live log: /home/hermes/cc-runs/t_1.jsonl"]
     assert env["ORG_AGENT"] == "cc-dispatcher"
 
 
@@ -801,3 +801,13 @@ def test_shadow_ignores_cards_no_lane_or_bot_would_claim():
     rows = [{"id": "t_a", "assignee": "rune"}, {"id": "t_b", "assignee": "konrad"}, {"id": "t_c", "assignee": None}]
     assert shadow.ids(rows, {"rune", "cc-dev"}) == {"t_a": "rune"}
     assert set(shadow.ids(rows)) == {"t_a", "t_b", "t_c"}
+
+
+def test_engine_comment_text_that_looks_like_a_flag_gets_a_leading_space():
+    calls = []
+
+    def run(cmd, **kw):
+        calls.append(cmd)
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+    EngineBoard("cli-board", "exo", run=run).comment("t_1", "--not a flag", "rune")
+    assert calls[0] == ["cli-board", "comment", "t_1", " --not a flag"]
