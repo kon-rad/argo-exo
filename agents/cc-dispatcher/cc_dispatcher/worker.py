@@ -44,6 +44,7 @@ def worker_env(base: dict, settings: Settings, lane: Lane, board: str, task_id: 
         # The engine's board_card_* functions check "only its own cards" against this identity; the worker is
         # always its own lane (never cc-dispatcher's), so it can only ever touch the card it was started for.
         env["ORG_AGENT"] = lane.name
+        env["CC_BOARD_BACKEND"] = "engine"      # bot_tools picks its board commands from this
     return env
 
 

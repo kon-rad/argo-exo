@@ -215,7 +215,7 @@ def describe_wakeups(wakeups: list[dict]) -> list[str]:
     return lines
 
 
-def wake_prompt(agent: OrgAgent, wakeups: list[dict], task: tuple[str, str] | None) -> str:
+def wake_prompt(agent: OrgAgent, wakeups: list[dict], task: tuple[str, str] | None, engine: bool = False) -> str:
     reasons = describe_wakeups(wakeups)
     if task and not any(w.get("reason") == "task" for w in wakeups):
         reasons.append(f"kanban task {task[1]} on board {task[0]}")
@@ -227,8 +227,12 @@ def wake_prompt(agent: OrgAgent, wakeups: list[dict], task: tuple[str, str] | No
         steps.append("Before you start, `cli-org recall \"<the card's subject>\" --project <its project>` for what the company "
                      "already knows; when you learn something others will need, `cli-org remember` it with its source.")
     if task:
-        steps.append(f"Work kanban task {task[1]} on board {task[0]}: start with `hermes kanban --board {task[0]} show {task[1]} --json`, "
-                     "do the work, and end it with `complete` or `block` (the kanban worker protocol below).")
+        if engine:
+            steps.append(f"Work board card {task[1]}: start with `cli-board show {task[1]} --json`, do the work, and end it with "
+                         f"`cli-board finish {task[1]} --done \"<result>\"` or `--blocked <kind> \"<why>\"` (the worker protocol below).")
+        else:
+            steps.append(f"Work kanban task {task[1]} on board {task[0]}: start with `hermes kanban --board {task[0]} show {task[1]} --json`, "
+                         "do the work, and end it with `complete` or `block` (the kanban worker protocol below).")
     steps += ["Answer what was addressed to you in its thread (`--thread <id>`); do the work that is yours; hand off what isn't.",
               f"Finish with exactly one `cli-org post {agent.team} \"<what changed, with a path, command or task id>\" --kind status`.",
               "Nobody is watching this terminal: no questions, no permission prompts. Stop when you are done; the run ends when you stop."]
@@ -243,7 +247,8 @@ def system_prompt(settings: Settings, agent: OrgAgent, with_protocol: bool) -> s
         identity = identity.split("---", 2)[2].strip()   # the frontmatter is for Claude's subagent loader, not the prompt
     parts = [identity, org.skill_file.read_text().strip()]
     if with_protocol:
-        parts.append((Path(settings.lanes_path).parent / "worker-protocol.md").read_text().strip())
+        name = "worker-protocol-engine.md" if settings.board_backend == "engine" else "worker-protocol.md"
+        parts.append((Path(settings.lanes_path).parent / name).read_text().strip())
     return "\n\n".join(parts) + "\n"
 
 
@@ -252,13 +257,17 @@ def org_command(settings: Settings, agent: OrgAgent, lane: Lane | None, task: tu
                 prompt: str, session_id: str | None) -> list[str]:
     org = settings.org
     assert org is not None
-    allowed = list(org.allowed_tools) + list(agent.tools)
+    tools = list(agent.tools)
+    if settings.board_backend == "engine":
+        tools = [t for t in tools if not t.startswith("Bash(hermes kanban")]   # compiled for the Hermes board; the engine verbs replace them
+    allowed = list(org.allowed_tools) + tools
     denied = list(org.denied_tools)
     if lane:
         allowed += list(lane.allowed_tools)
         denied += list(lane.denied_tools)
     if task:
-        allowed += worker.kanban_tools(settings.hermes_bin, task[0])
+        allowed += (worker.engine_board_tools(settings.cli_board_bin) if settings.board_backend == "engine"
+                    else worker.kanban_tools(settings.hermes_bin, task[0]))
     cmd = [
         settings.claude_bin, "-p", prompt,
         "--output-format", "stream-json", "--verbose",
@@ -284,6 +293,8 @@ def org_env(base: dict, settings: Settings, agent: OrgAgent, run_id: str, task: 
     env.update({"ORG_AGENT": agent.name, "ORG_RUN": run_id, "HERMES_PROFILE": agent.name, "CC_LANE": agent.lane or ""})
     if task:
         env.update({"HERMES_KANBAN_BOARD": task[0], "HERMES_KANBAN_TASK": task[1]})
+    if settings.board_backend == "engine":
+        env["CC_BOARD_BACKEND"] = "engine"      # bot_tools picks its board commands from this
     return env
 
 
@@ -494,7 +505,7 @@ class OrgRunner:
             if agent.is_hermes:
                 proc = self.spawn_hermes(self.settings, agent, wake_prompt(agent, claimed, None), session, run_id, cwd, log_path)
             else:
-                proc = self.spawn(self.settings, agent, lane, task_ref, wake_prompt(agent, claimed, task_ref), session, run_id, cwd, log_path)
+                proc = self.spawn(self.settings, agent, lane, task_ref, wake_prompt(agent, claimed, task_ref, self.settings.board_backend == "engine"), session, run_id, cwd, log_path)
         except Exception as exc:
             log.exception("spawn failed for %s", agent.name)
             if task_ref:

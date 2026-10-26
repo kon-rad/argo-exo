@@ -351,6 +351,9 @@ def test_m1_job_runs_detached_and_reports_to_the_card(m1, monkeypatch):
     monkeypatch.setenv("M1_JOBS_FILE", str(m1_jobd.JOBS_FILE))
     monkeypatch.setenv("M1_JOBS_STATE", str(m1_jobd.STATE))
     monkeypatch.setenv("M1_JOBS_KB", m1_jobd.KB)
+    monkeypatch.setenv("M1_JOBS_VAULT_ENV", str(m1_jobd.STATE / "no-such.env"))   # never reach a real board from a test
+    monkeypatch.delenv("BOARD_URL", raising=False)
+    monkeypatch.delenv("BOARD_TOKEN", raising=False)
     out = m1_jobd.cmd_run("echo", "t_abc123", "echo", [str(m1["movies"] / "clip.mp4")])
     job_id = out.split()[1]
     d = m1_jobd.STATE / job_id
@@ -381,8 +384,11 @@ timeout_minutes = 1
     sandbox = script(tmp_path / "sandbox-exec", "import os, sys\na = sys.argv[1:]\nwhile a and a[0] in ('-p', '-D'):\n    a = a[2:]\nos.execvp(a[0], a)\n")
     monkeypatch.setattr(m1_jobd, "SANDBOX", sandbox)
     monkeypatch.setattr(m1_jobd, "TESTS_DIR", tmp_path / "bot-tests")
-    for var, val in (("M1_JOBS_FILE", jobs), ("M1_JOBS_STATE", m1_jobd.STATE), ("M1_JOBS_KB", m1_jobd.KB)):
+    for var, val in (("M1_JOBS_FILE", jobs), ("M1_JOBS_STATE", m1_jobd.STATE), ("M1_JOBS_KB", m1_jobd.KB),
+                     ("M1_JOBS_VAULT_ENV", tmp_path / "no-such.env")):
         monkeypatch.setenv(var, str(val))
+    monkeypatch.delenv("BOARD_URL", raising=False)
+    monkeypatch.delenv("BOARD_TOKEN", raising=False)
 
     def tree(rc: str, evil: bool = False) -> bytes:
         buf = io.BytesIO()
@@ -420,3 +426,26 @@ timeout_minutes = 1
         assert not (tmp_path / "bot-tests" / job_id).exists()   # the tree and its node_modules are gone; the log stays
         assert m1["kb_log"].read_text().splitlines() == ["comment t_abc123", "unblock t_abc123"]
         time.sleep(1.1)   # job ids are per second
+
+
+def test_park_and_block_hints_follow_the_board_in_use(monkeypatch):
+    import bot_tools
+    monkeypatch.delenv("CC_BOARD_BACKEND", raising=False)
+    assert bot_tools.park_hint("t_1", "waiting") == '`hermes kanban schedule t_1 "waiting"`'
+    assert bot_tools.block_hint("t_1", "off") == '`hermes kanban block t_1 "off"`'
+    monkeypatch.setenv("CC_BOARD_BACKEND", "engine")
+    assert bot_tools.park_hint("t_1", "waiting") == '`cli-board finish t_1 --blocked dependency "waiting"`'
+    assert bot_tools.block_hint("t_1", "off") == '`cli-board finish t_1 --blocked tool-error "off"`'
+
+
+def test_m1_report_uses_the_engine_board_when_the_m1_has_a_token(monkeypatch, tmp_path):
+    posts = []
+    monkeypatch.setattr(m1_jobd, "board_post", lambda door, path, body: posts.append((door, path, body)) or True)
+    env_file = tmp_path / ".env"
+    env_file.write_text('BOARD_URL="https://board.example/"\nBOARD_TOKEN=sbb_x\n')
+    monkeypatch.setenv("M1_JOBS_VAULT_ENV", str(env_file))
+    monkeypatch.delenv("BOARD_URL", raising=False)
+    monkeypatch.delenv("BOARD_TOKEN", raising=False)
+    m1_jobd.report("t_abc123", "tests passed")
+    assert posts == [(("https://board.example", "sbb_x"), "/cards/t_abc123/comment", {"body": "tests passed"}),
+                     (("https://board.example", "sbb_x"), "/cards/t_abc123/move", {"status": "ready", "note": "m1 job finished"})]
