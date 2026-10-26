@@ -365,14 +365,14 @@ def test_a_ticket_resumes_only_after_the_session_worked_it(tmp_path):
     _saved(ob)
     d.tick()
     assert spawned[0]["session"] is None                 # a new task: fresh
-    spawned[0]["log"].write_text(json.dumps({"type": "result", "session_id": "s2", "result": "done"}) + "\n")
+    spawned[0]["log"].write_text(json.dumps({"type": "result", "session_id": "55555555-5555-4555-8555-555555555555", "result": "done"}) + "\n")
     spawned[0]["proc"].code = 0
     d.tick()
     assert d.org.state.session_tasks["atlas"] == ["t_new"]
     clock["t"] += 3600
     ob.wakeups.append({"id": 9, "agent_name": "atlas", "reason": "task", "ref": "t_new"})
     d.tick()
-    assert spawned[1]["session"] == "s2"                 # the same ticket again: resume
+    assert spawned[1]["session"] == "55555555-5555-4555-8555-555555555555"                 # the same ticket again: resume
 
 
 def test_a_session_id_the_cli_cannot_resume_is_dropped(tmp_path):
