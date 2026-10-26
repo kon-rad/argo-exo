@@ -1,5 +1,6 @@
 """The agent company runner: wakeups from the board, kanban tasks for agents, coalescing, caps, routines, sessions."""
 import json
+import os
 import signal
 from datetime import datetime
 from pathlib import Path
@@ -480,6 +481,80 @@ def test_a_routine_whose_wake_add_fails_is_retried_next_tick(tmp_path, caplog):
     ob.fail_claim = False
     d.tick()
     assert runner.state.routines["atlas/daily-standup"] == "2026-10-15" and ob.added == [("atlas", "routine", "daily-standup")]
+
+
+def test_repeated_timeout_on_a_task_escalates_instead_of_looping_forever(tmp_path):
+    """tau/t_cf79b6dc, 2026-10-24: a card that keeps hitting the runtime cap every time it is re-woken is not a flaky
+    ('transient') failure that should keep auto-retrying; after a few runs in a row it must stop and ask Konrad."""
+    board = FakeBoard(ready=[{"id": "t_org1", "assignee": "rune", "priority": 1}], status="running")
+    d, runner, ob, spawned, clock = make(tmp_path, board=board)
+    d.tick()
+    assert len(spawned) == 1
+    clock["t"] += 30 * 60 + 1
+    d.tick()                                            # interrupted
+    clock["t"] += 31
+    d.tick()                                             # killed
+    spawned[0]["proc"].code = -15
+    d.tick()                                             # reaped: first timeout on this card
+    assert board.blocks[-1][2] == "transient"
+    assert runner.state.task_timeouts["t_org1"] == 1
+
+    board.ready = [{"id": "t_org1", "assignee": "rune", "priority": 1}]   # re-queued, re-woken
+    board.claimable = True
+    d.tick()
+    assert len(spawned) == 2
+    clock["t"] += 30 * 60 + 1
+    d.tick()
+    clock["t"] += 31
+    d.tick()
+    spawned[1]["proc"].code = -15
+    d.tick()                                             # reaped: second timeout in a row on the same card
+    assert board.blocks[-1][2] == "needs_input"
+    assert "2 times in a row" in board.blocks[-1][1]
+    assert "t_org1" not in runner.state.task_timeouts    # a fresh run later starts the streak over, not mid-count
+
+
+def test_timeout_streak_resets_once_the_task_moves_on(tmp_path):
+    board = FakeBoard(ready=[{"id": "t_org1", "assignee": "rune", "priority": 1}], status="running")
+    d, runner, ob, spawned, clock = make(tmp_path, board=board)
+    d.tick()
+    clock["t"] += 30 * 60 + 1
+    d.tick()
+    clock["t"] += 31
+    d.tick()
+    spawned[0]["proc"].code = -15
+    d.tick()
+    assert runner.state.task_timeouts["t_org1"] == 1
+    board.final = "blocked"                             # the next run finished (blocked itself) instead of timing out
+    board.ready = [{"id": "t_org1", "assignee": "rune", "priority": 1}]
+    board.claimable = True
+    d.tick()
+    spawned[1]["proc"].code = 0
+    log_result(spawned[1]["log"])
+    d.tick()
+    assert "t_org1" not in runner.state.task_timeouts
+
+
+def test_roster_runtime_change_is_picked_up_without_a_restart(tmp_path):
+    """rune, 2026-10-24: flipping an agent's runtime on disk (claude-code -> zen-agent) must stop cc-dispatcher from
+    spawning it on the next tick, not just on the next process restart (self.agents was loaded once at startup)."""
+    d, runner, ob, spawned, clock = make(tmp_path, wakeups=[{"id": 1, "agent_name": "rune", "reason": "dm", "ref": "1"}])
+    agents_path = tmp_path / "vault" / ".agents" / "org" / "org-agents.json"
+    d.tick()
+    assert [s["agent"] for s in spawned] == ["rune"]
+    spawned[0]["proc"].code = 0
+    log_result(spawned[0]["log"])
+    d.tick()
+
+    raw = json.loads(agents_path.read_text())
+    raw["agents"]["rune"]["runtime"] = "zen-agent"
+    agents_path.write_text(json.dumps(raw))
+    os.utime(agents_path, (clock["t"] + 10, clock["t"] + 10))
+    ob.add("rune", "dm", "2")
+    clock["t"] += 20
+    d.tick()
+    assert "rune" not in runner.agents
+    assert [s["agent"] for s in spawned] == ["rune"]     # no second spawn attempt
 
 
 def test_recover_releases_wakeups_claimed_by_a_dead_dispatcher(tmp_path):

@@ -36,6 +36,7 @@ from .config import Lane, OrgSettings, Settings
 log = logging.getLogger("cc-dispatcher.org")
 AUTHOR = "cc-dispatcher"
 WEEKDAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+TIMEOUT_ESCALATE_AFTER = 2   # consecutive runtime-cap hits on the same card before we stop re-waking it
 HERMES_SESSION = re.compile(r"^\d{8}_\d{6}_[0-9a-f]+$")   # Hermes ids; a Claude session id (a uuid) is not resumable there
 
 
@@ -170,6 +171,8 @@ class OrgState:
     """runs_dir/org-state.json: per-agent wake counts and last wake, and which routines fired today."""
     wakes: dict = field(default_factory=dict)       # agent -> {"day": "YYYY-MM-DD", "n": int, "last": float}
     routines: dict = field(default_factory=dict)    # "agent/routine" -> "YYYY-MM-DD"
+    session_tasks: dict = field(default_factory=dict)  # agent -> kanban task ids its saved session has worked
+    task_timeouts: dict = field(default_factory=dict)   # task_id -> consecutive runtime-cap hits in a row
     session_tasks: dict = field(default_factory=dict)  # agent -> kanban task ids its saved session has worked
 
     @classmethod
@@ -370,9 +373,32 @@ class OrgRunner:
         assert org is not None
         self.org = org
         self.agents = load_agents(org.agents_file)
+        self._agents_mtime = self._agents_file_mtime()
         self.state_path = self.settings.runs_dir / "org-state.json"
         self.state = OrgState.load(self.state_path)
         self.tz = ZoneInfo(org.timezone)
+
+    # -- roster reload -------------------------------------------------------------------------------------------
+    def _agents_file_mtime(self) -> float:
+        try:
+            return self.org.agents_file.stat().st_mtime
+        except OSError:
+            return 0.0
+
+    def _reload_agents_if_changed(self) -> None:
+        """A roster edit (e.g. an agent's `runtime` flipped to zen-agent) only takes effect for a dispatcher that is
+        already running if it re-reads org-agents.json: self.agents was otherwise frozen at startup, so a flipped
+        agent kept getting spawned as claude-code and failing with FileNotFoundError on its old prompt_file every
+        tick (rune, 2026-10-24) until the service was restarted. Check the file's mtime once per tick instead."""
+        mtime = self._agents_file_mtime()
+        if mtime == self._agents_mtime:
+            return
+        try:
+            self.agents = load_agents(self.org.agents_file)
+            self._agents_mtime = mtime
+            log.info("reloaded %s (roster changed on disk)", self.org.agents_file)
+        except (OSError, ValueError, KeyError) as exc:
+            log.warning("could not reload %s: %s; keeping the previous roster", self.org.agents_file, exc)
 
     # -- startup -----------------------------------------------------------------------------------------------------
     def recover(self) -> int:
@@ -387,6 +413,7 @@ class OrgRunner:
         """Fires due routines, then starts one run per agent that has work. Returns the number of Claude runs started
         (the daily cap counts those; a Hermes wake on the local model is checked with may_spawn_local instead)."""
         may_spawn_local = may_spawn_local or may_spawn
+        self._reload_agents_if_changed()
         self._fire_routines(now)
         started = 0
         pending: dict[str, list[dict]] = {}
@@ -557,10 +584,32 @@ class OrgRunner:
                 self._safe(self.org_board.done, r.wakeup_ids, r.run_id, code, text)
             if r.task:
                 board = self.boards[r.task[0]]
-                self._safe(board.attach, r.task[1], str(r.log_path), AUTHOR)
-                if self._safe(board.status, r.task[1]) == "running":
-                    why = "hit its max runtime" if r.timed_out else f"exited (code {code}) without complete or block"
-                    self._safe(board.block, r.task[1], f"{name} {why}. Last output:\n{worker.tail(r.log_path)}"[:3500], "transient")
+                task_id = r.task[1]
+                self._safe(board.attach, task_id, str(r.log_path), AUTHOR)
+                if self._safe(board.status, task_id) == "running":
+                    if r.timed_out:
+                        streak = self.state.task_timeouts.get(task_id, 0) + 1
+                        self.state.task_timeouts[task_id] = streak
+                    else:
+                        streak = 0
+                        self.state.task_timeouts.pop(task_id, None)
+                    self.state.save(self.state_path)
+                    if r.timed_out and streak >= TIMEOUT_ESCALATE_AFTER:
+                        # A card that hits the runtime cap repeatedly in a row, re-waking the same agent every time
+                        # it is returned to ready, is not "transient" (tau, t_cf79b6dc, 2026-10-24: 6 runs over 3h,
+                        # each producing zero output). Stop the loop and put it in front of Konrad instead. Forget
+                        # the streak now: a human unblocking it for another try starts the count fresh, not mid-way.
+                        self.state.task_timeouts.pop(task_id, None)
+                        self.state.save(self.state_path)
+                        why = (f"{name} hit its max runtime {streak} times in a row on this card "
+                               f"({r.agent.max_runtime_minutes} min each) without completing or blocking it. Stopping "
+                               f"automatic retries: check {name}'s session/auth, split the card, or raise its runtime.")
+                        self._safe(board.block, task_id, f"{why} Last output:\n{worker.tail(r.log_path)}"[:3500], "needs_input")
+                    else:
+                        why = "hit its max runtime" if r.timed_out else f"exited (code {code}) without complete or block"
+                        self._safe(board.block, task_id, f"{name} {why}. Last output:\n{worker.tail(r.log_path)}"[:3500], "transient")
+                elif self.state.task_timeouts.pop(task_id, None) is not None:
+                    self.state.save(self.state_path)       # the card moved on (done/blocked itself): forget the streak
             log.info("%s finished (exit %s): %s", name, code, text[:200].replace("\n", " "))
 
     def enforce_runtime(self, now: float, grace: float) -> None:
