@@ -210,3 +210,18 @@ class EngineBoard:
 
 
 BoardLike = Board | EngineBoard
+
+
+def created_ts(task: dict) -> float:
+    """A card's creation time as seconds: the Hermes board gives epoch seconds, the engine board an ISO 8601 string."""
+    v = task.get("created_at")
+    if v in (None, ""):
+        return 0.0
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        from datetime import datetime
+        try:
+            return datetime.fromisoformat(str(v).replace("Z", "+00:00")).timestamp()
+        except ValueError:
+            return 0.0
