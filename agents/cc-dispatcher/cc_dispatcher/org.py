@@ -173,6 +173,7 @@ class OrgState:
     routines: dict = field(default_factory=dict)    # "agent/routine" -> "YYYY-MM-DD"
     session_tasks: dict = field(default_factory=dict)  # agent -> kanban task ids its saved session has worked
     task_timeouts: dict = field(default_factory=dict)   # task_id -> consecutive runtime-cap hits in a row
+    session_tasks: dict = field(default_factory=dict)  # agent -> kanban task ids its saved session has worked
 
     @classmethod
     def load(cls, path: Path) -> "OrgState":
