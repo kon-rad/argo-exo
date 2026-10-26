@@ -3,7 +3,7 @@ import subprocess
 from datetime import datetime, timezone
 
 from cc_dispatcher import verify
-from cc_dispatcher.board import Board
+
 from cc_dispatcher.config import Verifier
 
 V = Verifier(name="unit", cmd=("python3", "-m", "pytest", "-q"), cwd="worker", timeout_seconds=60,
@@ -78,21 +78,6 @@ class Runner:
     def __call__(self, cmd, **kw):
         self.calls.append(cmd)
         return subprocess.CompletedProcess(cmd, 0, stdout=self.out, stderr="")
-
-
-def test_board_create_with_parent_and_blocked_status():
-    r = Runner('{"id":"t_2"}')
-    Board("/h/hermes", "exo", run=r).create("T", "B", "cc-coder", "cc-dispatcher", parents=("t_1",), initial_status="blocked")
-    cmd = r.calls[0]
-    assert cmd[:4] == ["/h/hermes", "kanban", "--board", "exo"]
-    assert "--parent" in cmd and cmd[cmd.index("--parent") + 1] == "t_1"
-    assert cmd[cmd.index("--initial-status") + 1] == "blocked"
-    assert cmd[-2:] == ["--", "T"]
-
-
-def test_board_task_reads_title_and_body():
-    r = Runner('{"task":{"title":"T","body":"verify: unit","status":"done"}}')
-    assert Board("h", "exo", run=r).task("t_1") == {"title": "T", "body": "verify: unit", "status": "done"}
 
 
 def test_run_survives_non_utf8_output_and_kills_the_group_on_timeout():

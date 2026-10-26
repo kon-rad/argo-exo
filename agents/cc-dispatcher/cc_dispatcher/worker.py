@@ -1,4 +1,4 @@
-"""Build and start one headless Claude Code worker for one kanban task."""
+"""Build and start one headless Claude Code worker for one board card."""
 from __future__ import annotations
 
 import json
@@ -11,15 +11,6 @@ from .config import Lane, Settings
 # The worker's environment is built from scratch, never copied from the dispatcher: an ANTHROPIC_API_KEY would
 # outrank the subscription login, and nothing from the Hermes env belongs in an agent's environment.
 PASS_THROUGH = ("HOME", "USER", "LOGNAME", "LANG", "LC_ALL", "TZ")
-
-
-def kanban_tools(hermes_bin: str, board: str) -> list[str]:
-    """Allow rules for the board verbs a worker needs, pinned to its board. Both spellings of the binary."""
-    verbs = ("show", "list", "comment", "complete", "block", "schedule", "create", "attach")
-    rules = []
-    for exe in (hermes_bin, "hermes"):
-        rules += [f"Bash({exe} kanban --board {board} {v} *)" for v in verbs]
-    return sorted(set(rules))
 
 
 def engine_board_tools(cli_board_bin: str) -> list[str]:
@@ -35,27 +26,15 @@ def worker_env(base: dict, settings: Settings, lane: Lane, board: str, task_id: 
     env = {k: base[k] for k in PASS_THROUGH if k in base}
     bindir = str(Path(settings.claude_bin).parent)
     env["PATH"] = f"{bindir}:{Path(settings.hermes_bin).parent}:/usr/local/bin:/usr/bin:/bin"
-    env.update({
-        "HERMES_KANBAN_TASK": task_id, "HERMES_KANBAN_BOARD": board,
-        "HERMES_PROFILE": lane.name,              # default --author for `hermes kanban comment`
-        "CC_LANE": lane.name,
-    })
-    if settings.board_backend == "engine":
-        # The engine's board_card_* functions check "only its own cards" against this identity; the worker is
-        # always its own lane (never cc-dispatcher's), so it can only ever touch the card it was started for.
-        env["ORG_AGENT"] = lane.name
-        env["CC_BOARD_BACKEND"] = "engine"      # bot_tools picks its board commands from this
+    # The engine's board_card_* functions check "only its own cards" against ORG_AGENT; the worker is always its
+    # own lane (never cc-dispatcher's), so it can only ever touch the card it was started for.
+    env.update({"CC_LANE": lane.name, "ORG_AGENT": lane.name})
     return env
 
 
 def command(settings: Settings, lane: Lane, board: str, task_id: str) -> list[str]:
-    if settings.board_backend == "engine":
-        prompt = f"Work card {task_id} on board {board}. Start by reading it: cli-board show {task_id} --json"
-        allowed = list(lane.allowed_tools) + engine_board_tools(settings.cli_board_bin)
-    else:
-        prompt = (f"Work kanban task {task_id} on board {board}. Start by reading it: "
-                  f"hermes kanban --board {board} show {task_id} --json")
-        allowed = list(lane.allowed_tools) + kanban_tools(settings.hermes_bin, board)
+    prompt = f"Work card {task_id} on board {board}. Start by reading it: cli-board show {task_id} --json"
+    allowed = list(lane.allowed_tools) + engine_board_tools(settings.cli_board_bin)
     return [
         settings.claude_bin, "-p", prompt,
         "--output-format", "stream-json", "--verbose",

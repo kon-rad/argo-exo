@@ -13,9 +13,8 @@ from typing import Callable
 from zoneinfo import ZoneInfo
 
 from . import verify, worker
-from .board import Board, BoardError, BoardLike, created_ts
+from .board import Board, BoardError, created_ts
 from .config import Lane, Settings
-from .local_gate import LocalGate
 from .org import OrgBoard, OrgRunner
 
 log = logging.getLogger("cc-dispatcher")
@@ -60,7 +59,7 @@ class State:
 @dataclass
 class Dispatcher:
     settings: Settings
-    boards: dict[str, BoardLike]
+    boards: dict[str, Board]
     spawn: Callable = worker.spawn
     prepare_cwd: Callable = worker.prepare_cwd
     clock: Callable[[], float] = time.time
@@ -70,18 +69,12 @@ class Dispatcher:
     _ticks: int = 0
 
     org: OrgRunner | None = None
-    gate: LocalGate | None = None
 
     def __post_init__(self):
         self.state_path = self.settings.runs_dir / "state.json"
         self.state = State.load(self.state_path)
         if self.org is None and self.settings.org is not None:
             self.org = OrgRunner(self.settings, self.boards, OrgBoard(self.settings.org.cli_org), clock=self.clock)
-        if self.gate is None and self.settings.local is not None:
-            self.gate = LocalGate(self.settings.local.health_url, self.settings.local.profiles, self.boards,
-                                  self.settings.runs_dir / "local-gate.json")
-        if self.org is not None and self.org.gate is None:
-            self.org.gate = self.gate
 
     # -- startup -------------------------------------------------------------------------------------------------
     def recover(self) -> list[str]:
@@ -106,8 +99,6 @@ class Dispatcher:
         self._reap(now)
         self._enforce_runtime(now)
         self._roll_day(now)
-        if self.gate is not None:
-            self.gate.tick(now)
         if not self._may_spawn(now):
             if self.org is not None and self._may_spawn_local(now):
                 self._tick_org(now)      # capped for Claude, but local-model bots still run
@@ -161,7 +152,7 @@ class Dispatcher:
             return False
         return in_progress < s.max_in_progress
 
-    def _start(self, board_name: str, board: BoardLike, lane: Lane, task_id: str, now: float) -> None:
+    def _start(self, board_name: str, board: Board, lane: Lane, task_id: str, now: float) -> None:
         ttl = lane.max_runtime_minutes * 60 + 900   # outlives our own runtime limit, so only we end the run
         if not board.claim(task_id, ttl, lane.name):
             return
@@ -227,7 +218,7 @@ class Dispatcher:
             self._safe(board.block, task_id,
                        f"Claude worker {why}. Last output:\n{worker.tail(r.log_path)}"[:3500], "transient", r.lane.name)
 
-    def _verify(self, r: Running, board: BoardLike, task_id: str) -> None:
+    def _verify(self, r: Running, board: Board, task_id: str) -> None:
         """Never raises: a crash in the check must not take the dispatcher loop down with it."""
         try:
             self._verify_inner(r, board, task_id)
@@ -240,7 +231,7 @@ class Dispatcher:
             except Exception:
                 log.exception("could not report the verify crash for %s", task_id)
 
-    def _verify_inner(self, r: Running, board: BoardLike, task_id: str) -> None:
+    def _verify_inner(self, r: Running, board: Board, task_id: str) -> None:
         """A completed card that names a verifier is checked by code, never by the worker's own word."""
         task = self._safe(board.task, task_id) or {}
         body = task.get("body") or ""

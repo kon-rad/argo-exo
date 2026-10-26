@@ -8,8 +8,8 @@ from functools import wraps
 
 from flask import Flask, g, jsonify, request
 
-from .config import Config
-from .kanban import KanbanError
+from .config import MONEY_AGENTS, Config
+from .board import BoardError
 from .talk import TalkError
 
 log = logging.getLogger("exo-bridge")
@@ -24,7 +24,7 @@ def _text(body, field="text", limit=2000):
     return v.strip()
 
 
-def create_app(cfg: Config, kanban, talker, blueprints=()) -> Flask:
+def create_app(cfg: Config, board, talker, blueprints=(), watcher=None) -> Flask:
     """`blueprints` is the extension point: the Guardian and kiosk routes register here.
     Every route of every blueprint is behind the bearer token."""
     app = Flask("exo-bridge")
@@ -80,31 +80,29 @@ def create_app(cfg: Config, kanban, talker, blueprints=()) -> Flask:
         body = request.get_json(silent=True)
         text = _text(body)
         agent = body.get("agent") if isinstance(body, dict) else None
-        if text is None or agent not in cfg.agents:
+        if text is None or agent in MONEY_AGENTS or agent not in cfg.agents:
             return jsonify(error=f"need text and agent in {list(cfg.agents)}"), 400
+        assignee = cfg.agent_map.get(agent, agent)     # a Hermes-era name becomes the roster bot that does that work
         title = text if len(text) <= 80 else text[:77].rstrip() + "..."
         # Minute-bucketed: a double-fired hook returns the existing task, not a duplicate.
         idem = hashlib.sha256(f"{agent}|{text}|{int(time.time() // 60)}".encode()).hexdigest()[:24]
         try:
-            task = kanban.create(title, text, agent, cfg.max_runtime, idem)
-        except KanbanError as exc:
+            task = board.create(title, text, assignee, idem)
+        except BoardError as exc:
             log.warning("create failed: %s", exc)
-            return jsonify(error="kanban failed"), 502
-        if cfg.telegram_chat_id and task.get("id"):
-            try:
-                kanban.subscribe(task["id"], cfg.telegram_chat_id)
-            except KanbanError as exc:   # the task exists; a missing ping is not worth failing it
-                log.warning("subscribe failed: %s", exc)
+            return jsonify(error="board failed"), 502
+        if watcher is not None and task.get("id"):
+            watcher.watch(task["id"])      # Telegram ping on done/blocked, when EXO_NOTIFY_CMD is set
         return jsonify(task=task), 201
 
     @app.get("/board")
     @authed
-    def board():
+    def board_view():
         try:
-            rows = kanban.list()
-        except KanbanError as exc:
+            rows = board.list(tuple(dict.fromkeys(cfg.agent_map.get(a, a) for a in cfg.agents)))
+        except BoardError as exc:
             log.warning("list failed: %s", exc)
-            return jsonify(error="kanban failed"), 502
+            return jsonify(error="board failed"), 502
         return jsonify(tasks=[{k: t.get(k) for k in BOARD_FIELDS} for t in rows])
 
     for bp in blueprints:

@@ -106,31 +106,18 @@ def ship_check(card: str, *, pr: str | None = None, deploy: str | None = None) -
     return p.stdout.strip()
 
 
-def engine_board() -> bool:
-    """True when cc-dispatcher runs this bot on the engine board (it sets CC_BOARD_BACKEND); else the Hermes board."""
-    return os.environ.get("CC_BOARD_BACKEND") == "engine"
-
-
 def card_comment(card: str, text: str, author: str) -> None:
-    if engine_board():
-        # The engine's author is the caller's ORG_AGENT (already set for the run), never a flag.
-        run([binary("CLI_BOARD_BIN", "cli-board"), "comment", card, (" " + text if text.startswith("--") else text)[:4000]], check=False)
-        return
-    run([binary("HERMES_BIN", "hermes"), "kanban", "--board", os.environ.get("HERMES_KANBAN_BOARD", "exo"), "comment",
-         "--author", author, card, text[:4000]], check=False)
+    # The engine's author is the caller's ORG_AGENT (already set for the run), never a flag (`author` is kept for callers).
+    run([binary("CLI_BOARD_BIN", "cli-board"), "comment", card, (" " + text if text.startswith("--") else text)[:4000]], check=False)
 
 
 def park_hint(card: str, why: str) -> str:
     """The command a bot runs to wait on the M1: park the card; the M1 comments the result and puts it back in ready."""
-    if engine_board():
-        return f"`cli-board finish {card} --blocked dependency \"{why}\"`"
-    return f"`hermes kanban schedule {card} \"{why}\"`"
+    return f"`cli-board finish {card} --blocked dependency \"{why}\"`"
 
 
 def block_hint(card: str, why: str) -> str:
-    if engine_board():
-        return f"`cli-board finish {card} --blocked tool-error \"{why}\"`"
-    return f"`hermes kanban block {card} \"{why}\"`"
+    return f"`cli-board finish {card} --blocked tool-error \"{why}\"`"
 
 
 def check_card(card: str) -> str:

@@ -181,27 +181,6 @@ def test_read_from_returns_only_complete_lines(tmp_path):
 
 
 # -- hub routes ----------------------------------------------------------------------------------------------------
-class FakeBoard:
-    def __init__(self):
-        self.created, self.comments = [], []
-
-    def all_tasks(self):
-        return [{"id": "t_abc123", "status": "ready", "assignee": "cc-writer"}]
-
-    def show(self, task_id):
-        return {"task": {"id": task_id}}
-
-    def create(self, title, body, assignee, created_by):
-        self.created.append((title, body, assignee, created_by))
-        return {"id": "t_new000"}
-
-    def comment(self, task_id, text, author):
-        self.comments.append((task_id, text, author))
-
-    def assign(self, task_id, assignee):
-        self.assigned = (task_id, assignee)
-
-
 class Runner:
     def __init__(self, out="", code=0, err=""):
         self.calls, self.out, self.code, self.err = [], out, code, err
@@ -221,11 +200,9 @@ PROFILES = """ Profile   Model   Gateway
 
 
 def hub(tmp_path, fake_claude, runner=None):
-    board = FakeBoard()
     h = Hub(token=TOKEN, lanes=load(REPO_LANES), chats=ChatManager(settings(tmp_path, fake_claude)),
-            telegram_script="/x/telegram-agent.sh", hermes_bin="hermes",
-            run=runner or Runner(PROFILES), board_factory=lambda name: board)
-    return h, board
+            telegram_script="/x/telegram-agent.sh", hermes_bin="hermes", run=runner or Runner(PROFILES))
+    return h, None
 
 
 def test_token_required(tmp_path, fake_claude):
@@ -242,29 +219,12 @@ def test_agents_lists_lanes_and_profiles(tmp_path, fake_claude):
     assert [p["name"] for p in out["profiles"]] == ["default", "researcher", "trader"]
 
 
-def test_create_task_validates_assignee(tmp_path, fake_claude):
-    h, board = hub(tmp_path, fake_claude)
-    ok = h.handle("POST", "/tasks", {}, {"title": "  write   it ", "body": "b", "assignee": "cc-writer"}, AUTH)
-    assert ok == (200, {"id": "t_new000"}) and board.created[0] == ("write it", "b", "cc-writer", "secondbrain-app")
-    assert h.handle("POST", "/tasks", {}, {"title": "x", "assignee": "nobody"}, AUTH)[0] == 400
-    assert h.handle("POST", "/tasks", {}, {"title": "x", "assignee": "trader"}, AUTH)[0] == 400
-    assert h.handle("POST", "/tasks", {}, {"title": "", "assignee": "cc-writer"}, AUTH)[0] == 400
-
-
-def test_task_routes_validate_ids(tmp_path, fake_claude):
-    h, board = hub(tmp_path, fake_claude)
-    assert h.handle("GET", "/tasks/../../etc/log", {}, None, AUTH)[0] in (400, 404)
-    assert h.handle("GET", "/board", {"board": "Bad Board"}, None, AUTH)[0] == 400
-    assert h.handle("POST", "/tasks/t_abc123/comment", {}, {"text": "go"}, AUTH) == (200, {"ok": True})
-    assert board.comments == [("t_abc123", "go", "konrad")]
-
-
-def test_task_log_reads_the_dispatcher_runs_dir(tmp_path, fake_claude):
+def test_board_routes_are_gone(tmp_path, fake_claude):
     h, _ = hub(tmp_path, fake_claude)
-    h.lanes = h.lanes.__class__(**{**h.lanes.__dict__, "runs_dir": tmp_path})
-    (tmp_path / "t_abc123.jsonl").write_text(json.dumps({"type": "assistant"}) + "\n")
-    status, out = h.handle("GET", "/tasks/t_abc123/log", {"offset": "0"}, None, AUTH)
-    assert status == 200 and out["events"] == [{"type": "assistant"}]
+    for method, path in [("GET", "/boards"), ("GET", "/board"), ("POST", "/tasks"), ("GET", "/tasks/t_abc123"),
+                         ("GET", "/tasks/t_abc123/log"), ("POST", "/tasks/t_abc123/assign"), ("POST", "/tasks/t_abc123/comment")]:
+        assert h.handle(method, path, {}, {}, AUTH)[0] == 404
+    assert not any("kanban" in " ".join(c) for c in h.run.calls)
 
 
 def test_telegram_routes(tmp_path, fake_claude):
@@ -293,20 +253,7 @@ def test_chat_routes(tmp_path, fake_claude):
     assert h.handle("GET", "/chats/zzz/events", {}, None, AUTH)[0] == 404
 
 
-# -- cards for bots (the work graph) --------------------------------------------------------------------------------
-class OrgRunner(Runner):
-    """`hermes profile list` answers with profiles; `cli-org task create` answers with the created card."""
-
-    def __call__(self, cmd, **kw):
-        self.calls.append(cmd)
-        if cmd[0].endswith("cli-org"):
-            assert kw["env"]["ORG_AGENT"] == "konrad" and kw["env"]["ORG_KANBAN_CMD"] == "hermes"
-            if "fail-me" in cmd:
-                return subprocess.CompletedProcess(cmd, 1, "", "no feature \"secondbrain-app/nope\" in the tracker")
-            return subprocess.CompletedProcess(cmd, 0, json.dumps({"task_id": "t_bot0001", "link": {"task_id": "t_bot0001", "assignee": "rune", "project_slug": "secondbrain-app", "feature_slug": "org-page"}}) + "\n", "")
-        return subprocess.CompletedProcess(cmd, 0, PROFILES, "")
-
-
+# -- the roster ---------------------------------------------------------------------------------------------------
 def org_hub(tmp_path, fake_claude):
     import dataclasses
     agents = tmp_path / "org-agents.json"
@@ -316,52 +263,12 @@ def org_hub(tmp_path, fake_claude):
     from cc_dispatcher.config import OrgSettings
     # On the Mac load() switches [org] off (the droplet paths are missing), so build the section by hand.
     lanes = dataclasses.replace(load(REPO_LANES), org=OrgSettings(vault=tmp_path, agents_file=agents, skill_file=tmp_path / "skill.md", cli_org="/x/cli-org"))
-    board = FakeBoard()
-    runner = OrgRunner(PROFILES)
     h = Hub(token=TOKEN, lanes=lanes, chats=ChatManager(settings(tmp_path, fake_claude)),
-            telegram_script="/x/telegram-agent.sh", hermes_bin="hermes", run=runner, board_factory=lambda name: board)
-    return h, board, runner
+            telegram_script="/x/telegram-agent.sh", hermes_bin="hermes", run=Runner(PROFILES))
+    return h
 
 
 def test_agents_lists_the_bots(tmp_path, fake_claude):
-    h, _, _ = org_hub(tmp_path, fake_claude)
+    h = org_hub(tmp_path, fake_claude)
     _, out = h.handle("GET", "/agents", {}, None, AUTH)
     assert [(b["name"], b["team"], b["family"]) for b in out["bots"]] == [("rune", "platform", "org"), ("lena", "media", "org")]
-
-
-def test_create_task_for_a_bot_goes_through_cli_org(tmp_path, fake_claude):
-    h, board, runner = org_hub(tmp_path, fake_claude)
-    code, out = h.handle("POST", "/tasks", {}, {"title": "Add the tasks route", "body": "GET /api/org/tasks", "assignee": "rune",
-                                                 "project": "secondbrain-app", "feature": "org-page"}, AUTH)
-    assert code == 200, out
-    assert out["id"] == "t_bot0001" and out["link"]["assignee"] == "rune"
-    cmd = [c for c in runner.calls if c[0] == "/x/cli-org"][0]
-    assert cmd[:5] == ["/x/cli-org", "task", "create", "rune", "Add the tasks route"]
-    assert cmd[cmd.index("--project") + 1] == "secondbrain-app" and cmd[cmd.index("--feature") + 1] == "org-page"
-    assert cmd[cmd.index("--body") + 1] == "GET /api/org/tasks" and cmd[cmd.index("--board") + 1] == "exo"
-    assert board.created == []          # never the direct kanban path for a bot
-    # A bot needs a project; cli-org's refusal comes back as a 400 with its words.
-    assert h.handle("POST", "/tasks", {}, {"title": "x", "assignee": "rune"}, AUTH)[0] == 400
-    code, out = h.handle("POST", "/tasks", {}, {"title": "fail-me", "assignee": "rune", "project": "secondbrain-app", "feature": "nope"}, AUTH)
-    assert code == 400 and "no feature" in out["error"]
-    # Lanes keep the direct path.
-    assert h.handle("POST", "/tasks", {}, {"title": "lane work", "assignee": "cc-writer"}, AUTH)[0] == 200 and board.created
-
-
-def test_assign_task_moves_a_card_to_a_lane_or_through_cli_org_to_a_bot(tmp_path, fake_claude):
-    h, board, runner = org_hub(tmp_path, fake_claude)
-    # A lane or "none": the kanban's own assign, then the card as it is now.
-    code, out = h.handle("POST", "/tasks/t_abc123/assign", {}, {"board": "exo", "assignee": "cc-writer"}, AUTH)
-    assert code == 200 and out == {"id": "t_abc123"} and board.assigned == ("t_abc123", "cc-writer")
-    assert h.handle("POST", "/tasks/t_abc123/assign", {}, {"assignee": "none"}, AUTH)[0] == 200 and board.assigned[1] == "none"
-    assert h.handle("POST", "/tasks/t_abc123/assign", {}, {"assignee": "nobody"}, AUTH)[0] == 400
-    assert h.handle("POST", "/tasks/t_abc123/assign", {}, {"assignee": "trader"}, AUTH)[0] == 400
-    # A bot: cli-org task assign as konrad with the project, never the kanban's assign directly.
-    board.assigned = None
-    code, out = h.handle("POST", "/tasks/t_abc123/assign", {}, {"assignee": "rune", "project": "secondbrain-app", "feature": "org-page"}, AUTH)
-    assert code == 200 and out["link"]["assignee"] == "rune" and board.assigned is None
-    cmd = [c for c in runner.calls if c[0] == "/x/cli-org"][-1]
-    assert cmd[:4] == ["/x/cli-org", "task", "assign", "t_abc123"] and cmd[4] == "rune"
-    assert cmd[cmd.index("--project") + 1] == "secondbrain-app" and cmd[cmd.index("--board") + 1] == "exo"
-    assert h.handle("POST", "/tasks/t_abc123/assign", {}, {"assignee": "rune"}, AUTH)[0] == 400       # no project
-    assert h.handle("POST", "/tasks/not-an-id/assign", {}, {"assignee": "rune", "project": "x"}, AUTH)[0] == 400

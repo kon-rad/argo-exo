@@ -1,10 +1,10 @@
 [Unit]
-Description=agent-hub: kanban board, Claude Code chats and the Telegram toggle for the Second Brain app (127.0.0.1 only)
+Description=agent-hub: Claude Code chats and the Telegram toggle for the Second Brain app (127.0.0.1 only)
 After=network-online.target
 Wants=network-online.target
 
 # The Second Brain app runs sandboxed (no new privileges, read-only home), so this does the privileged half of its
-# Agents page as hermes: `hermes kanban`, `claude -p` chats on the subscription login, telegram-agent.sh. Bound to
+# Agents page as hermes: `claude -p` chats on the subscription login, telegram-agent.sh. Bound to
 # 127.0.0.1 behind AGENT_HUB_TOKEN (/etc/agent-hub/env, root 600; the same value is in /etc/secondbrain/env).
 # Never loads ~/.hermes/.env. Plan: Areas/argo/argo-exo/plans/10-claude-code-agents.md §2.3 in the vault.
 [Service]

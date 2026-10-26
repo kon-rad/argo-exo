@@ -1,4 +1,4 @@
-"""The agent company runner: wakeups from the board, kanban tasks for agents, coalescing, caps, routines, sessions."""
+"""The agent company runner: wakeups from the board, board cards for agents, coalescing, caps, routines, sessions."""
 import json
 import os
 import signal
@@ -232,7 +232,7 @@ def test_every_wake_opens_its_log_with_a_header_the_ledger_can_read(tmp_path):
     assert head["team"] == "platform" and head["reasons"] == [{"reason": "dm", "ref": "7"}, {"reason": "mention", "ref": "9"}]
     assert head["wakeup_ids"] == [1, 2] and head["task_id"] is None and head["board"] is None
     assert head["resumed"] is True and head["model"] == "opus" and head["at"].startswith("2026-10-1")
-    # A fresh session on a kanban card: resumed false, the card in the header, no wakeups.
+    # A fresh session on a board card: resumed false, the card in the header, no wakeups.
     log_result(atlas["log"], session="11111111-1111-4111-8111-111111111111"); atlas["proc"].code = 0
     clock["t"] += 3600
     runner.boards["exo"].ready.append({"id": "t_c0ffee01", "assignee": "rune", "priority": 1})
@@ -295,7 +295,7 @@ def test_global_slots_are_shared_with_the_lanes(tmp_path):
     assert len(d.running) == 1 and [s["agent"] for s in spawned] == ["atlas"]   # max_in_progress = 2
 
 
-def test_a_kanban_task_assigned_to_an_agent_runs_as_that_agent_in_its_lane(tmp_path):
+def test_a_board_card_assigned_to_an_agent_runs_as_that_agent_in_its_lane(tmp_path):
     board = FakeBoard(ready=[{"id": "t_org1", "assignee": "rune", "priority": 1}], status="running")
     d, runner, ob, spawned, clock = make(tmp_path, board=board)
     d.tick()
@@ -303,7 +303,7 @@ def test_a_kanban_task_assigned_to_an_agent_runs_as_that_agent_in_its_lane(tmp_p
     s = spawned[0]
     assert s["agent"] == "rune" and s["task"] == ("exo", "t_org1") and s["lane"] == "cc-test" and s["cwd"] == "/work/t_org1"
     assert board.claims == [("t_org1", 30 * 60 + 900, "rune")]
-    assert "kanban task t_org1 on board exo" in s["prompt"] and "complete" in s["prompt"]
+    assert "board card t_org1 on board exo" in s["prompt"] and "cli-board finish t_org1" in s["prompt"]
     assert any("rune (sonnet) started" in c[1] for c in board.comments)
     s["proc"].code = 1
     log_result(s["log"], result="Error: gave up", assistant=True)
@@ -453,14 +453,13 @@ def test_command_and_env(tmp_path):
     assert sysp.startswith("IDENTITY rune") and "SKILL TEXT" in sysp and "PROTOCOL" in sysp and "name: rune" not in sysp
     allowed = cmd[cmd.index("--allowedTools") + 1].split(",")
     assert "Read" in allowed and "Bash(cli-org *)" in allowed and "Bash(git commit *)" in allowed
-    assert "Bash(/opt/hermes/hermes kanban --board exo complete *)" in allowed
-    assert "Bash(hermes kanban --board exo schedule *)" in allowed  # waits on M1 tests and jobs (2026-10-22)
+    assert "Bash(cli-board finish *)" in allowed and not any("hermes kanban" in t for t in allowed)
     assert cmd[cmd.index("--disallowedTools") + 1] == "Bash(sudo *),Read(CURRENT/**)"
     assert cmd[cmd.index("--max-turns") + 1] == "60" and "--permission-prompts" in cmd
     no_task = org_command(settings, agents["atlas"], None, None, "P", None)
     assert "--resume" not in no_task and "PROTOCOL" not in no_task[no_task.index("--append-system-prompt") + 1]
     env = org_env({"HOME": "/home/hermes", "ANTHROPIC_API_KEY": "nope", "PATH": "/x"}, settings, agents["rune"], "org-rune-1", ("exo", "t_1"))
-    assert env["ORG_AGENT"] == "rune" and env["ORG_RUN"] == "org-rune-1" and env["HERMES_KANBAN_TASK"] == "t_1"
+    assert env["ORG_AGENT"] == "rune" and env["ORG_RUN"] == "org-rune-1" and "HERMES_KANBAN_TASK" not in env
     assert "ANTHROPIC_API_KEY" not in env and env["PATH"].startswith("/opt/claude:/opt/hermes:")
 
 
@@ -471,7 +470,7 @@ def test_prompt_wording():
     assert "a message from konrad (message 5" in text and "weekly-reflection" in text and "kanban" not in text
     owner = wake_prompt(a, [{"reason": "owner", "ref": "6"}], None)
     assert "a message from konrad (message 6" in owner
-    assert describe_wakeups([{"reason": "task", "ref": "t_9"}]) == ["kanban task t_9"]
+    assert describe_wakeups([{"reason": "task", "ref": "t_9"}]) == ["board card t_9"]
 
 
 def test_a_routine_whose_wake_add_fails_is_retried_next_tick(tmp_path, caplog):
@@ -616,27 +615,6 @@ def test_the_owners_ship_answer_is_described_as_one():
     lines = describe_wakeups([{"reason": "owner", "ref": "ship:12"}])
     assert lines == ["the owner answered ship request #12 (`cli-org ship list` shows it; approved: merge or deploy now, "
                      "denied: the note says what to fix)"]
-
-
-def test_engine_backend_gives_org_bots_cli_board_not_hermes_kanban(tmp_path):
-    import dataclasses
-    vault = org_vault(tmp_path)
-    settings = load(lanes_with_org(tmp_path, vault))
-    (Path(settings.lanes_path).parent / "worker-protocol-engine.md").write_text("ENGINE PROTOCOL")
-    settings = dataclasses.replace(settings, board_backend="engine")
-    agents = orgmod.load_agents(settings.org.agents_file)
-    cmd = org_command(settings, agents["rune"], settings.lanes["cc-test"], ("exo", "t_1"), "P", None)
-    sysp = cmd[cmd.index("--append-system-prompt") + 1]
-    assert "ENGINE PROTOCOL" in sysp and "PROTOCOL\n" not in sysp.replace("ENGINE PROTOCOL", "")
-    allowed = cmd[cmd.index("--allowedTools") + 1].split(",")
-    assert "Bash(cli-board finish *)" in allowed and "Bash(cli-board show *)" in allowed
-    assert not any("hermes kanban" in t for t in allowed)
-    env = org_env({"HOME": "/h", "PATH": "/x"}, settings, agents["rune"], "org-rune-1", ("exo", "t_1"))
-    assert env["CC_BOARD_BACKEND"] == "engine" and env["ORG_AGENT"] == "rune"
-    text = wake_prompt(agents["rune"], [{"reason": "task", "ref": "t_1"}], ("exo", "t_1"), engine=True)
-    assert "cli-board show t_1 --json" in text and "cli-board finish t_1" in text and "hermes" not in text
-    hermes_text = wake_prompt(agents["rune"], [{"reason": "task", "ref": "t_1"}], ("exo", "t_1"))
-    assert "hermes kanban --board exo show t_1" in hermes_text
 
 
 def test_ready_cards_with_iso_created_at_sort_without_crashing(tmp_path):

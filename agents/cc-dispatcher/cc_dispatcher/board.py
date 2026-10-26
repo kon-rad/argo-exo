@@ -1,9 +1,7 @@
-"""The `hermes kanban` CLI, the board's stable interface (same approach as exo_bridge.kanban).
+"""The engine board (the Second Brain app's Postgres board, `/api/board`) through the `cli-board` CLI.
 
-Claims behave like this (tested live on the droplet, 2026-10-11): `claim` locks the task to the short-lived CLI's own
-host:pid and leaves worker_pid empty, so Hermes's crash detector and max-runtime enforcer never touch it, and a
-heartbeat from another process can't extend it. Only TTL expiry returns it to `ready`. So we claim with a TTL longer
-than the lane's runtime and enforce the runtime ourselves.
+This is the only board. The Hermes kanban (SQLite) and its `hermes kanban` CLI are no longer used: the engine board
+replaced it on 2026-10-26 (vault: Areas/argo/second-brain/kanban-board/).
 """
 from __future__ import annotations
 
@@ -16,103 +14,16 @@ class BoardError(RuntimeError):
     pass
 
 
-class Board:
-    def __init__(self, hermes_bin: str, board: str, run: Callable = subprocess.run):
-        self.bin, self.board, self.run = hermes_bin, board, run
-
-    def _call(self, *args: str) -> str:
-        cmd = [self.bin, "kanban", "--board", self.board, *args]
-        try:
-            p = self.run(cmd, capture_output=True, text=True, timeout=30)
-        except (OSError, subprocess.TimeoutExpired) as exc:
-            raise BoardError(f"{args[0]}: {exc}") from exc
-        if p.returncode != 0:
-            raise BoardError(f"{args[0]}: {(p.stderr or p.stdout).strip()[-300:]}")
-        return p.stdout
-
-    def _json(self, *args: str):
-        out = self._call(*args)
-        try:
-            return json.loads(out)
-        except json.JSONDecodeError as exc:
-            raise BoardError(f"{args[0]}: not JSON: {out[:120]!r}") from exc
-
-    def tasks(self, assignee: str, status: str) -> list[dict]:
-        rows = self._json("list", "--assignee", assignee, "--status", status, "--json")
-        return rows if isinstance(rows, list) else []
-
-    def claim(self, task_id: str, ttl_seconds: int, as_agent: str | None = None) -> bool:
-        try:
-            self._call("claim", task_id, "--ttl", str(int(ttl_seconds)))
-            return True
-        except BoardError:
-            return False          # someone else got it, or it left `ready`
-
-    def status(self, task_id: str) -> str:
-        data = self._json("show", task_id, "--json")
-        return (data.get("task") or data).get("status", "")
-
-    def comment(self, task_id: str, text: str, author: str) -> None:
-        self._call("comment", "--author", author, "--", task_id, text)   # "--": a comment can start with "-"
-
-    def block(self, task_id: str, reason: str, kind: str = "transient", as_agent: str | None = None) -> None:
-        self._call("block", "--kind", kind, "--", task_id, reason)
-
-    def schedule(self, task_id: str, reason: str) -> None:
-        """Park a card in Scheduled (waiting on time, not a human); `unblock` returns it to ready."""
-        self._call("schedule", "--", task_id, reason)
-
-    def unblock(self, task_id: str, reason: str) -> None:
-        self._call("unblock", "--reason", reason, "--", task_id)
-
-    # -- used by agent-hub (the Second Brain app's Agents page) -------------------------------------------------
-    def ready_tasks(self) -> list[dict]:
-        """Every ready card on the board in one call; the org filters by assignee itself (was one call per bot)."""
-        rows = self._json("list", "--status", "ready", "--json")
-        return rows if isinstance(rows, list) else []
-
-    def all_tasks(self) -> list[dict]:
-        rows = self._json("list", "--json")
-        return rows if isinstance(rows, list) else []
-
-    def show(self, task_id: str) -> dict:
-        return self._json("show", task_id, "--json")
-
-    def task(self, task_id: str) -> dict:
-        data = self._json("show", task_id, "--json")
-        t = data.get("task") or data
-        return {"title": t.get("title", ""), "body": t.get("body") or "", "status": t.get("status", "")}
-
-    def create(self, title: str, body: str, assignee: str, created_by: str,
-               parents: tuple[str, ...] = (), initial_status: str | None = None) -> dict:
-        # Options first, then "--", then the title, and the body as ONE argv item: text never becomes a flag.
-        args = ["create", "--assignee", assignee, "--created-by", created_by, "--json"]
-        if body:
-            args.insert(1, f"--body={body}")
-        for p in parents:
-            args += ["--parent", p]
-        if initial_status:
-            args += ["--initial-status", initial_status]
-        return self._json(*args, "--", title)
-
-    def assign(self, task_id: str, assignee: str) -> None:
-        self._call("assign", task_id, assignee)      # "none" unassigns
-
-    def attach(self, task_id: str, path: str, author: str) -> None:
-        self._call("attach", "--author", author, "--content-type", "application/x-ndjson", task_id, path)
-
-
 def _arg(text: str) -> str:
     """cli-board's argument parser has no `--` separator and reads any argument starting with `--` as a flag, so a
     comment that starts with it gets a leading space."""
     return " " + text if text.startswith("--") else text
 
 
-class EngineBoard:
+class Board:
     """The engine's own board (the Second Brain app's `/api/board`, door 3: direct Postgres as `sb_org`), through
     the `cli-board` CLI wrapper already installed at ~/.local/bin/cli-board (it sources /etc/secondbrain/env itself,
-    so this process's own environment stays clean). Same public surface as `Board`, so `Dispatcher` doesn't branch on
-    which backend it holds; the difference is that every write here needs a caller identity (`ORG_AGENT`), because the
+    so this process's own environment stays clean). Every write here needs a caller identity (`ORG_AGENT`), because the
     engine's board_card_* functions check "only its own cards" instead of SQLite's anyone-can-claim model. Callers
     pass `as_agent` on claim/comment/block/create; a read (tasks/show/task/status) doesn't need one. docs/board-
     design.md section 5.2 is the CLI reference; board-design.md section 7 names this the `claude-code` lane.
@@ -151,7 +62,7 @@ class EngineBoard:
         return rows if isinstance(rows, list) else []
 
     def ready_tasks(self) -> list[dict]:
-        """Every ready card on the board in one call (same surface as `Board.ready_tasks`)."""
+        """Every ready card on the board in one call."""
         rows = self._json(None, "list", "--status", "ready", "--board", self.board, "--json")
         return rows if isinstance(rows, list) else []
 
@@ -165,7 +76,7 @@ class EngineBoard:
         if p.returncode == 3 or p.stdout.strip() in ("null", ""):
             return False          # already taken, or not ready: not an error, the caller moves on
         if p.returncode != 0:
-            return False          # any other claim failure: someone else got it, or it left `ready` (same as Board.claim)
+            return False          # any other claim failure: someone else got it, or it left `ready`
         return True
 
     def status(self, task_id: str) -> str:
@@ -182,7 +93,7 @@ class EngineBoard:
         self._call(author, "comment", task_id, _arg(text))
 
     def block(self, task_id: str, reason: str, kind: str = "transient", as_agent: str | None = None) -> None:
-        # The engine's block_kind vocabulary isn't Hermes's free-text kind: "transient" (a worker crash or restart,
+        # The engine's block_kind vocabulary is fixed: "transient" (a worker crash or restart,
         # not the worker's own doing) and "capability" (couldn't even start) both map to "tool-error"; anything
         # else that reaches here is dispatcher-internal, never a card-body choice, so this mapping is exhaustive.
         engine_kind = {"transient": "tool-error", "capability": "tool-error"}.get(kind, "other")
@@ -220,11 +131,10 @@ class EngineBoard:
         self._call(author, "comment", task_id, f"Live log: {path}")
 
 
-BoardLike = Board | EngineBoard
 
 
 def created_ts(task: dict) -> float:
-    """A card's creation time as seconds: the Hermes board gives epoch seconds, the engine board an ISO 8601 string."""
+    """A card's creation time as seconds: the engine board gives an ISO 8601 string (epoch seconds are still accepted)."""
     v = task.get("created_at")
     if v in (None, ""):
         return 0.0

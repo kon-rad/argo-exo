@@ -29,8 +29,8 @@ ProtectSystem=full
 # peak (not yet measured on the droplet). 150M was likely too small, and an OOM-killed simulation is a refusal.
 # Only one guard runs at a time (the guard lock), so this is one simulation's worth.
 MemoryMax=600M
-# Not NoNewPrivileges: the kanban wrapper (/usr/local/bin/exo-hermes) uses one sudoers rule to run
-# `hermes kanban ...` AS hermes. ProtectHome is off for the same reason (hermes' data lives in /home/hermes).
+# No sudo any more: the board is reached with cli-board over HTTPS (BOARD_URL + BOARD_TOKEN in bridge.env). The
+# hardening below (NoNewPrivileges, ProtectHome) was left as it was; tighten it only after a run on the droplet.
 
 [Install]
 WantedBy=multi-user.target

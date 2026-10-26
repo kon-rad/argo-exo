@@ -1,13 +1,11 @@
-# Claude Code lanes on the Hermes kanban board. Read by agents/cc-dispatcher.
+# Claude Code lanes on the engine board (the Second Brain app's Postgres board, `cli-board`). Read by agents/cc-dispatcher.
 #
-# A lane is an assignee name that is NOT a Hermes profile, so the Hermes dispatcher skips its tasks
-# (hermes_cli/kanban_db.py, "skipped_nonspawnable") and cc-dispatcher claims them instead. The description is the
-# lane's job ad, the same role a Hermes profile's description.txt plays. The role prompt is <lane>.md next to this file.
+# A lane is an assignee name on the board; cc-dispatcher claims its ready cards. The description is the lane's job ad.
+# The role prompt is <lane>.md next to this file.
 # Plan: Areas/argo/argo-exo/plans/10-claude-code-agents.md in the vault.
 
 [dispatcher]
 boards = ["exo"]
-board_backend = "engine"     # 2026-10-27 cutover: claim and finish on the Second Brain engine board via cli-board. Rollback: "hermes" and restart cc-dispatcher
 max_in_progress = 2          # concurrent claude workers; about 3 GB free on the droplet, shared with production
 daily_cap = 60               # spawns per day (lanes + the org's 22 bots); the Max plan's limits are shared with the Mac sessions
 timezone = "Asia/Tokyo"      # the cap's day rolls at 00:00 here, the same clock as the org's routines (was the droplet's UTC)
@@ -81,7 +79,7 @@ lanes = ["cc-coder"]
 timeout_seconds = 300
 metric_regex = "(\\d+) passed"
 # The agent company (Areas/argo/second-brain/agent-company/agent-company-design.md §6 in the vault): named agents
-# from .agents/org.yaml, woken by the message board (org_wakeups) and by kanban tasks assigned to their names.
+# from .agents/org.yaml, woken by the message board (org_wakeups) and by board cards assigned to their names.
 # Tools and denies add to [defaults]; an agent's own tools come from org-agents.json; a `lane` adds that lane's.
 [org]
 enabled = true
@@ -99,10 +97,3 @@ allowed_tools = ["Bash(cli-org *)", "Bash(cli-projects list*)", "Bash(cli-projec
 denied_tools = ["Read(//home/hermes/secondBrain/CURRENT/**)", "Edit(//home/hermes/secondBrain/CURRENT/**)",
                 "Write(//home/hermes/secondBrain/CURRENT/**)"]
 
-
-# Hermes profiles whose model runs on the home M1 Max (vault: Areas/argo/second-brain/macbook-home-lab/). While the
-# health URL fails, their ready cards are parked (`schedule`) and runtime: hermes bots' wakes wait; when it answers
-# again, the parked cards and any card Hermes gave up on during the outage go back to ready.
-[local]
-health_url = "http://m1max:11434/api/version"
-profiles = ["m1-writer", "lena"]

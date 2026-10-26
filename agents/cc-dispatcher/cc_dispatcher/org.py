@@ -1,12 +1,12 @@
-"""The agent company: wake named agents from the message board (org_wakeups) and from kanban tasks assigned to them.
+"""The agent company: wake named agents from the message board (org_wakeups) and from board cards assigned to them.
 
 Design: Areas/argo/second-brain/agent-company/agent-company-design.md §6 in the vault. The board is reached only
-through `cli-org` (the Second Brain app's CLI, on hermes's PATH), the same way kanban is reached through `hermes
-kanban`: no database driver here, stdlib only.
+through `cli-org` and the cards through `cli-board` (the Second Brain app's CLIs, on hermes's PATH): no database
+driver here, stdlib only.
 
 A `runtime: hermes` agent is a Hermes profile of the same name (its model on the home model host): a wake is one
-`hermes -p <name> chat -Q -q` run, its kanban cards are Hermes's own dispatcher's (never claimed here), and it waits
-while the local gate says the host is down. Those wakes don't count toward the daily cap (no Claude quota).
+`hermes -p <name> chat -Q -q` run and its cards are never claimed here. Those wakes don't count toward the daily cap
+(no Claude quota). No roster agent uses this runtime today.
 
 One wake = one `claude -p` run as that agent: identity from .claude/agents/<name>.md plus the org-member skill as the
 appended system prompt, ORG_AGENT in the environment. The agent's last session is resumed only when the wake
@@ -157,12 +157,12 @@ class OrgRun:
     agent: OrgAgent
     run_id: str
     wakeup_ids: list[int]
-    task: tuple[str, str] | None          # (board, task id) when the wake is a kanban task
+    task: tuple[str, str] | None          # (board, task id) when the wake is a board card
     proc: object
     log_path: Path
     started: float
     resumed: bool
-    task_ids: tuple = ()                   # kanban task ids this wake worked on (kept with the session)
+    task_ids: tuple = ()                   # board card ids this wake worked on (kept with the session)
     interrupted_at: float | None = None
     timed_out: bool = False
 
@@ -172,9 +172,9 @@ class OrgState:
     """runs_dir/org-state.json: per-agent wake counts and last wake, and which routines fired today."""
     wakes: dict = field(default_factory=dict)       # agent -> {"day": "YYYY-MM-DD", "n": int, "last": float}
     routines: dict = field(default_factory=dict)    # "agent/routine" -> "YYYY-MM-DD"
-    session_tasks: dict = field(default_factory=dict)  # agent -> kanban task ids its saved session has worked
+    session_tasks: dict = field(default_factory=dict)  # agent -> board card ids its saved session has worked
     task_timeouts: dict = field(default_factory=dict)   # task_id -> consecutive runtime-cap hits in a row
-    session_tasks: dict = field(default_factory=dict)  # agent -> kanban task ids its saved session has worked
+    session_tasks: dict = field(default_factory=dict)  # agent -> board card ids its saved session has worked
 
     @classmethod
     def load(cls, path: Path) -> "OrgState":
@@ -209,16 +209,16 @@ def describe_wakeups(wakeups: list[dict]) -> list[str]:
             lines.append(f"your routine `{ref}`" + (": post today's stand-up with `cli-org standup`" if ref == "daily-standup" else
                                                    ": write what you learned this week into your memory file" if ref == "weekly-reflection" else ""))
         elif reason == "task":
-            lines.append(f"kanban task {ref}")
+            lines.append(f"board card {ref}")
         else:
             lines.append(f"{reason} {ref}")
     return lines
 
 
-def wake_prompt(agent: OrgAgent, wakeups: list[dict], task: tuple[str, str] | None, engine: bool = False) -> str:
+def wake_prompt(agent: OrgAgent, wakeups: list[dict], task: tuple[str, str] | None) -> str:
     reasons = describe_wakeups(wakeups)
     if task and not any(w.get("reason") == "task" for w in wakeups):
-        reasons.append(f"kanban task {task[1]} on board {task[0]}")
+        reasons.append(f"board card {task[1]} on board {task[0]}")
     head = f"You are {agent.name}, {agent.role} on the {agent.team_name} team. You were woken because of:\n" + "\n".join(f"- {r}" for r in reasons)
     # Only what woke the bot: reading every channel on every wake was most of a short wake's tokens.
     steps = ["Read only what woke you: `cli-org thread <id>` for each message above. Read a channel (`cli-org read <channel>`) "
@@ -227,12 +227,8 @@ def wake_prompt(agent: OrgAgent, wakeups: list[dict], task: tuple[str, str] | No
         steps.append("Before you start, `cli-org recall \"<the card's subject>\" --project <its project>` for what the company "
                      "already knows; when you learn something others will need, `cli-org remember` it with its source.")
     if task:
-        if engine:
-            steps.append(f"Work board card {task[1]}: start with `cli-board show {task[1]} --json`, do the work, and end it with "
-                         f"`cli-board finish {task[1]} --done \"<result>\"` or `--blocked <kind> \"<why>\"` (the worker protocol below).")
-        else:
-            steps.append(f"Work kanban task {task[1]} on board {task[0]}: start with `hermes kanban --board {task[0]} show {task[1]} --json`, "
-                         "do the work, and end it with `complete` or `block` (the kanban worker protocol below).")
+        steps.append(f"Work board card {task[1]}: start with `cli-board show {task[1]} --json`, do the work, and end it with "
+                     f"`cli-board finish {task[1]} --done \"<result>\"` or `--blocked <kind> \"<why>\"` (the worker protocol below).")
     steps += ["Answer what was addressed to you in its thread (`--thread <id>`); do the work that is yours; hand off what isn't.",
               f"Finish with exactly one `cli-org post {agent.team} \"<what changed, with a path, command or task id>\" --kind status`.",
               "Nobody is watching this terminal: no questions, no permission prompts. Stop when you are done; the run ends when you stop."]
@@ -247,8 +243,7 @@ def system_prompt(settings: Settings, agent: OrgAgent, with_protocol: bool) -> s
         identity = identity.split("---", 2)[2].strip()   # the frontmatter is for Claude's subagent loader, not the prompt
     parts = [identity, org.skill_file.read_text().strip()]
     if with_protocol:
-        name = "worker-protocol-engine.md" if settings.board_backend == "engine" else "worker-protocol.md"
-        parts.append((Path(settings.lanes_path).parent / name).read_text().strip())
+        parts.append((Path(settings.lanes_path).parent / "worker-protocol.md").read_text().strip())
     return "\n\n".join(parts) + "\n"
 
 
@@ -257,17 +252,13 @@ def org_command(settings: Settings, agent: OrgAgent, lane: Lane | None, task: tu
                 prompt: str, session_id: str | None) -> list[str]:
     org = settings.org
     assert org is not None
-    tools = list(agent.tools)
-    if settings.board_backend == "engine":
-        tools = [t for t in tools if not t.startswith("Bash(hermes kanban")]   # compiled for the Hermes board; the engine verbs replace them
-    allowed = list(org.allowed_tools) + tools
+    allowed = list(org.allowed_tools) + list(agent.tools)
     denied = list(org.denied_tools)
     if lane:
         allowed += list(lane.allowed_tools)
         denied += list(lane.denied_tools)
     if task:
-        allowed += (worker.engine_board_tools(settings.cli_board_bin) if settings.board_backend == "engine"
-                    else worker.kanban_tools(settings.hermes_bin, task[0]))
+        allowed += worker.engine_board_tools(settings.cli_board_bin)
     cmd = [
         settings.claude_bin, "-p", prompt,
         "--output-format", "stream-json", "--verbose",
@@ -291,10 +282,6 @@ def org_env(base: dict, settings: Settings, agent: OrgAgent, run_id: str, task: 
     bindir = str(Path(settings.claude_bin).parent)
     env["PATH"] = f"{bindir}:{Path(settings.hermes_bin).parent}:/usr/local/bin:/usr/bin:/bin"
     env.update({"ORG_AGENT": agent.name, "ORG_RUN": run_id, "HERMES_PROFILE": agent.name, "CC_LANE": agent.lane or ""})
-    if task:
-        env.update({"HERMES_KANBAN_BOARD": task[0], "HERMES_KANBAN_TASK": task[1]})
-    if settings.board_backend == "engine":
-        env["CC_BOARD_BACKEND"] = "engine"      # bot_tools picks its board commands from this
     return env
 
 
@@ -378,7 +365,6 @@ class OrgRunner:
     clock: Callable[[], float] = time.time
     running: dict[str, OrgRun] = field(default_factory=dict)   # agent name -> run (one run per agent at a time)
     spawn_hermes: Callable = spawn_hermes
-    gate: object | None = None            # local_gate.LocalGate: `up` False holds runtime: hermes wakes
 
     def __post_init__(self):
         org = self.settings.org
@@ -438,25 +424,16 @@ class OrgRunner:
         tasks: dict[str, tuple[str, str, dict]] = {}
         order = lambda t: (-int(t.get("priority") or 0), created_ts(t))   # noqa: E731
         for board_name, board in self.boards.items():
-            if hasattr(board, "ready_tasks"):
-                # One listing per board per tick, filtered here (was one `hermes kanban list` per bot, 22 every 30 s).
-                for t in sorted(self._safe(board.ready_tasks) or [], key=order):
-                    name = t.get("assignee")
-                    if name in self.agents and not self.agents[name].is_hermes:
-                        tasks.setdefault(name, (board_name, t["id"], t))
-                continue
-            for name in self.agents:
-                if self.agents[name].is_hermes:
-                    continue      # a Hermes profile's cards belong to Hermes's own dispatcher
-                for t in sorted(self._safe(board.tasks, name, "ready") or [], key=order):
+            # One listing per board per tick, filtered here (was one listing per bot, 22 every 30 s).
+            for t in sorted(self._safe(board.ready_tasks) or [], key=order):
+                name = t.get("assignee")
+                if name in self.agents and not self.agents[name].is_hermes:
                     tasks.setdefault(name, (board_name, t["id"], t))
         for name in sorted(set(pending) | set(tasks), key=lambda n: (not self.agents[n].is_lead if n in self.agents else True, n)):
             agent = self.agents.get(name)
             if agent is None or name in self.running or not self._allowed(agent, now):
                 continue
             if agent.is_hermes:
-                if self.gate is not None and agent.name in getattr(self.gate, "profiles", ()) and not getattr(self.gate, "up", True):
-                    continue      # its model host is down: the wakeups stay open until it is back
                 if may_spawn_local() and pending.get(name):
                     self._start(agent, pending[name], None, now)
                 continue
@@ -505,7 +482,7 @@ class OrgRunner:
             if agent.is_hermes:
                 proc = self.spawn_hermes(self.settings, agent, wake_prompt(agent, claimed, None), session, run_id, cwd, log_path)
             else:
-                proc = self.spawn(self.settings, agent, lane, task_ref, wake_prompt(agent, claimed, task_ref, self.settings.board_backend == "engine"), session, run_id, cwd, log_path)
+                proc = self.spawn(self.settings, agent, lane, task_ref, wake_prompt(agent, claimed, task_ref), session, run_id, cwd, log_path)
         except Exception as exc:
             log.exception("spawn failed for %s", agent.name)
             if task_ref:

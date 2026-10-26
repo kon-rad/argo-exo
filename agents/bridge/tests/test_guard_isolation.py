@@ -76,8 +76,8 @@ def test_installer_prints_the_sudo_steps_and_never_runs_them():
     for cmd in ("systemctl", "visudo", "sudoers.d", "cre login", "tee "):
         assert cmd not in run, cmd
     msg = INSTALL[INSTALL.index("cat <<MSG"):]
-    assert "systemctl enable --now nownodes-proxy exo-bridge" in msg and "visudo -c" in msg
-    assert "NOPASSWD: $HERMES_HOME_DIR/.local/bin/hermes kanban *" in msg
+    assert "systemctl enable --now nownodes-proxy exo-bridge" in msg and "sudoers.d" not in msg
+    assert "hermes kanban" not in INSTALL and "exo-hermes" not in INSTALL     # the board goes over HTTPS now, no sudo to hermes
 
 
 def test_installer_never_prints_a_token():
@@ -89,7 +89,7 @@ def test_installer_never_prints_a_token():
 
 def test_bridge_env_template_has_the_guardian_keys():
     for key in ("EXO_BRIDGE_TOKEN=", "EXO_GUARD_TOKEN=", "EXO_LEDGER_WRITER_DSN=", "EXO_LEDGER_DSN=",
-                "EXO_GUARDIAN_BROADCAST=0", "HERMES_BIN=$WRAPPER"):
+                "EXO_GUARDIAN_BROADCAST=0", "BOARD_URL=", "BOARD_TOKEN=", "BRIDGE_AGENT_MAP="):
         assert key in INSTALL, key
 
 

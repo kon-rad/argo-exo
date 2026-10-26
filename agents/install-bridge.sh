@@ -13,9 +13,9 @@
 #
 # Needs: Tailscale up (the bridge binds the tailnet IP ONLY), git, openssl, python3, and the hermes gateway's
 # api_server enabled (API_SERVER_KEY in ~hermes/.hermes/.env).
-# It creates the user, the directories, the checkout, the venv, the env files and the kanban wrapper, and fixes
+# It creates the user, the directories, the checkout, the venv, the env files, and fixes
 # their owners and modes. Tokens are written to the env file and never printed. It does NOT install the systemd
-# unit, the sudoers rule, bun or cre, does not start anything and never touches the gateway: it prints those steps.
+# unit, bun or cre, does not start anything and never touches the gateway: it prints those steps.
 set -euo pipefail
 
 die() { echo "ERROR: $*" >&2; exit 1; }
@@ -27,7 +27,6 @@ VENV=$GUARD_HOME/venv
 CONF=$GUARD_HOME/config
 ENV=$CONF/bridge.env
 CRE_ENV=$CHECKOUT/chain/cre/.env
-WRAPPER=/usr/local/bin/exo-hermes
 REPO_URL="${EXO_GUARD_REPO_URL:-https://github.com/kon-rad/argo-exo.git}"
 REF="${EXO_GUARD_REF:-main}"
 HERMES_USER="${EXO_HERMES_USER:-hermes}"
@@ -80,13 +79,8 @@ fi
 as_guard "$VENV/bin/pip" install -q --disable-pip-version-check -r "$CHECKOUT/agents/bridge/requirements.txt"
 chmod 750 "$VENV"
 
-# 4. the kanban wrapper: the bridge (as exoguard) runs `hermes kanban ...` AS hermes, through one sudoers rule.
-cat > "$WRAPPER" <<WRAP
-#!/bin/sh
-# exo-bridge (user $GUARD_USER) -> the hermes kanban CLI, as $HERMES_USER. Allowed by /etc/sudoers.d/exo-bridge.
-exec sudo -n -H -u $HERMES_USER $HERMES_HOME_DIR/.local/bin/hermes "\$@"
-WRAP
-chown root:root "$WRAPPER"; chmod 755 "$WRAPPER"
+# 4. (no board wrapper any more: the bridge reaches the engine board over HTTPS with cli-board and BOARD_URL +
+#    BOARD_TOKEN from bridge.env, so exoguard needs neither sudo nor a database credential for it.)
 
 # 5. bridge.env (exoguard, 600). The tokens are generated here and never printed.
 if [[ -f "$ENV" ]]; then
@@ -105,9 +99,15 @@ else
     echo "EXO_BRIDGE_HOST=$TS_IP"
     echo "EXO_BRIDGE_PORT=8765"
     echo "EXO_BOARD=exo"
-    echo "EXO_TASK_MAX_RUNTIME=30m"
-    echo "EXO_TELEGRAM_CHAT_ID="
-    echo "HERMES_BIN=$WRAPPER"
+    echo "# The engine board (cli-board, HTTPS door). BOARD_TOKEN is a board token for the wearer (owner role)."
+    echo "BOARD_URL="
+    echo "BOARD_TOKEN="
+    echo "BRIDGE_CLI_BOARD=cli-board"
+    echo "# Hermes-era agent names to engine roster bots (name=bot,...). Default: researcher=vega,librarian=vega,builder=rune."
+    echo "BRIDGE_AGENT_MAP=researcher=vega,librarian=vega,builder=rune"
+    echo "# Telegram ping when a card the bridge filed finishes or blocks: a command that takes the text as its last"
+    echo "# argument. Empty = no ping (the engine board has no per-card Telegram subscription)."
+    echo "EXO_NOTIFY_CMD="
     echo "API_SERVER_URL=http://127.0.0.1:8642"
     echo "API_SERVER_KEY=$KEY"
     echo "# Writer DSN for the ledger (exo_writer): lives ONLY here. Empty = Guardian routes answer 503."
@@ -133,16 +133,15 @@ chown "$GUARD_USER:$GUARD_USER" "$CRE_ENV"; chmod 600 "$CRE_ENV"
 
 cat <<MSG
 
-Done: user, checkout, venv, env files, wrapper. Next, as a sudoer (NOT run here):
+Done: user, checkout, venv, env files. Next, as a sudoer (NOT run here):
 
-  # a. the one sudoers rule (exoguard may run only the hermes kanban CLI, as hermes):
-  echo '$GUARD_USER ALL=($HERMES_USER) NOPASSWD: $HERMES_HOME_DIR/.local/bin/hermes kanban *' | sudo tee /etc/sudoers.d/exo-bridge >/dev/null
-  sudo chmod 440 /etc/sudoers.d/exo-bridge && sudo visudo -c
+  # a. cli-board for $GUARD_USER: install the engine's cli-board on its PATH (/usr/local/bin) and fill BOARD_URL and
+  #    BOARD_TOKEN in $ENV (below). No sudoers rule is needed for the board any more.
   # b. bun and the cre CLI as exoguard (into $GUARD_HOME/.bun/bin and $GUARD_HOME/.cre/bin, the unit's PATH), then log in:
   sudo -u $GUARD_USER -H bash -lc 'command -v bun cre'      # install both as $GUARD_USER until this prints two paths
   sudo -u $GUARD_USER -H bash -lc 'cre login'
   # c. fill the secrets (never as $HERMES_USER):
-  sudoedit $ENV       # EXO_TELEGRAM_CHAT_ID, EXO_LEDGER_WRITER_DSN, EXO_LEDGER_DSN
+  sudoedit $ENV       # BOARD_URL, BOARD_TOKEN, EXO_NOTIFY_CMD, EXO_LEDGER_WRITER_DSN, EXO_LEDGER_DSN
   sudoedit $CRE_ENV   # CRE_ETH_PRIVATE_KEY (dedicated simulator key), NOWNODES_API_KEY, OPENROUTER_API_KEY, POLICY_JSON
   # d. the agents' narrow token into the Hermes env (copied without printing it), then EXO_BRIDGE_URL / EXO_SAFE by hand:
   sudo sh -c "grep '^EXO_GUARD_TOKEN=' $ENV >> $HERMES_ENV"
