@@ -160,7 +160,7 @@ def make(tmp_path, board=None, wakeups=(), t=None):
     return d, runner, ob, spawned, clock
 
 
-def log_result(path: Path, session="sess-1", result="posted a status", assistant=True):
+def log_result(path: Path, session="33333333-3333-4333-8333-333333333333", result="posted a status", assistant=True):
     lines = []
     if assistant:
         lines.append(json.dumps({"type": "assistant", "session_id": session, "message": {"content": [{"type": "text", "text": "hi"}]}}))
@@ -210,11 +210,11 @@ def test_a_dm_wakes_the_agent_once_with_all_its_wakeups(tmp_path):
     # Nothing new: no second run while they run, and none after they finish until a new wakeup.
     d.tick()
     assert len(spawned) == 2
-    log_result(atlas["log"], session="sess-atlas")
+    log_result(atlas["log"], session="22222222-2222-4222-8222-222222222222")
     atlas["proc"].code = 0
     d.tick()
     assert ob.finished[0] == ([1, 2], atlas["run_id"], 0, "posted a status")
-    assert ob.session_sets == [("atlas", "sess-atlas")]
+    assert ob.session_sets == [("atlas", "22222222-2222-4222-8222-222222222222")]
     assert "atlas" not in runner.running
 
 
@@ -223,7 +223,7 @@ def test_every_wake_opens_its_log_with_a_header_the_ledger_can_read(tmp_path):
         {"id": 1, "agent_name": "atlas", "reason": "dm", "ref": "7"},
         {"id": 2, "agent_name": "atlas", "reason": "mention", "ref": "9"},
     ])
-    ob.sessions["atlas"] = {"session_id": "sess-old", "session_started": datetime.now(TZ).date().isoformat()}
+    ob.sessions["atlas"] = {"session_id": "11111111-1111-4111-8111-111111111111", "session_started": datetime.now(TZ).date().isoformat()}
     ob.messages["9"] = {"thread_id": 3, "task_id": None}      # a reply in a thread: the session continues
     d.tick()
     atlas = spawned[0]
@@ -233,7 +233,7 @@ def test_every_wake_opens_its_log_with_a_header_the_ledger_can_read(tmp_path):
     assert head["wakeup_ids"] == [1, 2] and head["task_id"] is None and head["board"] is None
     assert head["resumed"] is True and head["model"] == "opus" and head["at"].startswith("2026-10-1")
     # A fresh session on a kanban card: resumed false, the card in the header, no wakeups.
-    log_result(atlas["log"], session="sess-old"); atlas["proc"].code = 0
+    log_result(atlas["log"], session="11111111-1111-4111-8111-111111111111"); atlas["proc"].code = 0
     clock["t"] += 3600
     runner.boards["exo"].ready.append({"id": "t_c0ffee01", "assignee": "rune", "priority": 1})
     d.tick()
@@ -284,7 +284,7 @@ def test_cooldown_and_daily_cap_hold_an_agent_back(tmp_path):
     clock["t"] += 6 * 60
     d.tick()
     assert len(spawned) == 3 and spawned[2]["agent"] == "atlas"
-    assert spawned[2]["session"] == "sess-1"       # resumed from the stored session
+    assert spawned[2]["session"] == "33333333-3333-4333-8333-333333333333"       # resumed from the stored session
 
 
 def test_global_slots_are_shared_with_the_lanes(tmp_path):
@@ -311,15 +311,15 @@ def test_a_kanban_task_assigned_to_an_agent_runs_as_that_agent_in_its_lane(tmp_p
     assert board.attached == [("t_org1", str(s["log"]))]
     assert board.blocks and "rune exited (code 1) without complete or block" in board.blocks[0][1]
     assert ob.finished == []                           # no board wakeups were involved
-    assert ob.session_sets == [("rune", "sess-1")]
+    assert ob.session_sets == [("rune", "33333333-3333-4333-8333-333333333333")]
 
 
 def test_resume_failure_clears_the_session(tmp_path):
     d, runner, ob, spawned, clock = make(tmp_path, wakeups=[{"id": 1, "agent_name": "atlas", "reason": "dm", "ref": "1"}])
-    ob.sessions["atlas"] = {"session_id": "old", "session_started": datetime.now(TZ).date().isoformat()}
+    ob.sessions["atlas"] = {"session_id": "44444444-4444-4444-8444-444444444444", "session_started": datetime.now(TZ).date().isoformat()}
     ob.messages["1"] = {"thread_id": 1, "task_id": None}
     d.tick()
-    assert spawned[0]["session"] == "old"
+    assert spawned[0]["session"] == "44444444-4444-4444-8444-444444444444"
     spawned[0]["proc"].code = 1
     spawned[0]["log"].write_text(json.dumps({"type": "result", "subtype": "error", "error": "No conversation found with session ID old"}) + "\n")
     d.tick()
@@ -328,7 +328,7 @@ def test_resume_failure_clears_the_session(tmp_path):
 
 
 def _saved(ob, agent="atlas"):
-    ob.sessions[agent] = {"session_id": "old", "session_started": datetime.now(TZ).date().isoformat()}
+    ob.sessions[agent] = {"session_id": "44444444-4444-4444-8444-444444444444", "session_started": datetime.now(TZ).date().isoformat()}
 
 
 def test_a_new_top_level_message_starts_fresh(tmp_path):
@@ -343,7 +343,7 @@ def test_a_reply_in_a_thread_resumes(tmp_path):
     _saved(ob)
     ob.messages["8"] = {"thread_id": 5, "task_id": None}
     d.tick()
-    assert spawned[0]["session"] == "old"
+    assert spawned[0]["session"] == "44444444-4444-4444-8444-444444444444"
 
 
 def test_a_routine_starts_fresh(tmp_path):
@@ -357,7 +357,7 @@ def test_the_owners_ship_answer_resumes(tmp_path):
     d, runner, ob, spawned, clock = make(tmp_path, wakeups=[{"id": 1, "agent_name": "atlas", "reason": "owner", "ref": "ship:3"}])
     _saved(ob)
     d.tick()
-    assert spawned[0]["session"] == "old"
+    assert spawned[0]["session"] == "44444444-4444-4444-8444-444444444444"
 
 
 def test_a_ticket_resumes_only_after_the_session_worked_it(tmp_path):
@@ -365,14 +365,21 @@ def test_a_ticket_resumes_only_after_the_session_worked_it(tmp_path):
     _saved(ob)
     d.tick()
     assert spawned[0]["session"] is None                 # a new task: fresh
-    spawned[0]["log"].write_text(json.dumps({"type": "result", "session_id": "s2", "result": "done"}) + "\n")
+    spawned[0]["log"].write_text(json.dumps({"type": "result", "session_id": "55555555-5555-4555-8555-555555555555", "result": "done"}) + "\n")
     spawned[0]["proc"].code = 0
     d.tick()
     assert d.org.state.session_tasks["atlas"] == ["t_new"]
     clock["t"] += 3600
     ob.wakeups.append({"id": 9, "agent_name": "atlas", "reason": "task", "ref": "t_new"})
     d.tick()
-    assert spawned[1]["session"] == "s2"                 # the same ticket again: resume
+    assert spawned[1]["session"] == "55555555-5555-4555-8555-555555555555"                 # the same ticket again: resume
+
+
+def test_a_session_id_the_cli_cannot_resume_is_dropped(tmp_path):
+    d, runner, ob, spawned, clock = make(tmp_path, wakeups=[{"id": 1, "agent_name": "atlas", "reason": "owner", "ref": "ship:3"}])
+    ob.sessions["atlas"] = {"session_id": "57322bd09651", "session_started": datetime.now(TZ).date().isoformat()}
+    d.tick()
+    assert spawned[0]["session"] is None and ob.session_sets == [("atlas", None)]
 
 
 def test_old_sessions_are_not_resumed(tmp_path):

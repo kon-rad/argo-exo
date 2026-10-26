@@ -37,6 +37,7 @@ log = logging.getLogger("cc-dispatcher.org")
 AUTHOR = "cc-dispatcher"
 WEEKDAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 TIMEOUT_ESCALATE_AFTER = 2   # consecutive runtime-cap hits on the same card before we stop re-waking it
+CLAUDE_SESSION = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.I)   # `claude --resume` takes only this
 HERMES_SESSION = re.compile(r"^\d{8}_\d{6}_[0-9a-f]+$")   # Hermes ids; a Claude session id (a uuid) is not resumable there
 
 
@@ -550,6 +551,10 @@ class OrgRunner:
             return None
         if agent.is_hermes != bool(HERMES_SESSION.match(str(sid))):
             # The bot changed runtime (lena: Claude Code -> Hermes, 2026-10-17): the old session is the other runtime's.
+            self._safe(self.org_board.set_session, agent.name, None)
+            return None
+        if not agent.is_hermes and not CLAUDE_SESSION.match(str(sid)):
+            # A bridge-era id (12 hex): the real CLI refuses `--resume` on it, and the failed run would eat the wakeup.
             self._safe(self.org_board.set_session, agent.name, None)
             return None
         try:
