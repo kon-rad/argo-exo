@@ -182,7 +182,41 @@ def spawn(job_id: str, spec: dict) -> None:
                          stderr=subprocess.STDOUT, start_new_session=True, close_fds=True, env=child_env)
 
 
+def board_door() -> tuple[str, str] | None:
+    """BOARD_URL and BOARD_TOKEN for the engine board: the environment, else the M1's own vault .env."""
+    url, token = os.environ.get("BOARD_URL", ""), os.environ.get("BOARD_TOKEN", "")
+    if not (url and token):
+        env_file = Path(os.environ.get("M1_JOBS_VAULT_ENV", HOME / "Documents" / "secondbrain" / ".env"))
+        try:
+            for line in env_file.read_text().splitlines():
+                k, _, v = line.partition("=")
+                if k.strip() == "BOARD_URL" and not url:
+                    url = v.strip().strip("\"'")
+                if k.strip() == "BOARD_TOKEN" and not token:
+                    token = v.strip().strip("\"'")
+        except OSError:
+            pass
+    return (url.rstrip("/"), token) if url and token else None
+
+
+def board_post(door: tuple[str, str], path: str, body: dict) -> bool:
+    import urllib.request
+    req = urllib.request.Request(f"{door[0]}/api/board{path}", data=json.dumps(body).encode(), method="POST",
+                                 headers={"Authorization": f"Bearer {door[1]}", "Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=60) as r:
+            return 200 <= r.status < 300
+    except Exception:
+        return False
+
+
 def report(card: str, text: str) -> None:
+    door = board_door()
+    if door:
+        # The engine board: comment the result, then put the card back in `ready` so its bot wakes and reads it.
+        board_post(door, f"/cards/{card}/comment", {"body": text[:3800]})
+        board_post(door, f"/cards/{card}/move", {"status": "ready", "note": "m1 job finished"})
+        return
     subprocess.run([KB, "comment", card, text[:3800]], timeout=60, capture_output=True)
     subprocess.run([KB, "unblock", card], timeout=60, capture_output=True)
 

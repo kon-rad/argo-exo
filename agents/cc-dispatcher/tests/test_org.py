@@ -616,3 +616,24 @@ def test_the_owners_ship_answer_is_described_as_one():
     lines = describe_wakeups([{"reason": "owner", "ref": "ship:12"}])
     assert lines == ["the owner answered ship request #12 (`cli-org ship list` shows it; approved: merge or deploy now, "
                      "denied: the note says what to fix)"]
+
+
+def test_engine_backend_gives_org_bots_cli_board_not_hermes_kanban(tmp_path):
+    import dataclasses
+    vault = org_vault(tmp_path)
+    settings = load(lanes_with_org(tmp_path, vault))
+    (Path(settings.lanes_path).parent / "worker-protocol-engine.md").write_text("ENGINE PROTOCOL")
+    settings = dataclasses.replace(settings, board_backend="engine")
+    agents = orgmod.load_agents(settings.org.agents_file)
+    cmd = org_command(settings, agents["rune"], settings.lanes["cc-test"], ("exo", "t_1"), "P", None)
+    sysp = cmd[cmd.index("--append-system-prompt") + 1]
+    assert "ENGINE PROTOCOL" in sysp and "PROTOCOL\n" not in sysp.replace("ENGINE PROTOCOL", "")
+    allowed = cmd[cmd.index("--allowedTools") + 1].split(",")
+    assert "Bash(cli-board finish *)" in allowed and "Bash(cli-board show *)" in allowed
+    assert not any("hermes kanban" in t for t in allowed)
+    env = org_env({"HOME": "/h", "PATH": "/x"}, settings, agents["rune"], "org-rune-1", ("exo", "t_1"))
+    assert env["CC_BOARD_BACKEND"] == "engine" and env["ORG_AGENT"] == "rune"
+    text = wake_prompt(agents["rune"], [{"reason": "task", "ref": "t_1"}], ("exo", "t_1"), engine=True)
+    assert "cli-board show t_1 --json" in text and "cli-board finish t_1" in text and "hermes" not in text
+    hermes_text = wake_prompt(agents["rune"], [{"reason": "task", "ref": "t_1"}], ("exo", "t_1"))
+    assert "hermes kanban --board exo show t_1" in hermes_text

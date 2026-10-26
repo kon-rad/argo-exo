@@ -106,9 +106,31 @@ def ship_check(card: str, *, pr: str | None = None, deploy: str | None = None) -
     return p.stdout.strip()
 
 
+def engine_board() -> bool:
+    """True when cc-dispatcher runs this bot on the engine board (it sets CC_BOARD_BACKEND); else the Hermes board."""
+    return os.environ.get("CC_BOARD_BACKEND") == "engine"
+
+
 def card_comment(card: str, text: str, author: str) -> None:
+    if engine_board():
+        # The engine's author is the caller's ORG_AGENT (already set for the run), never a flag.
+        run([binary("CLI_BOARD_BIN", "cli-board"), "comment", "--", card, text[:4000]], check=False)
+        return
     run([binary("HERMES_BIN", "hermes"), "kanban", "--board", os.environ.get("HERMES_KANBAN_BOARD", "exo"), "comment",
          "--author", author, card, text[:4000]], check=False)
+
+
+def park_hint(card: str, why: str) -> str:
+    """The command a bot runs to wait on the M1: park the card; the M1 comments the result and puts it back in ready."""
+    if engine_board():
+        return f"`cli-board finish {card} --blocked dependency \"{why}\"`"
+    return f"`hermes kanban schedule {card} \"{why}\"`"
+
+
+def block_hint(card: str, why: str) -> str:
+    if engine_board():
+        return f"`cli-board finish {card} --blocked tool-error \"{why}\"`"
+    return f"`hermes kanban block {card} \"{why}\"`"
 
 
 def check_card(card: str) -> str:
@@ -280,8 +302,8 @@ def test_on_m1(agent: dict, repo: str, card: str, wt: Path) -> str:
         out = m1(["test", repo, card, agent["name"], sha], timeout=300, data=pack_worktree(wt))
     except BotError as exc:
         return (f"not run: the M1 is off or unreachable ({exc}). Heavy tests never run on the droplet. "
-                f"`hermes kanban block {card} \"M1 off: {repo} tests wait for it\"` and stop.")
-    return (f"{out}{' (with your uncommitted changes)' if dirty else ''}\nNow `hermes kanban schedule {card} \"waiting on M1 tests\"` "
+                f"{block_hint(card, f'M1 off: {repo} tests wait for it')} and stop.")
+    return (f"{out}{' (with your uncommitted changes)' if dirty else ''}\nNow {park_hint(card, 'waiting on M1 tests')} "
             "and stop: the M1 comments PASSED or FAILED with the log tail on the card and puts it back in ready, which wakes "
             "you. Schedule, not block: a block repeated for the same reason trips the board's loop breaker into triage.")
 
@@ -572,7 +594,7 @@ def cmd_m1(agent: dict, argv: list[str]) -> str:
         job, card = argv[1], check_card(argv[3])
         rest = argv[5:] if len(argv) > 4 and argv[4] == "--" else argv[4:]
         out = m1(["run", job, card, agent["name"], *rest])
-        return (f"{out}\nNow `hermes kanban schedule {card} \"waiting on m1 job\"` and stop: the M1 comments the result on the card "
+        return (f"{out}\nNow {park_hint(card, 'waiting on m1 job')} and stop: the M1 comments the result on the card "
                 "and puts it back in ready when the job ends, which wakes you.")
     return m1(argv)
 
