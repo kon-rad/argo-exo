@@ -794,3 +794,10 @@ def test_engine_board_lists_ready_cards_in_one_call():
         return subprocess.CompletedProcess(cmd, 0, stdout='[{"id": "t_a"}]', stderr="")
     rows = EngineBoard("cli-board", "exo", run=run).ready_tasks()
     assert rows == [{"id": "t_a"}] and calls[0][1:] == ["list", "--status", "ready", "--board", "exo", "--json"]
+
+
+def test_shadow_ignores_cards_no_lane_or_bot_would_claim():
+    from cc_dispatcher import shadow
+    rows = [{"id": "t_a", "assignee": "rune"}, {"id": "t_b", "assignee": "konrad"}, {"id": "t_c", "assignee": None}]
+    assert shadow.ids(rows, {"rune", "cc-dev"}) == {"t_a": "rune"}
+    assert set(shadow.ids(rows)) == {"t_a", "t_b", "t_c"}

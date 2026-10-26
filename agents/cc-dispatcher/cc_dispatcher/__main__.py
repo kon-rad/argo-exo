@@ -32,9 +32,11 @@ def main(argv: list[str] | None = None) -> int:
     settings.runs_dir.mkdir(parents=True, exist_ok=True)
     if args.command == "shadow":
         from . import shadow
+        from .org import load_agents
+        claimable = set(settings.lanes) | (set(load_agents(settings.org.agents_file)) if settings.org else set())
         report = shadow.run({b: Board(settings.hermes_bin, b) for b in settings.boards},
                             {b: EngineBoard(settings.cli_board_bin, b) for b in settings.boards},
-                            settings.runs_dir / "shadow-state.json", print)
+                            settings.runs_dir / "shadow-state.json", print, claimable=claimable)
         return 0 if all(v.get("ok", False) for v in report["shadow"].values()) else 3
     if settings.board_backend == "engine":
         boards = {b: EngineBoard(settings.cli_board_bin, b) for b in settings.boards}
