@@ -811,3 +811,16 @@ def test_engine_comment_text_that_looks_like_a_flag_gets_a_leading_space():
         return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
     EngineBoard("cli-board", "exo", run=run).comment("t_1", "--not a flag", "rune")
     assert calls[0] == ["cli-board", "comment", "t_1", " --not a flag"]
+
+
+def test_engine_dispatcher_notes_go_in_as_the_owner_door_with_a_label():
+    seen = []
+
+    def run(cmd, **kw):
+        seen.append((cmd, (kw.get("env") or {}).get("ORG_AGENT")))
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+    b = EngineBoard("cli-board", "exo", run=run)
+    b.comment("t_1", "worker started", "cc-dispatcher")
+    b.comment("t_1", "hello", "rune")
+    assert seen[0][0] == ["cli-board", "comment", "t_1", "[cc-dispatcher] worker started"] and seen[0][1] is None
+    assert seen[1][1] == "rune"

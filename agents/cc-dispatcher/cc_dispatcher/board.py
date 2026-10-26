@@ -174,6 +174,11 @@ class EngineBoard:
 
     def comment(self, task_id: str, text: str, author: str) -> None:
         # "--": a comment can start with "-". No --author: the engine's author is always ORG_AGENT, never a flag.
+        if author == "cc-dispatcher":
+            # The dispatcher has no roster row on the engine board (a comment as it fails: "agent is retired"), so its
+            # notes go in as the owner's database door, labelled.
+            self._call(None, "comment", task_id, _arg(f"[cc-dispatcher] {text}"))
+            return
         self._call(author, "comment", task_id, _arg(text))
 
     def block(self, task_id: str, reason: str, kind: str = "transient", as_agent: str | None = None) -> None:
