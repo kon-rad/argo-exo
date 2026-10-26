@@ -30,7 +30,7 @@ from typing import Callable
 from zoneinfo import ZoneInfo
 
 from . import worker
-from .board import Board, BoardError
+from .board import Board, BoardError, created_ts
 from .config import Lane, OrgSettings, Settings
 
 log = logging.getLogger("cc-dispatcher.org")
@@ -436,7 +436,7 @@ class OrgRunner:
             log.warning("cli-org wakeups failed: %s", exc)
             return 0
         tasks: dict[str, tuple[str, str, dict]] = {}
-        order = lambda t: (-int(t.get("priority") or 0), int(t.get("created_at") or 0))   # noqa: E731
+        order = lambda t: (-int(t.get("priority") or 0), created_ts(t))   # noqa: E731
         for board_name, board in self.boards.items():
             if hasattr(board, "ready_tasks"):
                 # One listing per board per tick, filtered here (was one `hermes kanban list` per bot, 22 every 30 s).

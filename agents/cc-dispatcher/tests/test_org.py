@@ -637,3 +637,11 @@ def test_engine_backend_gives_org_bots_cli_board_not_hermes_kanban(tmp_path):
     assert "cli-board show t_1 --json" in text and "cli-board finish t_1" in text and "hermes" not in text
     hermes_text = wake_prompt(agents["rune"], [{"reason": "task", "ref": "t_1"}], ("exo", "t_1"))
     assert "hermes kanban --board exo show t_1" in hermes_text
+
+
+def test_ready_cards_with_iso_created_at_sort_without_crashing(tmp_path):
+    from cc_dispatcher.board import created_ts
+    assert created_ts({"created_at": 1793000000}) == 1793000000.0
+    assert created_ts({"created_at": "1793000000"}) == 1793000000.0
+    assert created_ts({"created_at": "2026-10-26T09:46:12.252Z"}) > 1.7e9
+    assert created_ts({}) == 0.0 and created_ts({"created_at": "junk"}) == 0.0

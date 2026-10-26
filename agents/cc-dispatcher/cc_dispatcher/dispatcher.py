@@ -13,7 +13,7 @@ from typing import Callable
 from zoneinfo import ZoneInfo
 
 from . import verify, worker
-from .board import Board, BoardError, BoardLike
+from .board import Board, BoardError, BoardLike, created_ts
 from .config import Lane, Settings
 from .local_gate import LocalGate
 from .org import OrgBoard, OrgRunner
@@ -127,7 +127,7 @@ class Dispatcher:
         for board_name, board in self.boards.items():
             for lane in self.settings.lanes.values():
                 for task in sorted(self._safe(board.tasks, lane.name, "ready") or [],
-                                   key=lambda t: (-int(t.get("priority") or 0), int(t.get("created_at") or 0))):
+                                   key=lambda t: (-int(t.get("priority") or 0), created_ts(t))):
                     if not self._may_spawn(now):
                         return
                     self._start(board_name, board, lane, task["id"], now)
