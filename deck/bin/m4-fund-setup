@@ -1,0 +1,22 @@
+#!/bin/bash
+# One-time: make the M4 deck key (keystore in ~/.argo-fund-deck, random passphrase in the Keychain) and print its address.
+# Safe to re-run: an existing key is kept. Bridge token: `m4-fund-setup token` (prompts, stores in the Keychain).
+set -euo pipefail
+D="${ARGO_FUND_DECK:-$HOME/.argo-fund-deck}"; mkdir -p "$D"; chmod 700 "$D"
+if [ "${1:-}" = token ]; then
+  read -rsp "EXO_BRIDGE_TOKEN: " TOK; echo
+  security add-generic-password -U -a "$USER" -s argo-fund-bridge-token -w "$TOK"; echo "stored."; exit 0
+fi
+if [ ! -f "$D/hot.json" ]; then
+  PW="$(openssl rand -hex 24)"
+  security add-generic-password -U -a "$USER" -s argo-fund-deck-passphrase -w "$PW"
+  PW="$PW" "$D/venv/bin/python" - "$D/hot.json" <<'PY'
+import json, os, sys
+from eth_account import Account
+a = Account.create()
+fd = os.open(sys.argv[1], os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+with os.fdopen(fd, "w") as fh:
+    json.dump(Account.encrypt(a.key, os.environ["PW"]), fh)
+PY
+fi
+python3 -c "import json,sys; print('0x'+json.load(open(sys.argv[1]))['address'])" "$D/hot.json"

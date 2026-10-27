@@ -59,9 +59,18 @@ def test_trade_log_newest_first_and_nav(tmp_path):
     assert f"**NAV:** $101.50 {store.NAV_MARK}" in log.read_text()
 
 
-def test_rules_are_an_empty_hook():
-    assert rules.check({"sell": "USDC", "buy": "WETH", "amount": "1000000"}, {}) == []
-    assert "waived" in rules.describe()
+def test_minimal_rules():
+    i = {"sell": "USDC", "buy": "WETH", "amount": "30"}
+    assert rules.check(i, {}, {"slippage_bps": 100, "executed_today": 1}) == []
+    assert rules.check(i, {}) == []
+    assert any("slippage" in v for v in rules.check(i, {}, {"slippage_bps": 150}))
+    assert any("today" in v for v in rules.check(i, {}, {"executed_today": 2}))
+    assert "trades/day" in rules.describe()
+
+
+def test_notify_without_token_is_a_noop():
+    from fund_trade import notify
+    assert notify.send("hi", env={"FUND_ENV_FILE": "/nonexistent"}) is False
 
 
 def test_cli_propose_list_show_refuse_log(tmp_path):

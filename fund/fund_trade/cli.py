@@ -97,12 +97,15 @@ def run(argv: list[str], env=None) -> dict:
             raise store.StoreError("--votes must be JSON") from None
         prop = store.create(f.proposals, meeting=a.meeting, motion=a.motion,
                             intent={"sell": a.sell, "buy": a.buy, "amount": a.amount}, votes=votes)
+        service.notice(f, f"proposal {prop['id']} waiting for your approval: sell {a.amount} {a.sell} for {a.buy} "
+                          f"(committee {prop['tally']}). Run m4-fund-approve on the M4.")
         return {"id": prop["id"], "tally": prop["tally"], "status": prop["status"]}
     if a.cmd == "withdraw":
         f.savings                                            # fail now, not at approve time, if it's unset
         votes = json.loads(a.votes) if a.votes else None
         prop = store.create_withdrawal(f.proposals, token=a.token, amount=a.amount, reason=a.reason,
                                        meeting=a.meeting, votes=votes)
+        service.notice(f, f"withdrawal {prop['id']} waiting for your approval: {a.amount} {a.token} to savings. Run m4-fund-approve on the M4.")
         return {"id": prop["id"], "status": prop["status"], "to": f.savings}
     if a.cmd == "proposals":
         store.expire(f.proposals)

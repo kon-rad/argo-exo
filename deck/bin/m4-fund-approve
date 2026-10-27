@@ -1,0 +1,12 @@
+#!/bin/bash
+# Approve (or --refuse) the top Argo Fund proposal from the M4. The keystore passphrase and the bridge token are read
+# from the macOS Keychain; the passphrase sits in a 0600 temp file only while this runs.
+set -euo pipefail
+D="${ARGO_FUND_DECK:-$HOME/.argo-fund-deck}"
+set -a; . "$D/env"; set +a
+EXO_BRIDGE_TOKEN="$(security find-generic-password -a "$USER" -s argo-fund-bridge-token -w)"
+T="$(mktemp -d)"; chmod 700 "$T"; trap 'rm -rf "$T"' EXIT
+security find-generic-password -a "$USER" -s argo-fund-deck-passphrase -w > "$T/pass"; chmod 600 "$T/pass"
+export EXO_BRIDGE_TOKEN EXO_HOT_PASSFILE="$T/pass" EXO_HOT_KEYSTORE="$D/hot.json"
+SRC="${ARGO_EXO_DECK_SRC:-$(cd "$(dirname "$0")/.." && pwd)}"
+cd "$SRC" && "$D/venv/bin/python" -m exo_deck.m4_approve "$@"

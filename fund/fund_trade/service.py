@@ -6,7 +6,7 @@ from decimal import Decimal, InvalidOperation
 
 from eth_utils import to_checksum_address
 
-from . import kyber, prices, rules, safe as sf, store
+from . import kyber, notify, prices, rules, safe as sf, store
 from .chain import NATIVE, Chain, ChainError
 from .config import ConfigError, Fund
 from .tokens import BASE, resolve, symbol_for
@@ -124,6 +124,17 @@ def _prepare_withdrawal(f: Fund, ch: Chain, prop: dict, now: float) -> dict:
     return _prepared(f, prop, tx, now, summary, {"token": token, "amount": str(amount), "dec": dec, "to": dest})
 
 
+def _executed_today(f: Fund, now: float) -> int:
+    day = store._iso(now)[:10]
+    return sum(1 for p in store.listing(f.proposals, ("executed",))
+               if p.get("kind") == "swap" and str((p.get("result") or {}).get("at", ""))[:10] == day)
+
+
+def notice(f: Fund, text: str) -> None:
+    """Telegram line to Konrad; never raises."""
+    notify.send(f"Argo Fund: {text}")
+
+
 def prepare(f: Fund, ch: Chain, pid: str, now: float | None = None) -> dict:
     """Fresh quote → Safe transaction → hash. Returns what the deck needs to check and sign."""
     now = time.time() if now is None else now
@@ -140,7 +151,8 @@ def prepare(f: Fund, ch: Chain, pid: str, now: float | None = None) -> dict:
         raise TradeError(str(exc)) from None
     if t_in.lower() == t_out.lower():
         raise TradeError("sell and buy are the same token")
-    violations = rules.check(prop["intent"], {})
+    violations = rules.check(prop["intent"], {}, {"slippage_bps": int(f.cfg["slippage_bps"]),
+                                                   "executed_today": _executed_today(f, now)})
     if violations:
         raise TradeError("rules: " + "; ".join(violations))
     dec_in, dec_out = ch.decimals(t_in), ch.decimals(t_out)
@@ -199,6 +211,7 @@ def execute(f: Fund, ch: Chain, pid: str, deck_sig_hex: str, now: float | None =
         prop["status"], prop["result"] = "failed", {"error": str(exc)[:300], "at": store._iso(now)}
         store.save(f.proposals, prop)
         _log(f, prop, f"Failed: {prop['prepared']['summary']}", f"Error: {str(exc)[:200]}")
+        notice(f, f"FAILED {prop['prepared']['summary']}: {str(exc)[:150]}")
         raise TradeError(f"execution failed: {exc}") from None
     txh = rcpt["transactionHash"]
     if withdraw:
@@ -213,6 +226,7 @@ def execute(f: Fund, ch: Chain, pid: str, deck_sig_hex: str, now: float | None =
                                                          "approved_by": signer})
     store.save(f.proposals, prop)
     _log(f, prop, headline, f"**Tx:** [{txh[:10]}…](https://basescan.org/tx/{txh})")
+    notice(f, f"{headline}\nhttps://basescan.org/tx/{txh}")
     try:
         p = portfolio(f, ch)
         store.set_nav(f.dir / "trade-log.md", f"**NAV:** ${p['nav_usd']:,.2f} as of {p['as_of']}")
@@ -232,6 +246,7 @@ def refuse(f: Fund, pid: str, reason: str = "refused by Konrad", now: float | No
     what = (f"move {i['amount']} {i['token']} to savings" if prop.get("kind") == "withdraw"
             else f"sell {i['amount']} {i['sell']} for {i['buy']}")
     _log(f, prop, f"Refused: {what}", f"**Reason:** {reason[:200]}")
+    notice(f, f"refused: {what} ({reason[:100]})")
     return {"id": pid, "status": "refused"}
 
 

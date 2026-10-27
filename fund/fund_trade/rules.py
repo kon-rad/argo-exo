@@ -1,16 +1,26 @@
 """The rule check every trade passes through before it's prepared.
 
-MVP: no rules. Konrad waived them while the fund holds ~100 USDC (2026-10-14); the Safe's 2-of-3 signatures are the
-safety. This function is the one place to add them later (token allowlist, max trade size, trades per day,
-slippage cap, recipient = Safe). It returns a list of violations; an empty list means "go"."""
+Minimal on purpose (Konrad, 2026-10-28: trade live from day one, rules very light). The Safe's 2-of-3 signatures and
+the deck's own checks (chain, Safe, destination, hash) stay the main guard. Each rule returns a reason string; an
+empty list means "go". Add rules here, nowhere else."""
 from __future__ import annotations
 
-RULES_ACTIVE: list[str] = []   # names of the rules in force, shown in `status` and in every trade-log entry
+MAX_SLIPPAGE_BPS = 100          # 1%
+MAX_TRADES_PER_DAY = 2          # executed swaps per UTC day
+
+RULES_ACTIVE: list[str] = [f"slippage<={MAX_SLIPPAGE_BPS}bps", f"trades/day<={MAX_TRADES_PER_DAY}"]
 
 
-def check(intent: dict, portfolio: dict) -> list[str]:  # noqa: ARG001 (the signature the real rules will use)
-    return []
+def check(intent: dict, portfolio: dict, ctx: dict | None = None) -> list[str]:  # noqa: ARG001
+    """ctx: {"slippage_bps": int, "executed_today": int}. Swaps only; withdrawals to savings are never limited here."""
+    ctx = ctx or {}
+    out: list[str] = []
+    if int(ctx.get("slippage_bps", 0)) > MAX_SLIPPAGE_BPS:
+        out.append(f"slippage {ctx['slippage_bps']} bps is over the {MAX_SLIPPAGE_BPS} bps cap")
+    if int(ctx.get("executed_today", 0)) >= MAX_TRADES_PER_DAY:
+        out.append(f"{ctx['executed_today']} trades already executed today (max {MAX_TRADES_PER_DAY})")
+    return out
 
 
 def describe() -> str:
-    return ", ".join(RULES_ACTIVE) if RULES_ACTIVE else "none (MVP: waived)"
+    return ", ".join(RULES_ACTIVE) if RULES_ACTIVE else "none"
