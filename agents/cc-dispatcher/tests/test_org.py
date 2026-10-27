@@ -1,5 +1,6 @@
 """The agent company runner: wakeups from the board, board cards for agents, coalescing, caps, routines, sessions."""
 import json
+from dataclasses import replace
 import os
 import signal
 from datetime import datetime
@@ -89,6 +90,13 @@ class FakeOrgBoard:
         self.claims, self.finished, self.added, self.sessions, self.session_sets = [], [], [], {}, []
         self.fail_claim = False
         self.messages = {}            # ref -> {"thread_id", "task_id"}; an unknown ref is a new top-level message
+        self.override_rows, self.override_reads, self.fail_overrides = {}, 0, False   # agent -> cli-org overrides row
+
+    def overrides(self):
+        self.override_reads += 1
+        if self.fail_overrides:
+            raise BoardError("cli-org overrides: db down")
+        return self.override_rows
 
     def message(self, agent, ref):
         return self.messages.get(str(ref), {"thread_id": None, "task_id": None})
@@ -146,7 +154,7 @@ def make(tmp_path, board=None, wakeups=(), t=None):
 
     def spawn(settings, agent, lane, task, prompt, session_id, run_id, cwd, log_path):
         p = FakeProc()
-        spawned.append({"agent": agent.name, "lane": lane.name if lane else None, "task": task, "prompt": prompt,
+        spawned.append({"agent": agent.name, "model": agent.model, "effort": agent.effort, "runtime": agent.runtime, "lane": lane.name if lane else None, "task": task, "prompt": prompt,
                         "session": session_id, "run_id": run_id, "cwd": cwd, "log": log_path, "proc": p})
         log_path.parent.mkdir(parents=True, exist_ok=True)
         log_path.touch()            # the runner wrote the header already; a worker only appends
@@ -623,3 +631,45 @@ def test_ready_cards_with_iso_created_at_sort_without_crashing(tmp_path):
     assert created_ts({"created_at": "1793000000"}) == 1793000000.0
     assert created_ts({"created_at": "2026-10-26T09:46:12.252Z"}) > 1.7e9
     assert created_ts({}) == 0.0 and created_ts({"created_at": "junk"}) == 0.0
+
+
+# -- owner overrides (cutover plan 5a, card t_edade866) -----------------------------------------------------------
+DM = {"id": 1, "agent_name": "atlas", "reason": "dm", "ref": "7"}
+
+
+def test_an_override_changes_the_model_and_effort_of_the_next_wake_with_no_reload(tmp_path):
+    d, runner, ob, spawned, clock = make(tmp_path, wakeups=[DM])
+    ob.override_rows = {"atlas": {"agent": "atlas", "runtime": None, "model": "haiku", "effort": "low"}}
+    d.tick()
+    assert (spawned[0]["model"], spawned[0]["effort"], spawned[0]["runtime"]) == ("haiku", "low", "claude-code")
+    cmd = org_command(runner.settings, replace(runner.agents["atlas"], model="haiku", effort="low"), None, None, "P", None)
+    assert cmd[cmd.index("--model") + 1] == "haiku" and cmd[cmd.index("--effort") + 1] == "low"
+
+
+def test_no_override_leaves_the_roster_model_and_passes_no_effort_flag(tmp_path):
+    d, runner, ob, spawned, clock = make(tmp_path, wakeups=[DM])
+    d.tick()
+    assert (spawned[0]["model"], spawned[0]["effort"]) == (runner.agents["atlas"].model, None)
+    assert "--effort" not in org_command(runner.settings, runner.agents["atlas"], None, None, "P", None)
+
+
+def test_overrides_are_read_once_per_ttl_and_a_failed_read_keeps_the_last_good_copy(tmp_path):
+    d, runner, ob, spawned, clock = make(tmp_path, wakeups=[DM, {"id": 2, "agent_name": "rune", "reason": "handoff", "ref": "11"}])
+    ob.override_rows = {"atlas": {"agent": "atlas", "model": "haiku"}}
+    d.tick()
+    assert ob.override_reads == 1 and [s["model"] for s in spawned][0] == "haiku"      # atlas and rune share one read
+    log_result(spawned[0]["log"])
+    spawned[0]["proc"].code = 0
+    clock["t"] += 3600
+    ob.fail_overrides = True
+    ob.wakeups.append({"id": 3, "agent_name": "atlas", "reason": "dm", "ref": "12"})
+    d.tick()
+    assert ob.override_reads == 2     # tried again after the TTL and failed; the tick did not crash
+    assert [s["model"] for s in spawned if s["agent"] == "atlas"] == ["haiku", "haiku"]      # the last good copy applied
+
+
+def test_an_override_onto_another_lanes_runtime_is_not_spawned_here(tmp_path):
+    d, runner, ob, spawned, clock = make(tmp_path, wakeups=[DM])
+    ob.override_rows = {"atlas": {"agent": "atlas", "runtime": "zen-agent", "model": "openrouter/x/y"}}
+    d.tick()
+    assert spawned == [] and ob.claims == []        # left unclaimed for the zen-agent lane

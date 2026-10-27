@@ -23,7 +23,7 @@ import os
 import re
 import subprocess
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from pathlib import Path
 from typing import Callable
@@ -60,6 +60,7 @@ class OrgAgent:
     work: str | None = None               # research | coding | design | media | writing | sales | education | ops
     runtime: str = "claude-code"          # claude-code | hermes
     capabilities: tuple[str, ...] = ()    # code | review | merge | deploy | m1 | web (tools come with them from the compiler)
+    effort: str | None = None             # low | medium | high | xhigh | max; only ever set by an owner override
 
     @property
     def is_hermes(self) -> bool:
@@ -82,6 +83,17 @@ def load_agents(path: Path) -> dict[str, OrgAgent]:
             capabilities=tuple(a.get("capabilities", [])),
         )
     return agents
+
+
+def apply_override(agent: OrgAgent, ov: dict | None) -> OrgAgent | None:
+    """override ?? roster (the engine's claim path does the same). None when the override moves the bot to a runtime
+    this dispatcher does not run (zen-agent, codex): that lane's own worker picks it up, so we must not spawn it."""
+    if not ov:
+        return agent
+    runtime = ov.get("runtime") or agent.runtime
+    if runtime not in ("claude-code", "hermes"):
+        return None
+    return replace(agent, runtime=runtime, model=ov.get("model") or agent.model, effort=ov.get("effort") or agent.effort)
 
 
 def run_header(agent: OrgAgent, run_id: str, claimed: list[dict], task: tuple[str, str] | None, resumed: bool, at: str) -> dict:
@@ -113,6 +125,10 @@ class OrgBoard:
             return json.loads(p.stdout)
         except json.JSONDecodeError as exc:
             raise BoardError(f"cli-org {args[0]}: not JSON: {p.stdout[:120]!r}") from exc
+
+    def overrides(self) -> dict[str, dict]:
+        rows = self._json("overrides")
+        return {r["agent"]: r for r in rows if isinstance(r, dict) and r.get("agent")} if isinstance(rows, list) else {}
 
     def open_wakeups(self) -> list[dict]:
         rows = self._json("wakeups", "--all")
@@ -263,6 +279,7 @@ def org_command(settings: Settings, agent: OrgAgent, lane: Lane | None, task: tu
         settings.claude_bin, "-p", prompt,
         "--output-format", "stream-json", "--verbose",
         "--model", agent.model,
+        *(["--effort", agent.effort] if agent.effort else []),
         "--append-system-prompt", system_prompt(settings, agent, with_protocol=task is not None),
         "--permission-mode", agent.permission_mode,
         "--permission-prompts", "none",
@@ -375,6 +392,8 @@ class OrgRunner:
         self.state_path = self.settings.runs_dir / "org-state.json"
         self.state = OrgState.load(self.state_path)
         self.tz = ZoneInfo(org.timezone)
+        self._overrides: dict[str, dict] = {}
+        self._overrides_at = float("-inf")
 
     # -- roster reload -------------------------------------------------------------------------------------------
     def _agents_file_mtime(self) -> float:
@@ -433,6 +452,9 @@ class OrgRunner:
             agent = self.agents.get(name)
             if agent is None or name in self.running or not self._allowed(agent, now):
                 continue
+            agent = self._with_override(agent, now)
+            if agent is None:
+                continue      # overridden onto a runtime another lane serves
             if agent.is_hermes:
                 if may_spawn_local() and pending.get(name):
                     self._start(agent, pending[name], None, now)
@@ -442,6 +464,20 @@ class OrgRunner:
             if self._start(agent, pending.get(name, []), tasks.get(name), now):
                 started += 1
         return started
+
+    OVERRIDES_TTL = 30.0
+
+    def _with_override(self, agent: OrgAgent, now: float) -> OrgAgent | None:
+        """The agent as the owner's overrides leave it (cached for OVERRIDES_TTL seconds), so `cli-org set` takes effect
+        on the next wake with no deploy. If cli-org fails, the last good copy applies: a flaky read must not flip a
+        bot back to its roster model."""
+        if now - self._overrides_at >= self.OVERRIDES_TTL:
+            try:
+                self._overrides = self.org_board.overrides()
+            except BoardError as exc:
+                log.warning("cli-org overrides failed: %s; keeping the last read", exc)
+            self._overrides_at = now
+        return apply_override(agent, self._overrides.get(agent.name))
 
     def _allowed(self, agent: OrgAgent, now: float) -> bool:
         s = self.state.wakes.get(agent.name) or {}
