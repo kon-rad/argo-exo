@@ -16,3 +16,4 @@ node_modules/
 # case build outputs: 3MF/STEP/PNG are committed, STL is regenerated
 hardware/case/out/*.stl
 hardware/brooch/out/*.stl
+hardware/drafts/*/out/*.stl

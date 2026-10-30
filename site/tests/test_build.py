@@ -214,7 +214,7 @@ def test_blog_images_exist_and_newest_post_leads(site, tmp_path):
     build.build(site, tmp_path / "dist")
     posts = build.load_posts(site)
     newest = max(posts, key=lambda p: (p["date"], p["order"]))
-    assert newest["slug"] == "idea-to-print"
+    assert newest["slug"] == "argo-companion"
     index = (tmp_path / "dist" / "blog" / "index.html").read_text(encoding="utf-8")
     hrefs = re.findall(r'href="/blog/([\w-]+)\.html"', index)
     assert hrefs[0] == newest["slug"]
@@ -224,6 +224,8 @@ def test_blog_images_exist_and_newest_post_leads(site, tmp_path):
             assert (tmp_path / "dist" / src.lstrip("/")).exists(), (p["slug"], src)
     assert len(re.findall(r'<img\b[^>]*src="/static/img/blog/idea-to-print/',
                           (tmp_path / "dist" / "blog" / "idea-to-print.html").read_text(encoding="utf-8"))) == 14
+    assert len(re.findall(r'<img\b[^>]*src="/static/img/blog/argo-companion/',
+                          (tmp_path / "dist" / "blog" / "argo-companion.html").read_text(encoding="utf-8"))) == 3
 
 
 def test_blog_post_needs_front_matter_and_a_clean_slug(site, tmp_path):

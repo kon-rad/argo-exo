@@ -8,5 +8,6 @@ EXO_BRIDGE_TOKEN="$(security find-generic-password -a "$USER" -s argo-fund-bridg
 T="$(mktemp -d)"; chmod 700 "$T"; trap 'rm -rf "$T"' EXIT
 security find-generic-password -a "$USER" -s argo-fund-deck-passphrase -w > "$T/pass"; chmod 600 "$T/pass"
 export EXO_BRIDGE_TOKEN EXO_HOT_PASSFILE="$T/pass" EXO_HOT_KEYSTORE="$D/hot.json"
-SRC="${ARGO_EXO_DECK_SRC:-$(cd "$(dirname "$0")/.." && pwd)}"
+SELF="$0"; [ -L "$SELF" ] && SELF="$(readlink "$SELF")"
+SRC="${ARGO_EXO_DECK_SRC:-$(cd "$(dirname "$SELF")/.." && pwd)}"
 cd "$SRC" && "$D/venv/bin/python" -m exo_deck.m4_approve "$@"
