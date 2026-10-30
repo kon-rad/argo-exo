@@ -97,3 +97,13 @@ allowed_tools = ["Bash(cli-org *)", "Bash(cli-projects list*)", "Bash(cli-projec
 denied_tools = ["Read(//home/hermes/secondBrain/CURRENT/**)", "Edit(//home/hermes/secondBrain/CURRENT/**)",
                 "Write(//home/hermes/secondBrain/CURRENT/**)"]
 
+
+# Model routing for card wakes (engine docs/org-routing.md, "Dispatcher integration"; vault design
+# Areas/argo/second-brain/agent-company/org-config-and-model-routing-design.md). off: the bot's own model.
+# shadow: `cli-org route decide` is asked and its decision and the run's outcome are logged; the run is unchanged.
+# on: a `run` decision sets --model and --max-turns; park, ask-spec, wait and blocked block the card and start no run.
+[org.routing]
+mode = "off"
+config = "/home/hermes/secondBrain/.agents/org/routing.json"
+# max_tier = "t3"            # top of each bot's envelope; unset = the bot's own tier only, so nothing climbs
+timeout_seconds = 20

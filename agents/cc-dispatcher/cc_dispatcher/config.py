@@ -10,6 +10,8 @@ from pathlib import Path
 LANE_NAME = re.compile(r"^cc-[a-z0-9-]{1,30}$")   # never a Hermes profile name: the cc- prefix is the contract
 VERIFIER_NAME = re.compile(r"^[a-z0-9-]{1,40}$")
 MODES = {"default", "acceptEdits", "plan", "auto", "dontAsk"}
+ROUTING_MODES = ("off", "shadow", "on")
+TIERS = ("t0", "t1", "t2", "t3")   # the engine router's tiers (app/server/src/org-router.ts), cheapest first
 
 
 MAX_VERIFIER_SECONDS = 600
@@ -42,6 +44,16 @@ class Lane:
 
 
 @dataclass(frozen=True)
+class RoutingSettings:
+    """[org.routing] in lanes.toml: ask the engine's model router (`cli-org route decide`) before a bot's card wake.
+    Mirrors the zen-agent dispatcher's `dispatch.routing` (engine docs/org-routing.md). Off by default."""
+    mode: str = "off"              # off | shadow (log the decision and the outcome, run unchanged) | on (the decision runs)
+    config: Path | None = None     # routing.json from the vault's `compile.py routing`; load() resolves it against the vault
+    max_tier: str | None = None    # top of a bot's envelope; None = the bot's own tier only, so nothing climbs
+    timeout_seconds: int = 20      # a router that does not answer in time is skipped, never waited on
+
+
+@dataclass(frozen=True)
 class OrgSettings:
     """[org] in lanes.toml: the agent company (design §6 in the vault). Off unless `enabled = true`."""
     vault: Path                    # the vault checkout the agents work in (their cwd, the prompt files)
@@ -54,6 +66,7 @@ class OrgSettings:
     bots_work_dir: str = ""      # cli-git's worktrees; bots with the code capability get it as --add-dir
     allowed_tools: tuple[str, ...] = ()
     denied_tools: tuple[str, ...] = ()
+    routing: RoutingSettings = field(default_factory=RoutingSettings)
 
 
 @dataclass(frozen=True)
@@ -75,6 +88,21 @@ class Settings:
     max_attempts: int = 3
     org: OrgSettings | None = None
     cli_board_bin: str = "cli-board"
+
+
+def load_routing(r: dict, vault: Path) -> RoutingSettings:
+    mode = str(r.get("mode", "off"))
+    if mode not in ROUTING_MODES:
+        raise ValueError(f"[org.routing] mode {mode!r} not in {list(ROUTING_MODES)}")
+    max_tier = r.get("max_tier") or None
+    if max_tier is not None and max_tier not in TIERS:
+        raise ValueError(f"[org.routing] max_tier {max_tier!r} not in {list(TIERS)}")
+    timeout_seconds = int(r.get("timeout_seconds", 20))
+    if timeout_seconds <= 0:
+        raise ValueError(f"[org.routing] timeout_seconds must be > 0, got {timeout_seconds}")
+    config = Path(r.get("config", ".agents/org/routing.json"))
+    return RoutingSettings(mode=mode, config=config if config.is_absolute() else vault / config, max_tier=max_tier,
+                           timeout_seconds=timeout_seconds)
 
 
 def load(path: str | Path) -> Settings:
@@ -157,6 +185,7 @@ def load(path: str | Path) -> Settings:
             bots_work_dir=str(o.get("bots_work_dir", "")),
             allowed_tools=tuple(defaults.get("allowed_tools", [])) + tuple(o.get("allowed_tools", [])),
             denied_tools=tuple(defaults.get("denied_tools", [])) + tuple(o.get("denied_tools", [])),
+            routing=load_routing(o.get("routing", {}), vault),
         )
         missing = [str(f) for f in (org.agents_file, org.skill_file) if not f.exists()]
         if missing:

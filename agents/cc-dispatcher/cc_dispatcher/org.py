@@ -32,6 +32,7 @@ from zoneinfo import ZoneInfo
 from . import worker
 from .board import Board, BoardError, created_ts
 from .config import Lane, OrgSettings, Settings
+from .routing import Router, run_outcome
 
 log = logging.getLogger("cc-dispatcher.org")
 AUTHOR = "cc-dispatcher"
@@ -61,6 +62,8 @@ class OrgAgent:
     runtime: str = "claude-code"          # claude-code | hermes
     capabilities: tuple[str, ...] = ()    # code | review | merge | deploy | m1 | web (tools come with them from the compiler)
     effort: str | None = None             # low | medium | high | xhigh | max; only ever set by an owner override
+    routing: str = "routed"               # routed | fixed (leads, mergers, deployers keep their model; design "fixed")
+    max_turns: int | None = None          # a routed run's tier budget; None = [org] max_turns
 
     @property
     def is_hermes(self) -> bool:
@@ -80,9 +83,15 @@ def load_agents(path: Path) -> dict[str, OrgAgent]:
             wakes_per_day=int(a.get("wakes_per_day", 6)), cooldown_minutes=int(a.get("cooldown_minutes", 10)),
             max_runtime_minutes=int(a.get("max_runtime_minutes", 30)), routines=tuple(a.get("routines", [])),
             permission_mode=a.get("permission_mode", "acceptEdits"), work=a.get("work"), runtime=runtime,
-            capabilities=tuple(a.get("capabilities", [])),
+            capabilities=tuple(a.get("capabilities", [])), routing=routing_mode(a.get("routing")),
         )
     return agents
+
+
+def routing_mode(v) -> str:
+    """`routing: fixed` or `routing: {mode: fixed}` in org-agents.json (the design's `runtime: {mode: fixed}`)."""
+    mode = v.get("mode") if isinstance(v, dict) else v
+    return "fixed" if mode == "fixed" else "routed"
 
 
 def apply_override(agent: OrgAgent, ov: dict | None) -> OrgAgent | None:
@@ -179,6 +188,7 @@ class OrgRun:
     started: float
     resumed: bool
     task_ids: tuple = ()                   # board card ids this wake worked on (kept with the session)
+    route_id: int | None = None            # route_decisions id when the router decided this wake (shadow or on)
     interrupted_at: float | None = None
     timed_out: bool = False
 
@@ -283,7 +293,7 @@ def org_command(settings: Settings, agent: OrgAgent, lane: Lane | None, task: tu
         "--append-system-prompt", system_prompt(settings, agent, with_protocol=task is not None),
         "--permission-mode", agent.permission_mode,
         "--permission-prompts", "none",
-        "--max-turns", str(org.max_turns),
+        "--max-turns", str(agent.max_turns or org.max_turns),
         "--allowedTools", ",".join(dict.fromkeys(allowed)),
         "--disallowedTools", ",".join(dict.fromkeys(denied)),
     ]
@@ -382,6 +392,7 @@ class OrgRunner:
     clock: Callable[[], float] = time.time
     running: dict[str, OrgRun] = field(default_factory=dict)   # agent name -> run (one run per agent at a time)
     spawn_hermes: Callable = spawn_hermes
+    route_run: Callable = subprocess.run   # how `cli-org route` is called (tests pass a fake)
 
     def __post_init__(self):
         org = self.settings.org
@@ -394,6 +405,7 @@ class OrgRunner:
         self.tz = ZoneInfo(org.timezone)
         self._overrides: dict[str, dict] = {}
         self._overrides_at = float("-inf")
+        self.router = Router(org.routing, org.cli_org, self.route_run) if org.routing.mode != "off" else None
 
     # -- roster reload -------------------------------------------------------------------------------------------
     def _agents_file_mtime(self) -> float:
@@ -504,6 +516,17 @@ class OrgRunner:
             claimed = []
         if not claimed and not task_ref:
             return False
+        route_id = None
+        if task and task_ref and self.router is not None:
+            agent, route_id, stop = self._route(agent, run_id, task_ref[1], task[2])
+            if stop is not None:
+                # `on` and the router said not to run: no run, the card goes in front of the owner with the reason.
+                why = f"routed {stop['action']}: {stop.get('reason', '')}"[:600]
+                kind = "transient" if stop["action"] == "wait" else "needs_input"
+                self._safe(self.boards[task_ref[0]].block, task_ref[1], f"{agent.name}: {why}", kind)
+                if claimed:
+                    self._safe(self.org_board.done, [w["id"] for w in claimed], run_id, 0, why)
+                return False
         lane = self.settings.lanes.get(agent.lane) if agent.lane else None
         session = self._session_to_resume(agent)
         if session and not self._continues_work(agent, claimed, task_ref):
@@ -527,7 +550,7 @@ class OrgRunner:
                 self._safe(self.org_board.done, [w["id"] for w in claimed], run_id, 127, f"could not start the worker: {exc}")
             return False
         self.running[agent.name] = OrgRun(agent, run_id, [w["id"] for w in claimed], task_ref, proc, log_path, now, bool(session),
-                                        task_ids=self._task_ids(claimed, task_ref))
+                                        task_ids=self._task_ids(claimed, task_ref), route_id=route_id)
         day = self._day(now)
         s = self.state.wakes.get(agent.name) or {}
         self.state.wakes[agent.name] = {"day": day, "n": (s.get("n", 0) if s.get("day") == day else 0) + 1, "last": now}
@@ -537,6 +560,34 @@ class OrgRunner:
         log.info("woke %s for %s (pid %s)", agent.name, ", ".join(describe_wakeups(claimed)) or f"task {task_ref[1] if task_ref else '?'}",
                  getattr(proc, "pid", "?"))
         return True
+
+    def _route(self, agent: OrgAgent, run_id: str, card_id: str, card: dict) -> tuple[OrgAgent, int | None, dict | None]:
+        """(agent as it should run, route_decisions id, the decision when `on` says not to run). Mirrors the engine's
+        zen-agent dispatcher: shadow only logs; on swaps the model and turn budget for a `run`."""
+        router = self.router
+        assert router is not None
+        fixed = agent.routing == "fixed"
+        work = str(card.get("work_type") or agent.work or "ops")
+        d = router.decide(agent.name, agent.model, fixed, card_id, work, card.get("title"), run_id)
+        if d is None:
+            return agent, None, None
+        rid = d.get("decision_id") if isinstance(d.get("decision_id"), int) else None
+        action = d["action"]
+        log.info("%s: route %s %s%s: %s", agent.name, router.mode, action,
+                 f" {d['model']} ({d.get('tier')})" if action == "run" else "", d.get("reason", ""))
+        if router.mode != "on":
+            return agent, rid, None
+        if action != "run":
+            return agent, rid, d
+        if fixed:
+            log.info("%s: fixed bot, keeps %s", agent.name, agent.model)
+            return agent, rid, None
+        model = router.claude_model(str(d["model"]))
+        if model is None:
+            log.warning("%s: route skipped, claude cannot run %s; running %s", agent.name, d["model"], agent.model)
+            return agent, rid, None
+        turns = d.get("turns")
+        return replace(agent, model=model, max_turns=turns if isinstance(turns, int) and turns > 0 else agent.max_turns), rid, None
 
     @staticmethod
     def _task_ids(claimed: list[dict], task_ref: tuple[str, str] | None) -> tuple:
@@ -615,7 +666,8 @@ class OrgRunner:
                 board = self.boards[r.task[0]]
                 task_id = r.task[1]
                 self._safe(board.attach, task_id, str(r.log_path), AUTHOR)
-                if self._safe(board.status, task_id) == "running":
+                left_running = self._safe(board.status, task_id) == "running"
+                if left_running:
                     if r.timed_out:
                         streak = self.state.task_timeouts.get(task_id, 0) + 1
                         self.state.task_timeouts[task_id] = streak
@@ -639,6 +691,8 @@ class OrgRunner:
                         self._safe(board.block, task_id, f"{name} {why}. Last output:\n{worker.tail(r.log_path)}"[:3500], "transient")
                 elif self.state.task_timeouts.pop(task_id, None) is not None:
                     self.state.save(self.state_path)       # the card moved on (done/blocked itself): forget the streak
+                if r.route_id is not None and self.router is not None:
+                    self.router.outcome(r.route_id, *run_outcome(r.log_path, code, r.timed_out, left_running))
             log.info("%s finished (exit %s): %s", name, code, text[:200].replace("\n", " "))
 
     def enforce_runtime(self, now: float, grace: float) -> None:

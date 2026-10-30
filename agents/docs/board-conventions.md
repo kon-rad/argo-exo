@@ -32,6 +32,25 @@ The board is the Second Brain engine's Postgres board, reached with the `cli-boa
 - Stops itself: `~hermes/cc-runs/PAUSE` stops new spawns (it writes the file itself when Claude isn't logged in); a rate-limit retry pauses spawns for an hour; `daily_cap` spawns per day. Delete `PAUSE` to resume.
 - Workers get a clean environment (never `~/.hermes/.env`), no `--bare` (it ignores the subscription), no `--dangerously-skip-permissions`; anything that would prompt is denied (`--permission-prompts none`). Denied for every lane: sudo, push, ssh, systemctl, `.env` files, credentials, `/home/trader`, `/srv/exo-guard`.
 
+### Model routing for org bots (`[org.routing]`), added 2026-10-30
+
+The dispatcher can ask the engine's model router which model runs a Claude Code bot's card wake, the same integration the zen-agent dispatcher has (engine `docs/org-routing.md`, "Dispatcher integration"; vault design `Areas/argo/second-brain/agent-company/org-config-and-model-routing-design.md`). Code: `agents/cc-dispatcher/cc_dispatcher/routing.py`; tests `tests/test_routing.py`.
+
+| Key in `lanes.toml` | Default | Meaning |
+|---|---|---|
+| `[org.routing] mode` | `"off"` | `off`: the bot's own model, the router is not asked. `shadow`: ask, log the decision (`route_decisions`) and the run's outcome (`route_outcomes`), run unchanged. `on`: the decision runs |
+| `config` | `<vault>/.agents/org/routing.json` | The compiled catalog (`compile.py routing`); relative paths resolve against `[org] vault`. Re-read on every routed wake |
+| `max_tier` | unset | Top of each bot's envelope. Unset: the bot's own tier only, so nothing climbs |
+| `timeout_seconds` | `20` | A router slower than this is skipped |
+
+- **Scope:** only card wakes (a ready card claimed for the bot). DMs, mentions and routines keep the bot's model. Work type is the card's `work_type`, else the bot's `work`, else `ops`; the card title is passed as `--text` for risk words.
+- **The call:** `cli-org route decide --work <type> --tiers <envelope> --card <id> --config <routing.json> --record --agent <bot> --run <run id> --json [--text <title>]`. `--card` makes earlier failed runs on the card escalate. Exit 0 is a `run`, exit 2 any other decision.
+- **`on`:** a `run` sets `--model` (catalog ids `haiku`, `sonnet`, `opus` or a `claude-*` id from an `anthropic` provider) and `--max-turns` (the tier's turns). `park`, `ask-spec`, `wait` and `blocked` start no run: the claimed wakeups are finished with `routed <action>: <reason>` and the card is blocked with that reason (`wait` as transient). The wake spends no cooldown or daily wake.
+- **After the run:** `cli-org route outcome <id> done|failed --turns N`. `failed` is a non-zero exit, an `error_*` result (max turns), a runtime-cap stop, or a card left running; the router reads it as a turn-cap miss and starts the next wake on that card a tier up.
+- **Never blocks a wake:** a timeout, missing `cli-org`, non-zero exit, bad JSON, missing `routing.json` or a bot model not in the catalog logs a line and runs the bot's own model. A `run` naming a model `claude` cannot run (a provider or Ollama id) is logged as `route skipped, claude cannot run <id>` and the bot's model runs.
+- **Fixed bots:** `"routing": "fixed"` (or `{"mode": "fixed"}`) on an agent in `org-agents.json` keeps its model and `[org] max_turns`, and its envelope is its own tier only. A `park` and the other no-run decisions still apply to it.
+- **Rollout:** `shadow` first, compare with `cli-org route report`, then `on`. Needs the engine with `cli-org route` (kon-rad/argo PR #90) on the droplet.
+
 ### Runbook (Konrad, once)
 
 1. Log in as hermes: `ssh -t do-agent 'sudo -iu hermes claude'`, then `/login` and paste the code from the browser. `/status` must show the claude.ai account, not an API key. Exit.
