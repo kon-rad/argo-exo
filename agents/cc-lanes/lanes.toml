@@ -103,7 +103,7 @@ denied_tools = ["Read(//home/hermes/secondBrain/CURRENT/**)", "Edit(//home/herme
 # shadow: `cli-org route decide` is asked and its decision and the run's outcome are logged; the run is unchanged.
 # on: a `run` decision sets --model and --max-turns; park, ask-spec, wait and blocked block the card and start no run.
 [org.routing]
-mode = "off"
+mode = "shadow"            # off | shadow (log only) | on; shadow since 2026-10-30, compare with `cli-org route report`
 config = "/home/hermes/secondBrain/.agents/org/routing.json"
-# max_tier = "t3"            # top of each bot's envelope; unset = the bot's own tier only, so nothing climbs
+max_tier = "t3"              # top of each bot's envelope; unset = the bot's own tier only, so nothing climbs
 timeout_seconds = 20
