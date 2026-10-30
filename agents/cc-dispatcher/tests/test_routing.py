@@ -112,11 +112,12 @@ def test_routing_is_off_by_default_and_validated(tmp_path):
         load(lanes)
 
 
-def test_repo_lanes_file_loads_with_routing_off():
+def test_repo_lanes_file_routing_is_never_on_by_accident():
+    """The shipped lanes file may log decisions (shadow) but must not let the router change a run; `on` is an owner edit."""
     from pathlib import Path
     import tomllib
     raw = tomllib.loads((Path(__file__).resolve().parents[2] / "cc-lanes" / "lanes.toml").read_text())
-    assert raw["org"]["routing"]["mode"] == "off"
+    assert raw["org"]["routing"]["mode"] in ("off", "shadow")
 
 
 # -- off ----------------------------------------------------------------------------------------------------------------
