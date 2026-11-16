@@ -61,6 +61,19 @@ path_flags = ["--reel"]
 flags = ["--step", "--only", "--force", "--no-push"]
 timeout_minutes = 120
 
+# Music: aria (music producer) writes a track as code in the vault; the audio only exists where it is rendered
+# (`out/` is gitignored). This job pulls, runs the track's make_track.py with uv, checks the mix, puts the day's mp3 on
+# B2 under music/<slug>/ and sends it to Konrad on Telegram with the day's note as the caption (Konrad, 2026-11-16:
+# "delivering some sample to me for feedback every day"). Skill: vault .agents/skills/music-producer/.
+[jobs.music]
+description = "Render a code-written track on the M1 (music-producer skill), then send the day's sample to Konrad on Telegram and B2"
+usage = "--track=<path under the vault, or a track slug> [--day=YYYY-MM-DD] [--no-render] [--no-send] [--no-push] [--dry-run]"
+cmd = ["/opt/homebrew/bin/python3", "~/Documents/secondbrain/.agents/skills/music-producer/scripts/music_job.py"]
+roots = ["~/Documents/secondbrain"]
+path_flags = ["--track"]
+flags = ["--day", "--no-render", "--no-send", "--no-push", "--dry-run"]
+timeout_minutes = 30
+
 # `cli-git test <card>` for repos marked test_on = "m1" in bot-repos.toml: the droplet sends the bot's worktree as a
 # tar.gz and m1-jobd runs [tests.<repo>].cmd in it, under sandbox-exec (see m1_jobd.TEST_PROFILE), one at a time.
 # The command comes from this file, never from the droplet. Design: vault
