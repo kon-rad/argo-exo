@@ -157,7 +157,7 @@ def test_pre_push_check_blocks_the_push(env, capsys):
 def test_public_repo_push_is_scanned_and_uncommit_redoes(env, capsys):
     assert call("cli-git", "start", "argo-exo", "t_abc123") == 0       # the fake gh can't say, so it counts as public
     wt = env["tmp"] / "work" / "wt" / "argo-exo-t_abc123"
-    (wt / "notes.md").write_text("ssh root@" + "165.22.103.109 then mail konrad" + "@gmail.com\nchat -1001234567890\n")
+    (wt / "notes.md").write_text("ssh root@" + "165.22.103.109 then mail konrad" + "@gmail.com\nchat -1001234567890\n")  # public-ok: refusal fixture, not a real credential
     (wt / ".env").write_text("X=1\n")
     assert call("cli-git", "commit", "t_abc123", "leaky") == 0
     assert call("cli-git", "push", "t_abc123") == 2
