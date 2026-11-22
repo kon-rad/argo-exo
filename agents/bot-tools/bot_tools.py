@@ -93,6 +93,12 @@ def need(agent: dict, *caps: str) -> None:
                        "capabilities come from .agents/org.yaml, imported by the owner")
 
 
+def scoped_release(agent: dict, conf: dict) -> bool:
+    """Allow a named release agent only on an owner-installed repo or target."""
+    return ("scoped-release" in agent["capabilities"]
+            and agent["name"] in conf.get("release_agents", []))
+
+
 def ship_check(card: str, *, pr: str | None = None, deploy: str | None = None) -> str:
     cmd = [binary("CLI_ORG", "cli-org"), "ship", "check", card]
     if pr:
@@ -469,7 +475,11 @@ def cmd_pr_review(agent: dict, url: str, verdict: str, text: str) -> str:
 
 
 def cmd_pr_merge(agent: dict, url: str, card: str) -> str:
-    need(agent, "merge")
+    full, num = pr_parts(url)
+    owner_repos = load_toml("bot-repos.toml").get("repos", {})
+    scoped_repo = next((r for r in owner_repos.values() if r.get("github", "").lower() == full.lower()), {})
+    if "merge" not in agent["capabilities"] and not scoped_release(agent, scoped_repo):
+        raise BotError(f"{agent['name']} cannot merge {full}: no merge capability or scoped release grant")
     check_card(card)
     info = pr_info(url)
     if f"Card: {card}" not in (info.get("body") or ""):
@@ -477,7 +487,6 @@ def cmd_pr_merge(agent: dict, url: str, card: str) -> str:
     if info.get("state") != "OPEN":
         raise BotError(f"{url} is {info.get('state')}")
     why = ship_check(card, pr=url)
-    full, num = pr_parts(url)
     gh(["pr", "merge", num, "--repo", full, "--squash", "--delete-branch"])
     card_comment(card, f"{agent['name']} merged {url} ({why})", agent["name"])
     return f"merged {url} ({why})"
@@ -520,16 +529,20 @@ def targets() -> dict:
 
 
 def cmd_deploy_list(agent: dict) -> str:
-    need(agent, "deploy")
-    return "\n".join(f"{n}  {t.get('description', '')}" for n, t in sorted(targets().items())) or "no targets installed"
+    allowed = {n: t for n, t in targets().items()
+               if "deploy" in agent["capabilities"] or scoped_release(agent, t)}
+    if not allowed and "deploy" not in agent["capabilities"]:
+        need(agent, "deploy")
+    return "\n".join(f"{n}  {t.get('description', '')}" for n, t in sorted(allowed.items())) or "no targets installed"
 
 
 def cmd_deploy(agent: dict, target: str, card: str) -> str:
-    need(agent, "deploy")
-    check_card(card)
     t = targets().get(target)
     if not t:
         raise BotError(f"no deploy target {target!r} (cli-deploy list)")
+    if "deploy" not in agent["capabilities"] and not scoped_release(agent, t):
+        raise BotError(f"{agent['name']} cannot deploy {target}: no deploy capability or scoped release grant")
+    check_card(card)
     why = ship_check(card, deploy=target)
     env = {k: v for k, v in os.environ.items() if k in ("PATH", "HOME", "LANG", "TZ", "USER")}
     env.update({k: str(v) for k, v in t.get("env", {}).items()})
