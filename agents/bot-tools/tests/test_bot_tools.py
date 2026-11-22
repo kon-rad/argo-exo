@@ -255,6 +255,20 @@ def test_merge_needs_merge_capability_the_card_and_approval(env, monkeypatch, ca
     assert "--squash" in merge and "--delete-branch" in merge
 
 
+def test_scoped_release_merges_only_named_repo_after_ship_check(env, monkeypatch, capsys):
+    monkeypatch.setenv("FAKE_CAPS", "code,scoped-release")
+    conf = env["tmp"] / "etc" / "bot-repos.toml"
+    conf.write_text(conf.read_text().replace('github = "kon-rad/argo-exo"',
+                                             'github = "kon-rad/argo-exo"\nrelease_agents = ["rune"]'))
+    assert call("cli-git", "pr", "merge", PR, "--card", "t_abc123") == 2
+    assert "not approved" in capsys.readouterr().err
+    monkeypatch.setenv("FAKE_SHIP", "ok")
+    assert call("cli-git", "pr", "merge", PR, "--card", "t_abc123") == 0
+    conf.write_text(conf.read_text().replace('release_agents = ["rune"]', 'release_agents = ["niko"]'))
+    assert call("cli-git", "pr", "merge", PR, "--card", "t_abc123") == 2
+    assert "no merge capability or scoped release grant" in capsys.readouterr().err
+
+
 def test_repo_create_is_private_in_the_bots_org_and_never_deletes(env, monkeypatch, capsys):
     assert call("cli-git", "repo", "create", "pocket-tool", "--card", "t_abc123") == 2      # no [create] owner yet
     assert "repo creation is off" in capsys.readouterr().err
@@ -296,6 +310,21 @@ def test_deploy_runs_only_registered_approved_targets(env, monkeypatch, capsys):
     assert env["marker"].exists() and "check passed" in capsys.readouterr().out
     assert call("cli-deploy", "broken", "--card", "t_abc123") == 2
     assert any("FAILED" in c[-1] for c in env["calls"]() if c[1:2] == ["comment"])
+
+
+def test_scoped_release_deploys_only_named_target_after_ship_check(env, monkeypatch, capsys):
+    monkeypatch.setenv("FAKE_CAPS", "code,scoped-release")
+    conf = env["tmp"] / "etc" / "deploy-targets.toml"
+    conf.write_text(conf.read_text().replace('[targets.demo]', '[targets.demo]\nrelease_agents = ["rune"]'))
+    assert call("cli-deploy", "list") == 0
+    listed = capsys.readouterr().out
+    assert "demo" in listed and "broken" not in listed
+    assert call("cli-deploy", "demo", "--card", "t_abc123") == 2
+    assert "not approved" in capsys.readouterr().err
+    monkeypatch.setenv("FAKE_SHIP", "ok")
+    assert call("cli-deploy", "demo", "--card", "t_abc123") == 0
+    assert call("cli-deploy", "broken", "--card", "t_abc123") == 2
+    assert "no deploy capability or scoped release grant" in capsys.readouterr().err
 
 
 def test_m1_job_goes_through_ssh_and_says_to_block(env, monkeypatch, capsys):

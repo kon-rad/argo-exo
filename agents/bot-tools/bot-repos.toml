@@ -46,6 +46,29 @@ protected = ["main"]
 test = ["bash", "-lc", "python3 -m venv .venv && .venv/bin/pip install -q -e '.[dev]' && .venv/bin/python -m pytest -q -p no:cacheprovider"]
 test_timeout_seconds = 900
 
+# Manifestly: GitHub access is granted to the myargoquest machine account.
+# Build jobs run on the M1, where Xcode and the Node toolchain are available.
+[repos.manifestly-ios]
+github = "kon-rad/manifestlyai"
+default_branch = "main"
+protected = ["main"]
+test_on = "m1"
+release_agents = ["niko"]
+
+[repos.manifestly-backend]
+github = "kon-rad/manifestlyBackend"
+default_branch = "main"
+protected = ["main"]
+test_on = "m1"
+release_agents = ["niko"]
+
+[repos.manifestly-web]
+github = "kon-rad/manifestlyNextApp"
+default_branch = "main"
+protected = ["main"]
+test_on = "m1"
+release_agents = ["niko"]
+
 # Public: a bot's branch is public as soon as it's pushed, so the repo's own leak check runs first.
 [repos.argo-lifeos]
 github = "kon-rad/argo-lifeos"
